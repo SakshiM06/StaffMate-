@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:staff_mate/pages/attendance_page.dart';
+import 'package:staff_mate/pages/ipd_dashboard_page.dart';
 import 'package:staff_mate/pages/nurse_page.dart';
 import 'package:staff_mate/pages/profile_page.dart';
-import 'package:staff_mate/services/services_page.dart'; 
 import 'package:staff_mate/pages/smartcarehomescreen.dart';
 // import 'package:staff_mate/pages/bed_list_page.dart';   
 
@@ -22,7 +22,8 @@ class _DashboardPageState extends State<DashboardPage> {
   SmartCareHomeScreen(),     
     NursePage(),
     AttendancePage(),
-    ServicesPage(),  
+    // ServicesPage(),  
+    IpdDashboardPage(),
     ProfilePage(),    
 
   ];
@@ -56,7 +57,7 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           BottomNavigationBarItem(
             icon: Icon(Icons.medical_services),
-            label: 'Services',
+            label: 'IPD',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person),

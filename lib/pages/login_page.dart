@@ -9,7 +9,7 @@ import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
-  @override
+  @override 
   State<LoginPage> createState() => _LoginPageState();
 }
 
@@ -105,16 +105,23 @@ class _LoginPageState extends State<LoginPage> {
                     child: FadeInAnimation(child: widget),
                   ),
                   children: [
-                    const CircleAvatar(
-                      radius: 50,
-                      backgroundColor: Colors.white,
-                      child: Icon(
-                        Icons.health_and_safety_outlined,
-                        size: 50,
-                        color: Color(0xFF7E90F8),
+                    // const CircleAvatar(
+                    //   radius: 50,
+                    //   backgroundColor: Colors.white,
+                    //   child: Icon(
+                    //     Icons.health_and_safety_outlined,
+                    //     size: 50,
+                    //     color: Color(0xFF7E90F8),
+                    //   ),
+                    // ),
+                    Padding(
+                      padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.1),
+                      child: Image.asset(
+                        'assets/images/logosm.png',
+                        height: MediaQuery.of(context).size.height * 0.15,
                       ),
                     ),
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 15),
                     Text(
                       "Welcome Back",
                       style: GoogleFonts.poppins(

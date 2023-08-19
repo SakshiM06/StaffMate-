@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/pages/login_page.dart';
+import 'package:staff_mate/pages/submit_ticket_page.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -11,13 +12,15 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  // State variables for all user data
+
   String? username;
   String? token;
   String? staffId;
   String? dept;
   String? role;
   bool isLoading = true;
+
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   @override
   void initState() {
@@ -52,7 +55,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    // List of widgets for the scrollable section ONLY
     final List<Widget> contentWidgets = [
       _buildInfoPod(
         icon: Icons.badge_outlined,
@@ -78,23 +80,20 @@ class _ProfilePageState extends State<ProfilePage> {
     ];
 
     return Scaffold(
+      key: _scaffoldKey,
+      drawer: _buildDrawer(),
       body: isLoading
           ? _buildLoadingScreen()
           : Stack(
               children: [
-                // Layer 1: The background color
                 Container(
                   color: const Color(0xFFE3E6FD),
                 ),
 
-                // Layer 2: The scrollable content with animations
                 AnimationLimiter(
                   child: Padding(
-                    // =================================================================
-                    // THE FIX IS HERE: Increased padding to shift the content down.
-                    // =================================================================
                     padding: EdgeInsets.only(
-                      top: MediaQuery.of(context).size.height * 0.40, // Was 0.35
+                      top: MediaQuery.of(context).size.height * 0.40,
                     ),
                     child: ListView.builder(
                       padding: const EdgeInsets.symmetric(horizontal: 20.0),
@@ -119,7 +118,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   position: 0,
                   duration: const Duration(milliseconds: 500),
                   child: SlideAnimation(
-                    verticalOffset: -50.0, // Slides down from the top
+                    verticalOffset: -50.0,
                     child: FadeInAnimation(
                       child: _buildFloatingHeader(),
                     ),
@@ -129,8 +128,6 @@ class _ProfilePageState extends State<ProfilePage> {
             ),
     );
   }
-
-  // --- WIDGET BUILDING METHODS ---
 
   Widget _buildLoadingScreen() {
     return Container(
@@ -148,12 +145,12 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildFloatingHeader() {
-    // The header is now taller to accommodate the name and role
+  
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.38,
       child: Stack(
         children: [
-          // The curved shape
+        
           ClipPath(
             clipper: ProfileHeaderClipper(),
             child: Container(
@@ -165,6 +162,17 @@ class _ProfilePageState extends State<ProfilePage> {
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
+              ),
+            ),
+          ),
+         
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: IconButton(
+                icon: const Icon(Icons.menu, color: Colors.white, size: 28),
+                tooltip: "Menu",
+                onPressed: () => _scaffoldKey.currentState?.openDrawer(),
               ),
             ),
           ),
@@ -190,13 +198,13 @@ class _ProfilePageState extends State<ProfilePage> {
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 5),
                     boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: .15),
-                        blurRadius: 10,
-                        offset: const Offset(0, 5),
-                      ),
+                      // BoxShadow(
+                      //   color: Colors.black.withValues(alpha: 15),
+                      //   blurRadius: 10,
+                      //   offset: const Offset(0, 5),
+                      // ),
                     ],
-                  ),
+                  ), 
                   child: const CircleAvatar(
                     radius: 60,
                     backgroundColor: Color(0xFFE3E6FD),
@@ -301,7 +309,144 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
+
+Widget _buildDrawer() {
+  return Drawer(
+    child: Container(
+      color: const Color(0xFFF4F6FF),
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: <Widget>[
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Color(0xFF7E90F8), Color(0xFF8B99FA)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const CircleAvatar(
+                  radius: 30,
+                  backgroundColor: Color(0xFFE3E6FD),
+                  child: Icon(
+                    Icons.person_rounded,
+                    size: 40,
+                    color: Color(0xFF7E90F8),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  username ?? 'User',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Text(
+                  role ?? 'Staff',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildDrawerItem(
+            icon: Icons.dashboard_outlined,
+            text: 'Approval Dashboard',
+            onTap: () {},
+          ),
+          _buildDrawerItem(
+            icon: Icons.outbox_outlined,
+            text: 'Submit Ticket',
+            onTap: () {
+              Navigator.pop(context); // close drawer
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SubmitTicketPage()),
+              );
+            },
+          ),
+          _buildDrawerItem(
+            icon: Icons.history_outlined,
+            text: 'Token History',
+            onTap: () {},
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              leading: const Icon(Icons.date_range_outlined, color: Color(0xFF333D79)),
+              title: const Text(
+                'Attendance Record',
+                style: TextStyle(
+                  color: Color(0xFF333D79),
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              children: <Widget>[
+                _buildSubDrawerItem(
+                  icon: Icons.calendar_today_outlined,
+                  text: 'Monthly',
+                  onTap: () {},
+                ),
+                _buildSubDrawerItem(
+                  icon: Icons.beach_access_outlined,
+                  text: 'Gov Leave',
+                  onTap: () {},
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 20, thickness: 1, indent: 20, endIndent: 20),
+          _buildDrawerItem(
+            icon: Icons.info_outline,
+            text: 'About Us',
+            onTap: () {},
+          ),
+        ],
+      ),
+    ),
+  );
 }
+  }
+  Widget _buildDrawerItem(
+      {required IconData icon,
+      required String text,
+      required GestureTapCallback onTap}) {
+    return ListTile(
+      leading: Icon(icon, color: const Color(0xFF333D79)),
+      title: Text(
+        text,
+        style: const TextStyle(
+            color: Color(0xFF333D79), fontWeight: FontWeight.w600),
+      ),
+      onTap: onTap,
+    );
+  }
+
+  Widget _buildSubDrawerItem(
+      {required IconData icon,
+      required String text,
+      required GestureTapCallback onTap}) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 25.0),
+      child: ListTile(
+        leading: Icon(icon, color: const Color(0xFF6A5AE0), size: 20),
+        title: Text(
+          text,
+          style: const TextStyle(
+              color: Color(0xFF6A5AE0), fontWeight: FontWeight.normal),
+        ),
+        onTap: onTap,
+      ),
+    );
+  }
 
 class ProfileHeaderClipper extends CustomClipper<Path> {
   @override

@@ -10,8 +10,8 @@ class OPDService {
 
   // Example stats
   int get totalPatients => patients.value.length;
-  int get newCases => patients.value.where((p) => p.isNew).length;
-  int get followUps => patients.value.where((p) => !p.isNew).length;
+  // int get newCases => patients.value.where((p) => p.isNew).length;
+  // int get followUps => patients.value.where((p) => !p.isNew).length;
 
   void addPatient(Patient p) {
     patients.value = [...patients.value, p];
