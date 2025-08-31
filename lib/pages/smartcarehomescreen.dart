@@ -2,6 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import '../models/patient_alert_model.dart'; // Adjusted import path
 
+class AppColors {
+  static const Color primaryDarkBlue = Color(0xFF1A2C42);
+  static const Color midDarkBlue = Color(0xFF273F5A);
+  static const Color accentTeal = Color(0xFF00C897);
+  static const Color darkerAccentTeal = Color(0xFF00A37D);
+  static const Color lightBlue = Color(0xFF66D7EE);
+  static const Color whiteColor = Colors.white;
+  static const Color textDark = primaryDarkBlue;
+  static const Color textBodyColor = Color(0xFF90A4AE);
+  static const Color lightGreyColor = Color(0xFFF0F4F8);
+  static const Color fieldFillColor = Color(0xFFE3E8ED);
+  static const Color errorRed = Color(0xFFE53935);
+}
+
 class SmartCareHomeScreen extends StatelessWidget {
   const SmartCareHomeScreen({super.key});
 
@@ -39,7 +53,6 @@ class SmartCareHomeScreen extends StatelessWidget {
         message: "Patient in Ward 7 aggressive – assistance required.",
         time: "20 mins ago",
       ),
-      // Example of a generic notification using the same card style
       PatientAlert(
         code: AlertCode.notification,
         title: "New Task Assigned",
@@ -63,10 +76,8 @@ class SmartCareHomeScreen extends StatelessWidget {
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             colors: [
-              Color(0xFF7E90F8),
-              Color(0xFF8B99FA),
-              Color(0xFFB1B9FC),
-              Color(0xFFE3E6FD),
+              AppColors.primaryDarkBlue,
+              AppColors.midDarkBlue,
             ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
@@ -95,19 +106,18 @@ class SmartCareHomeScreen extends StatelessWidget {
                   "09:00 AM - 11:00 AM",
                   "Patient Visit: Mrs. Helen",
                   "Room 302, Cardiology",
-                  const Color(0xFF4A47A3),
+                  AppColors.accentTeal, 
                 ),
                 _buildScheduleCard(
                   "12:30 PM",
                   "Team Meeting",
                   "Conference Room A",
-                  const Color(0xFF005082),
+                  AppColors.lightBlue,
                 ),
                 const SizedBox(height: 30),
                 _buildSectionHeader("Notifications & Alerts", Icons.notifications_active_outlined),
                 const SizedBox(height: 15),
-                // Dynamically build patient alert cards
-                ...patientAlerts.map((alert) => _buildPatientAlertCard(alert)), // Removed .toList()
+                ...patientAlerts.map((alert) => _buildPatientAlertCard(alert)),
                 const SizedBox(height: 40),
               ],
             ),
@@ -129,14 +139,14 @@ class SmartCareHomeScreen extends StatelessWidget {
             Text(
               "Welcome back,",
               style: TextStyle(
-                color: Colors.white70,
+                color: AppColors.lightGreyColor, 
                 fontSize: 18,
               ),
             ),
             Text(
               "Dr. Evelyn Reed",
               style: TextStyle(
-                color: Colors.white,
+                color: AppColors.whiteColor,
                 fontSize: 26,
                 fontWeight: FontWeight.bold,
               ),
@@ -156,7 +166,7 @@ class SmartCareHomeScreen extends StatelessWidget {
       clipper: CustomShapeClipper(),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: AppColors.whiteColor,
           borderRadius: BorderRadius.circular(20),
         ),
         padding: const EdgeInsets.fromLTRB(25, 30, 25, 40),
@@ -175,14 +185,14 @@ class SmartCareHomeScreen extends StatelessWidget {
   Widget _buildSectionHeader(String title, IconData icon) {
     return Row(
       children: [
-        Icon(icon, color: Colors.black54, size: 28),
+        Icon(icon, color: AppColors.whiteColor, size: 28), 
         const SizedBox(width: 10),
         Text(
           title,
           style: const TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF333333),
+            color: AppColors.whiteColor, 
           ),
         ),
       ],
@@ -191,6 +201,7 @@ class SmartCareHomeScreen extends StatelessWidget {
 
   Widget _buildScheduleCard(String time, String title, String subtitle, Color color) {
     return Card(
+      margin: const EdgeInsets.only(bottom: 12), 
       elevation: 4,
       shadowColor: Colors.black.withValues(alpha: .1),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -237,12 +248,12 @@ class SmartCareHomeScreen extends StatelessWidget {
   Widget _buildPatientAlertCard(PatientAlert alert) {
     Color cardColor;
     IconData cardIcon;
-    Color iconColor; // For the internal icon in the card
+    Color iconColor; 
 
     switch (alert.code) {
       case AlertCode.codeBlue:
         cardColor = Colors.blue.shade700;
-        cardIcon = Icons.medical_services_outlined; // Or a specific 'critical' icon
+        cardIcon = Icons.medical_services_outlined; 
         iconColor = Colors.white;
         break;
       case AlertCode.codeYellow:
@@ -252,37 +263,35 @@ class SmartCareHomeScreen extends StatelessWidget {
         break;
       case AlertCode.codeOrange:
         cardColor = Colors.orange.shade700;
-        cardIcon = Icons.masks_outlined; // Represents PPE
+        cardIcon = Icons.masks_outlined; 
         iconColor = Colors.white;
         break;
       case AlertCode.codeGreen:
         cardColor = Colors.green.shade700;
-        cardIcon = Icons.local_hospital_outlined; // Represents transfer
+        cardIcon = Icons.local_hospital_outlined;
         iconColor = Colors.white;
         break;
       case AlertCode.codeWhite:
-        cardColor = Colors.grey.shade300; // Using a softer grey for white code
-        cardIcon = Icons.mood_bad_outlined; // Represents aggression
+        cardColor = Colors.grey.shade300; 
+        cardIcon = Icons.mood_bad_outlined; 
         iconColor = Colors.black87;
         break;
       case AlertCode.notification:
-        cardColor = Colors.white; // Default for general notifications
-        cardIcon = alert.icon ?? Icons.notifications_none; // Use provided icon or default
+        cardColor = AppColors.whiteColor; 
+        cardIcon = alert.icon ?? Icons.notifications_none; 
         iconColor = alert.iconColor ?? Colors.grey.shade700;
         break;
-      // Removed the 'default' clause as all enum values are explicitly handled
     }
 
-    // Adjust text color based on card background for readability
     Color titleColor = (alert.code == AlertCode.codeYellow || alert.code == AlertCode.codeWhite || alert.code == AlertCode.notification)
-        ? Colors.black87
-        : Colors.white;
+        ? AppColors.textDark 
+        : AppColors.whiteColor;
     Color messageColor = (alert.code == AlertCode.codeYellow || alert.code == AlertCode.codeWhite || alert.code == AlertCode.notification)
-        ? Colors.grey.shade700
-        : Colors.white70;
+        ? AppColors.textBodyColor 
+        : AppColors.whiteColor.withValues(alpha: .7);
     Color timeColor = (alert.code == AlertCode.codeYellow || alert.code == AlertCode.codeWhite || alert.code == AlertCode.notification)
-        ? Colors.grey.shade600
-        : Colors.white60;
+        ? AppColors.textBodyColor 
+        : AppColors.whiteColor.withValues(alpha: .6);
 
 
     return Card(
@@ -298,7 +307,6 @@ class SmartCareHomeScreen extends StatelessWidget {
         padding: const EdgeInsets.all(12.0),
         child: Row(
           children: [
-            // Using a slightly larger icon for alerts for better visibility
             Icon(cardIcon, color: iconColor, size: 36),
             const SizedBox(width: 15),
             Expanded(
@@ -336,9 +344,7 @@ class SmartCareHomeScreen extends StatelessWidget {
   }
 }
 
-// --- HELPER WIDGETS AND CLASSES ---
 
-// For the stats section items
 class _StatItem extends StatelessWidget {
   final String count;
   final String label;
@@ -352,7 +358,7 @@ class _StatItem extends StatelessWidget {
           style: const TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.bold,
-            color: Color(0xFF4A47A3),
+            color: AppColors.primaryDarkBlue,
           ),
         ),
         const SizedBox(height: 4),
@@ -360,7 +366,7 @@ class _StatItem extends StatelessWidget {
           label,
           style: const TextStyle(
             fontSize: 16,
-            color: Colors.black54,
+            color: AppColors.textBodyColor, 
           ),
         ),
       ],
@@ -368,7 +374,6 @@ class _StatItem extends StatelessWidget {
   }
 }
 
-// Custom clipper for the unique shape
 class CustomShapeClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {

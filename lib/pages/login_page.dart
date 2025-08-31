@@ -5,11 +5,24 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 
+class AppColors {
+  static const Color primaryDarkBlue = Color(0xFF1A2C42); 
+  static const Color midDarkBlue = Color(0xFF273F5A);
+  static const Color accentTeal = Color(0xFF00C897); 
+  static const Color darkerAccentTeal = Color(0xFF00A37D);
+  static const Color lightBlue = Color(0xFF66D7EE); 
+  static const Color whiteColor = Colors.white;
+  static const Color textDark = primaryDarkBlue; 
+  static const Color textBodyColor = Color(0xFF90A4AE); 
+  static const Color lightGreyColor = Color(0xFFF0F4F8); 
+  static const Color fieldFillColor = Color(0xFFE3E8ED); 
+  static const Color errorRed = Color(0xFFE53935);
+}
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
 
-  @override 
+  @override
   State<LoginPage> createState() => _LoginPageState();
 }
 
@@ -44,10 +57,10 @@ class _LoginPageState extends State<LoginPage> {
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('auth_token', innerData['token'] ?? '');
           await prefs.setString('username', _usernameController.text.trim());
-          await prefs.setString('staffId', 'S-12345'); 
-          await prefs.setString('role', 'Physician'); 
-          await prefs.setString('dept', 'Cardiology'); 
-          
+          await prefs.setString('staffId', 'S-12345');
+          await prefs.setString('role', 'Physician');
+          await prefs.setString('dept', 'Cardiology');
+
           if (!mounted) return;
           Navigator.pushReplacementNamed(context, '/dashboard');
         } else {
@@ -69,77 +82,86 @@ class _LoginPageState extends State<LoginPage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text("Login Failed"),
-        content: Text(message),
+        title: Text("Login Failed", style: GoogleFonts.poppins(color: AppColors.errorRed, fontWeight: FontWeight.bold)),
+        content: Text(message, style: GoogleFonts.nunito(color: AppColors.textBodyColor)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
+            child: Text("OK", style: GoogleFonts.poppins(color: AppColors.accentTeal, fontWeight: FontWeight.w600)),
           ),
         ],
       ),
     );
   }
 
-   @override
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SingleChildScrollView(
-        child: Container(
-          height: MediaQuery.of(context).size.height,
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              colors: [Color(0xFF7E90F8), Color(0xFFB1B9FC), Color(0xFFE3E6FD)],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-            ),
+      body: Container( 
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.primaryDarkBlue,
+              AppColors.midDarkBlue,
+            ],
           ),
-          child: SafeArea(
-            child: AnimationLimiter(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: AnimationConfiguration.toStaggeredList(
-                  duration: const Duration(milliseconds: 500),
-                  childAnimationBuilder: (widget) => SlideAnimation(
-                    verticalOffset: 50.0,
-                    child: FadeInAnimation(child: widget),
+        ),
+        child: SingleChildScrollView(
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height,
+            child: SafeArea(
+              child: AnimationLimiter(
+                child: Column(
+                  children: AnimationConfiguration.toStaggeredList(
+                    duration: const Duration(milliseconds: 500),
+                    childAnimationBuilder: (widget) => SlideAnimation(
+                      verticalOffset: 50.0,
+                      child: FadeInAnimation(child: widget),
+                    ),
+                    children: [
+                      Align(
+                        alignment: Alignment.topLeft,
+                        child: IconButton(
+                          icon: const Icon(Icons.arrow_back_ios, color: AppColors.whiteColor), 
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ),
+                      Expanded(
+                        flex: 2,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/images/welcomesm.png', 
+                              height: MediaQuery.of(context).size.height * 0.25, 
+                            ),
+                            const SizedBox(height: 20),
+                            Text(
+                              "Welcome Back",
+                              style: GoogleFonts.poppins(
+                                fontSize: 32,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.whiteColor, 
+                              ),
+                            ),
+                            Text(
+                              "Login to your StaffMate account", 
+                              style: GoogleFonts.nunito(
+                                fontSize: 18,
+                                color: AppColors.lightBlue, 
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        flex: 3,
+                        child: _buildFloatingLoginBox(),
+                      ),
+                    ],
                   ),
-                  children: [
-                    // const CircleAvatar(
-                    //   radius: 50,
-                    //   backgroundColor: Colors.white,
-                    //   child: Icon(
-                    //     Icons.health_and_safety_outlined,
-                    //     size: 50,
-                    //     color: Color(0xFF7E90F8),
-                    //   ),
-                    // ),
-                    Padding(
-                      padding: EdgeInsets.only(top: MediaQuery.of(context).size.height * 0.1),
-                      child: Image.asset(
-                        'assets/images/logosm.png',
-                        height: MediaQuery.of(context).size.height * 0.15,
-                      ),
-                    ),
-                    const SizedBox(height: 15),
-                    Text(
-                      "Welcome Back",
-                      style: GoogleFonts.poppins(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.deepPurple,
-                      ),
-                    ),
-                    Text(
-                      "Login to your SmartCare account",
-                      style: GoogleFonts.nunito(
-                        fontSize: 20,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 40),
-                    _buildFloatingLoginBox(),
-                  ],
                 ),
               ),
             ),
@@ -149,19 +171,18 @@ class _LoginPageState extends State<LoginPage> {
     );
   }
 
-
   Widget _buildFloatingLoginBox() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 25.0),
       padding: const EdgeInsets.all(30.0),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: .95),
-        borderRadius: BorderRadius.circular(25.0),
+        color: AppColors.whiteColor, 
+        borderRadius: BorderRadius.circular(30.0),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: .1),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
+            color: Colors.black.withValues(alpha: .15), 
+            blurRadius: 25,
+            offset: const Offset(0, 15),
           ),
         ],
       ),
@@ -180,17 +201,17 @@ class _LoginPageState extends State<LoginPage> {
             icon: Icons.lock_outline,
             isPassword: true,
           ),
-          const SizedBox(height: 15),
+          const SizedBox(height: 13),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () {
-                
+            
               },
               child: Text(
                 "Forgot Password?",
                 style: GoogleFonts.poppins(
-                  color: const Color(0xFF7E90F8),
+                  color: AppColors.primaryDarkBlue, 
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -212,15 +233,17 @@ class _LoginPageState extends State<LoginPage> {
     return TextField(
       controller: controller,
       obscureText: isPassword ? _obscurePassword : false,
+      cursorColor: AppColors.primaryDarkBlue,
+      style: GoogleFonts.nunito(color: AppColors.primaryDarkBlue), 
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: GoogleFonts.nunito(color: Colors.grey[500]),
-        prefixIcon: Icon(icon, color: const Color(0xFF7E90F8)),
+        hintStyle: GoogleFonts.nunito(color: AppColors.primaryDarkBlue.withValues(alpha: .7)),
+        prefixIcon: Icon(icon, color: AppColors.primaryDarkBlue), 
         suffixIcon: isPassword
             ? IconButton(
                 icon: Icon(
                   _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: Colors.grey,
+                  color: AppColors.primaryDarkBlue.withValues(alpha: .6),
                 ),
                 onPressed: () {
                   setState(() {
@@ -230,11 +253,20 @@ class _LoginPageState extends State<LoginPage> {
               )
             : null,
         filled: true,
-        fillColor: Colors.black.withValues(alpha: .05),
+        fillColor: AppColors.primaryDarkBlue.withValues(alpha: .05), 
         border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide.none, 
+        ),
+        enabledBorder: OutlineInputBorder( 
           borderRadius: BorderRadius.circular(15),
           borderSide: BorderSide.none,
         ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(color: AppColors.primaryDarkBlue, width: 2),
+        ),
+        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       ),
     );
   }
@@ -243,31 +275,31 @@ class _LoginPageState extends State<LoginPage> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: _login,
+        onPressed: _isLoading ? null : _login, 
         style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF7E90F8),
-          padding: const EdgeInsets.symmetric(vertical: 16),
+          backgroundColor: AppColors.primaryDarkBlue, 
+          padding: const EdgeInsets.symmetric(vertical: 18), 
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
+            borderRadius: BorderRadius.circular(18), 
           ),
-          elevation: 8,
-          shadowColor: const Color(0xFF7E90F8).withValues(alpha: .5),
+          elevation: 10, 
+          shadowColor: AppColors.primaryDarkBlue.withValues(alpha: .6), 
         ),
         child: _isLoading
             ? const SizedBox(
                 height: 24,
                 width: 24,
                 child: CircularProgressIndicator(
-                  color: Colors.white,
+                  color: AppColors.whiteColor,
                   strokeWidth: 3,
                 ),
               )
             : Text(
                 "Login",
                 style: GoogleFonts.poppins(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
+                  fontSize: 19,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.whiteColor, 
                 ),
               ),
       ),
