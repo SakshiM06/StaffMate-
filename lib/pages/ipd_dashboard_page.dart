@@ -5,6 +5,13 @@ import 'package:staff_mate/api/ipd_service.dart';
 import 'package:staff_mate/models/dashboard_data.dart';
 import 'package:staff_mate/models/patient.dart';
 
+// ✅ import your request pages
+import 'package:staff_mate/pages/req_pres.dart';
+import 'package:staff_mate/pages/req_inve.dart';
+// add imports for other pages similarly if you have them
+// import 'package:staff_mate/pages/req_nursing.dart';
+// import 'package:staff_mate/pages/req_consultant.dart';
+
 class IpdDashboardPage extends StatefulWidget {
   const IpdDashboardPage({super.key});
 
@@ -48,7 +55,6 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
   }
 
   Future<void> _loadDashboardData() async {
-    // just call service, no need to fetch session here anymore
     setState(() {
       _dashboardDataFuture = ipdService.fetchDashboardData();
     });
@@ -144,8 +150,8 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
-              Navigator.of(context).pop(); // Close the current dialog
-              _showAddOptionsDialog(context); // Open the new dialog with 4 boxes
+              Navigator.of(context).pop(); 
+              _showAddOptionsDialog(context); 
             },
           ),
         ],
@@ -163,10 +169,11 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildOptionBox(context, 'Req Prescription'),
-            _buildOptionBox(context, 'Req Investigation'),
-            _buildOptionBox(context, 'Req Nursing Care'),
-            _buildOptionBox(context, 'Req Consultant'),
+            _buildOptionBox(context, 'Req Prescription', const ReqPrescriptionPage(patientName: '' )),
+            _buildOptionBox(context, 'Req Investigation', const ReqInvestigationPage(patientName:   '' )),
+            // replace with your actual widgets for the other two:
+            // _buildOptionBox(context, 'Req Nursing Care', const ReqNursingPage()),
+            // _buildOptionBox(context, 'Req Consultant', const ReqConsultantPage()),
           ],
         ),
         actions: [
@@ -179,13 +186,13 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     );
   }
 
-  Widget _buildOptionBox(BuildContext context, String title) {
+  // ✅ updated to accept a destination page
+  Widget _buildOptionBox(BuildContext context, String title, Widget page) {
     return GestureDetector(
       onTap: () {
-        // Handle tap for each option, e.g., navigate to a new screen or show a specific form
-        Navigator.of(context).pop(); // Close the add options dialog
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('You tapped on $title')),
+        Navigator.of(context).pop();
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => page),
         );
       },
       child: Card(
@@ -204,7 +211,6 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
       ),
     );
   }
-
 
   void _showStatDetailsDialog(String title, String value) {
     showDialog(

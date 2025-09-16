@@ -5,6 +5,10 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 
+// ✅ import your services here
+import 'package:staff_mate/services/clinic_service.dart';
+import 'package:staff_mate/services/user_information_service.dart';
+
 class AppColors {
   static const Color primaryDarkBlue = Color(0xFF1A2C42);
   static const Color midDarkBlue = Color(0xFF273F5A);
@@ -32,140 +36,107 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
 
-  // Future<void> _login() async {
-  //   if (_isLoading) return; // Prevent multiple login attempts
-  //   setState(() => _isLoading = true);
+  Future<void> _login() async {
+    if (_isLoading) return;
+    setState(() => _isLoading = true);
 
-  //   const String apiUrl = "https://test.smartcarehis.com:8443/security/auth/login";
-  //   final headers = {"Content-Type": "application/json"};
-  //   final body = jsonEncode({
-  //     "userName": _usernameController.text.trim(),
-  //     "password": _passwordController.text.trim(),
-  //   });
+    const String apiUrl = "https://test.smartcarehis.com:8443/security/auth/login";
+    final headers = {"Content-Type": "application/json"};
+    final body = jsonEncode({
+      "userName": _usernameController.text.trim(),
+      "password": _passwordController.text.trim(),
+    });
 
-  //   try {
-  //     final response = await http.post(Uri.parse(apiUrl), headers: headers, body: body);
-  //     if (!mounted) return; // Check if the widget is still mounted
-  //     debugPrint("Status: ${response.statusCode}");
-  //     debugPrint("Body: ${response.body}");
+    try {
+      final response =
+          await http.post(Uri.parse(apiUrl), headers: headers, body: body);
+      if (!mounted) return;
 
-  //     if (response.statusCode == 200) {
-  //       final data = jsonDecode(response.body);
-  //       final innerData = data.data['data'];
+      debugPrint("Status: ${response.statusCode}");
+      debugPrint("Body: ${response.body}");
 
-  //       if (innerData != null) {
-  //         final prefs = await SharedPreferences.getInstance();
-  //         await prefs.setString('auth_token', innerData['token'] ?? '');
-  //         // await prefs.setString('username', _usernameController.text.trim());
-  //         // await prefs.setString('staffId', 'S-12345'); // Example default
-  //         // await prefs.setString('role', 'Physician'); // Example default 
-  //         // await prefs.setString('dept', 'Cardiology'); // Example default
-  //         await prefs.setString('clinicId', innerData['clinicId'] ?? '');
-  //         await prefs.setString('branchId', innerData['branchId'] ?? '');
-  //         await prefs.setString('userId', innerData['userId'] ?? '');
-  //         await prefs.setString('zoneId', innerData['zone'] ?? '');
-  //         await prefs.setString('expiryTime', innerData['expiryTime'] ?? '');
-          
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final innerData = decoded['data'];
+        if (innerData != null) {
+          // ✅ save token and other info
+          final prefs = await SharedPreferences.getInstance();
+          final token = innerData['token'] ?? '';
+          await prefs.setString('bearer', innerData['bearer'] ?? '');
+          await prefs.setString('auth_token', token);
+          await prefs.setString('clinicId', innerData['clinicid'] ?? 'aureus');
+          await prefs.setString('userId', innerData['userId'] ?? 'aureus');
+          await prefs.setString('zoneId', innerData['zoneid'] ?? 'Asia/Kolkata');
+          await prefs.setString('expiryTime', innerData['expirytime'] ?? '');
+          await prefs.setInt('branchId', innerData['branch_id'] ?? 1);
 
-  //         if (!mounted) return;
-  //         Navigator.pushReplacementNamed(context, '/dashboard');
-  //       } else {
-  //         _showErrorDialog("Login failed: Invalid response from server.");
-  //       }
-  //     } else {
-  //       final errorMsg = jsonDecode(response.body)['message'] ?? "Invalid credentials";
-  //       _showErrorDialog("$errorMsg (${response.statusCode})");
-  //     }
-  //   } catch (e) {
-  //     if (!mounted) return;
-  //     _showErrorDialog("Something went wrong: Please check your connection. Error: $e");
-  //   } finally {
-  //     if (mounted) setState(() => _isLoading = false); // Ensure state is updated only if mounted
-  //   }
-  // }
-Future<void> _login() async {
-  if (_isLoading) return; // Prevent multiple login attempts
-  setState(() => _isLoading = true);
+          // ✅ immediately call ClinicService to fetch & save clinic details
+          final clinicService = ClinicService();
+          await clinicService.fetchAndSaveClinicDetails(
+            token: token,
+            clinicId: innerData['clinicid'] ?? 'aureus',
+            userId: innerData['userId'] ?? 'aureus',
+            zoneId: innerData['zoneid'] ?? 'Asia/Kolkata',
+            branchId: innerData['branch_id'] ?? 1,
+          );
 
-  const String apiUrl = "https://test.smartcarehis.com:8443/security/auth/login";
-  final headers = {"Content-Type": "application/json"};
-  final body = jsonEncode({
-    "userName": _usernameController.text.trim(),
-    "password": _passwordController.text.trim(),
-  });
+          // ✅ NEW: call UserInformationService to fetch & save user information
+          final userInfoService = UserInformationService();
+          await userInfoService.fetchAndSaveUserInformation(
+            token: token,
+            clinicId: innerData['clinicid'] ?? 'aureus',
+            userId: innerData['userId'] ?? 'aureus',
+            zoneId: innerData['zoneid'] ?? 'Asia/Kolkata',
+            branchId: innerData['branch_id'] ?? 1,
+          );
 
-  try {
-    final response = await http.post(Uri.parse(apiUrl), headers: headers, body: body);
-    if (!mounted) return;
-
-    debugPrint("Status: ${response.statusCode}");
-    debugPrint("Body: ${response.body}");
-
-    if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body);
-      final innerData = decoded['data']; // ✅ fixed
-    debugPrint("inner: ${innerData['bearer']}");
-
-      if (innerData != null) {
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('bearer', innerData['bearer'] ?? '');
-        await prefs.setString('auth_token', innerData['token'] ?? '');
-        await prefs.setString('clinicId', innerData['clinicid'] ?? '');
-        await prefs.setString('userId', innerData['userId'] ?? '');
-        await prefs.setString('zoneId', innerData['zoneid'] ?? '');
-        await prefs.setString('expiryTime', innerData['expirytime'] ?? '');
-        await prefs. setInt('branchId', innerData['branch_id'] ?? 0);
-
-        // Navigate to dashboard page
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/dashboard');
+          if (!mounted) return;
+          // ✅ navigate to dashboard/home after success
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        } else {
+          _showErrorDialog("Unexpected response from server.");
+        }
       } else {
-        _showErrorDialog("Unexpected response from server.");
+        _showErrorDialog(
+            "Invalid username or password (Status ${response.statusCode}).");
       }
-    } else {
-      debugPrint('Login failed: ${response.statusCode}');
-      _showErrorDialog(
-          "Invalid username or password (Status ${response.statusCode}).");
+    } catch (e) {
+      _showErrorDialog("An error occurred. Please try again.\n\n$e");
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
-  } catch (e) {
-    debugPrint('Error: $e');
-    _showErrorDialog("An error occurred. Please try again.\n\n$e");
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
   }
-}
 
-void _showErrorDialog(String message) {
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: Text(
-        "Login Failed",
-        style: GoogleFonts.poppins(
-          color: AppColors.errorRed,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      content: Text(
-        message,
-        style: GoogleFonts.nunito(color: AppColors.textBodyColor),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text(
-            "OK",
-            style: GoogleFonts.poppins(
-              color: AppColors.accentTeal,
-              fontWeight: FontWeight.w600,
-            ),
+  void _showErrorDialog(String message) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          "Login Failed",
+          style: GoogleFonts.poppins(
+            color: AppColors.errorRed,
+            fontWeight: FontWeight.bold,
           ),
         ),
-      ],
-    ),
-  );
-}
-
+        content: Text(
+          message,
+          style: GoogleFonts.nunito(color: AppColors.textBodyColor),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              "OK",
+              style: GoogleFonts.poppins(
+                color: AppColors.accentTeal,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -183,14 +154,12 @@ void _showErrorDialog(String message) {
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            // Use a Column directly inside SingleChildScrollView to allow natural scrolling
-            // and remove fixed height constraints that might cause overflow.
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
             child: AnimationLimiter(
               child: Column(
-                // Use MainAxisAlignment.center to center content vertically if there's extra space
-                // and MainAxisSize.min to prevent the column from taking more space than its children need.
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min, // Essential for Column inside SingleChildScrollView
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: AnimationConfiguration.toStaggeredList(
                   duration: const Duration(milliseconds: 500),
                   childAnimationBuilder: (widget) => SlideAnimation(
@@ -201,23 +170,21 @@ void _showErrorDialog(String message) {
                     Align(
                       alignment: Alignment.topLeft,
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_ios, color: AppColors.whiteColor),
+                        icon: const Icon(Icons.arrow_back_ios,
+                            color: AppColors.whiteColor),
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                     ),
-                    // Removed Expanded here to allow flexible sizing based on content
-                    // and available space, especially when keyboard is visible.
                     Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 20.0), // Add some padding
+                      padding: const EdgeInsets.symmetric(vertical: 20.0),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Ensure 'assets/images/welcomesm.png' exists in pubspec.yaml and in the correct path
-                          // Added a simple error builder for debugging image loading issues
                           Image.asset(
                             'assets/images/welcomesm.png',
                             height: MediaQuery.of(context).size.height * 0.18,
-                            errorBuilder: (context, error, stackTrace) => const Icon(
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
                               Icons.image_not_supported_outlined,
                               color: AppColors.whiteColor,
                               size: 80,
@@ -242,22 +209,9 @@ void _showErrorDialog(String message) {
                         ],
                       ),
                     ),
-                    // Removed Expanded here as well. The login box will now size based on its content.
-                    // Added a spacer to push the login box down if there's empty space,
-                    // but it will shrink when the keyboard appears.
-                    // Using a Flexible space for better behavior with keyboard
-                    Flexible(
-                      fit: FlexFit.loose, // Allow it to take available space but shrink
-                      child: const SizedBox(height: 20), // Minimum space
-                    ),
+                    const SizedBox(height: 20),
                     _buildFloatingLoginBox(),
-                    // Another Flexible space to help center or push down the content
-                    Flexible(
-                      fit: FlexFit.loose,
-                      child: SizedBox(height: MediaQuery.of(context).viewInsets.bottom > 0 ? 0 : 20),
-                    ),
-                    // Add a small bottom padding to ensure the last elements are not cut off
-                    // Adjust this based on your design for when the keyboard is not active
+                    const SizedBox(height: 20),
                   ],
                 ),
               ),
@@ -277,14 +231,14 @@ void _showErrorDialog(String message) {
         borderRadius: BorderRadius.circular(30.0),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: .15), // Corrected withValues to withOpacity
+            color: Colors.black.withValues(alpha: .15),
             blurRadius: 25,
             offset: const Offset(0, 15),
           ),
-        ], 
+        ],
       ),
       child: Column(
-        mainAxisSize: MainAxisSize.min, // Ensures the column only takes needed space
+        mainAxisSize: MainAxisSize.min,
         children: [
           _buildTextField(
             controller: _usernameController,
@@ -303,7 +257,6 @@ void _showErrorDialog(String message) {
             alignment: Alignment.centerRight,
             child: TextButton(
               onPressed: () {
-                // Handle forgot password logic here
                 debugPrint("Forgot Password pressed!");
               },
               child: Text(
@@ -335,13 +288,14 @@ void _showErrorDialog(String message) {
       style: GoogleFonts.nunito(color: AppColors.primaryDarkBlue),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle: GoogleFonts.nunito(color: AppColors.primaryDarkBlue.withValues(alpha: .7)), // Corrected withValues
+        hintStyle: GoogleFonts.nunito(
+            color: AppColors.primaryDarkBlue.withValues(alpha: .7)),
         prefixIcon: Icon(icon, color: AppColors.primaryDarkBlue),
         suffixIcon: isPassword
             ? IconButton(
                 icon: Icon(
                   _obscurePassword ? Icons.visibility_off : Icons.visibility,
-                  color: AppColors.primaryDarkBlue.withValues(alpha: .6), // Corrected withValues
+                  color: AppColors.primaryDarkBlue.withValues(alpha: .6),
                 ),
                 onPressed: () {
                   setState(() {
@@ -351,20 +305,18 @@ void _showErrorDialog(String message) {
               )
             : null,
         filled: true,
-        fillColor: AppColors.primaryDarkBlue.withValues(alpha: .05), // Corrected withValues
+        fillColor: AppColors.primaryDarkBlue.withValues(alpha: .05),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(15),
-          borderSide: BorderSide.none,
-        ),
-        enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
           borderSide: BorderSide.none,
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(15),
-          borderSide: const BorderSide(color: AppColors.primaryDarkBlue, width: 2),
+          borderSide:
+              const BorderSide(color: AppColors.primaryDarkBlue, width: 2),
         ),
-        contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        contentPadding:
+            const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
       ),
     );
   }
@@ -381,7 +333,7 @@ void _showErrorDialog(String message) {
             borderRadius: BorderRadius.circular(18),
           ),
           elevation: 10,
-          shadowColor: AppColors.primaryDarkBlue.withValues(alpha: .6), // Corrected withValues
+          shadowColor: AppColors.primaryDarkBlue.withValues(alpha: .6),
         ),
         child: _isLoading
             ? const SizedBox(

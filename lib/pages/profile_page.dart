@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/pages/login_page.dart';
 import 'package:staff_mate/pages/submit_ticket_page.dart';
+import 'package:staff_mate/services/session_manger.dart'; // ✅ your SessionManager
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -12,12 +12,9 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-
-  String? username;
-  String? token;
-  String? staffId;
-  String? dept;
-  String? role;
+  String? bearer;
+  String? clinicId;
+  String? userId;
   bool isLoading = true;
 
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
@@ -29,23 +26,19 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> loadUserData() async {
-    final prefs = await SharedPreferences.getInstance();
+    final sessionData = await SessionManager.getSession();
     if (mounted) {
       setState(() {
-        username = prefs.getString('username');
-        token = prefs.getString('token');
-        staffId = prefs.getString('staffId');
-        dept = prefs.getString('dept');
-        role = prefs.getString('role');
+        bearer = sessionData['bearer'] ?? '--';
+        clinicId = sessionData['clinicId'] ?? '--';
+        userId = sessionData['userId'] ?? '--';
         isLoading = false;
       });
     }
   }
 
   Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-
+    await SessionManager.clearSession();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (context) => const LoginPage()),
@@ -58,20 +51,20 @@ class _ProfilePageState extends State<ProfilePage> {
     final List<Widget> contentWidgets = [
       _buildInfoPod(
         icon: Icons.badge_outlined,
-        label: "Staff ID",
-        value: staffId ?? '--',
+        label: "User ID",
+        value: userId ?? '--',
         iconColor: const Color(0xFF6A5AE0),
       ),
       _buildInfoPod(
         icon: Icons.business_center_outlined,
-        label: "Department",
-        value: dept ?? '--',
+        label: "Clinic ID",
+        value: clinicId ?? '--',
         iconColor: const Color(0xFF3E8BFF),
       ),
       _buildInfoPod(
         icon: Icons.security_outlined,
-        label: "Access Token",
-        value: token != null ? "${token!.substring(0, 10)}..." : '--',
+        label: "Bearer Token",
+        value: bearer != null ? "${bearer!.substring(0, 10)}..." : '--',
         iconColor: const Color(0xFF00BFA5),
       ),
       const SizedBox(height: 30),
@@ -86,10 +79,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ? _buildLoadingScreen()
           : Stack(
               children: [
-                Container(
-                  color: const Color(0xFFE3E6FD),
-                ),
-
+                Container(color: const Color(0xFFE3E6FD)),
                 AnimationLimiter(
                   child: Padding(
                     padding: EdgeInsets.only(
@@ -113,7 +103,6 @@ class _ProfilePageState extends State<ProfilePage> {
                     ),
                   ),
                 ),
-
                 AnimationConfiguration.staggeredList(
                   position: 0,
                   duration: const Duration(milliseconds: 500),
@@ -145,12 +134,10 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildFloatingHeader() {
-  
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.38,
       child: Stack(
         children: [
-        
           ClipPath(
             clipper: ProfileHeaderClipper(),
             child: Container(
@@ -165,7 +152,6 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
-         
           SafeArea(
             child: Align(
               alignment: Alignment.topLeft,
@@ -176,7 +162,6 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
-          // The logout button
           SafeArea(
             child: Align(
               alignment: Alignment.topRight,
@@ -187,7 +172,6 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ),
           ),
-          // Positioned Column for Avatar, Name, and Role
           Align(
             alignment: Alignment.bottomCenter,
             child: Column(
@@ -197,14 +181,7 @@ class _ProfilePageState extends State<ProfilePage> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white, width: 5),
-                    boxShadow: [
-                      // BoxShadow(
-                      //   color: Colors.black.withValues(alpha: 15),
-                      //   blurRadius: 10,
-                      //   offset: const Offset(0, 5),
-                      // ),
-                    ],
-                  ), 
+                  ),
                   child: const CircleAvatar(
                     radius: 60,
                     backgroundColor: Color(0xFFE3E6FD),
@@ -217,7 +194,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 const SizedBox(height: 10),
                 Text(
-                  username ?? 'Loading...',
+                  userId ?? 'Loading...',
                   style: const TextStyle(
                     color: Color(0xFF333D79),
                     fontSize: 28,
@@ -226,7 +203,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  role ?? 'Staff Member',
+                  clinicId ?? 'Clinic',
                   style: TextStyle(
                     color: Colors.grey[600],
                     fontSize: 18,
@@ -261,19 +238,15 @@ class _ProfilePageState extends State<ProfilePage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    label,
-                    style: TextStyle(color: Colors.grey[600], fontSize: 14),
-                  ),
+                  Text(label,
+                      style: TextStyle(color: Colors.grey[600], fontSize: 14)),
                   const SizedBox(height: 2),
-                  Text(
-                    value,
-                    style: const TextStyle(
-                      color: Color(0xFF333333),
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                  Text(value,
+                      style: const TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      )),
                 ],
               ),
             ),
@@ -300,9 +273,8 @@ class _ProfilePageState extends State<ProfilePage> {
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF7E90F8),
           padding: const EdgeInsets.symmetric(vertical: 15),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(15),
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
           elevation: 5,
           shadowColor: const Color(0xFF7E90F8).withValues(alpha: .4),
         ),
@@ -310,111 +282,109 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-Widget _buildDrawer() {
-  return Drawer(
-    child: Container(
-      color: const Color(0xFFF4F6FF),
-      child: ListView(
-        padding: EdgeInsets.zero,
-        children: <Widget>[
-          DrawerHeader(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF7E90F8), Color(0xFF8B99FA)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                const CircleAvatar(
-                  radius: 30,
-                  backgroundColor: Color(0xFFE3E6FD),
-                  child: Icon(
-                    Icons.person_rounded,
-                    size: 40,
-                    color: Color(0xFF7E90F8),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  username ?? 'User',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                Text(
-                  role ?? 'Staff',
-                  style: const TextStyle(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _buildDrawerItem(
-            icon: Icons.dashboard_outlined,
-            text: 'Approval Dashboard',
-            onTap: () {},
-          ),
-          _buildDrawerItem(
-            icon: Icons.outbox_outlined,
-            text: 'Submit Ticket',
-            onTap: () {
-              Navigator.pop(context); // close drawer
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SubmitTicketPage()),
-              );
-            },
-          ),
-          _buildDrawerItem(
-            icon: Icons.history_outlined,
-            text: 'Token History',
-            onTap: () {},
-          ),
-          Theme(
-            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-            child: ExpansionTile(
-              leading: const Icon(Icons.date_range_outlined, color: Color(0xFF333D79)),
-              title: const Text(
-                'Attendance Record',
-                style: TextStyle(
-                  color: Color(0xFF333D79),
-                  fontWeight: FontWeight.w600,
+  Widget _buildDrawer() {
+    return Drawer(
+      child: Container(
+        color: const Color(0xFFF4F6FF),
+        child: ListView(
+          padding: EdgeInsets.zero,
+          children: <Widget>[
+            DrawerHeader(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFF7E90F8), Color(0xFF8B99FA)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
               ),
-              children: <Widget>[
-                _buildSubDrawerItem(
-                  icon: Icons.calendar_today_outlined,
-                  text: 'Monthly',
-                  onTap: () {},
-                ),
-                _buildSubDrawerItem(
-                  icon: Icons.beach_access_outlined,
-                  text: 'Gov Leave',
-                  onTap: () {},
-                ),
-              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  const CircleAvatar(
+                    radius: 30,
+                    backgroundColor: Color(0xFFE3E6FD),
+                    child: Icon(
+                      Icons.person_rounded,
+                      size: 40,
+                      color: Color(0xFF7E90F8),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(userId ?? 'User',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      )),
+                  Text(clinicId ?? 'Clinic',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      )),
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 20, thickness: 1, indent: 20, endIndent: 20),
-          _buildDrawerItem(
-            icon: Icons.info_outline,
-            text: 'About Us',
-            onTap: () {},
-          ),
-        ],
+            _buildDrawerItem(
+              icon: Icons.dashboard_outlined,
+              text: 'Approval Dashboard',
+              onTap: () {},
+            ),
+            _buildDrawerItem(
+              icon: Icons.outbox_outlined,
+              text: 'Submit Ticket',
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (context) => const SubmitTicketPage()),
+                );
+              },
+            ),
+            _buildDrawerItem(
+              icon: Icons.history_outlined,
+              text: 'Token History',
+              onTap: () {},
+            ),
+            Theme(
+              data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                leading:
+                    const Icon(Icons.date_range_outlined, color: Color(0xFF333D79)),
+                title: const Text(
+                  'Attendance Record',
+                  style: TextStyle(
+                    color: Color(0xFF333D79),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                children: <Widget>[
+                  _buildSubDrawerItem(
+                    icon: Icons.calendar_today_outlined,
+                    text: 'Monthly',
+                    onTap: () {},
+                  ),
+                  _buildSubDrawerItem(
+                    icon: Icons.beach_access_outlined,
+                    text: 'Gov Leave',
+                    onTap: () {},
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 20, thickness: 1, indent: 20, endIndent: 20),
+            _buildDrawerItem(
+              icon: Icons.info_outline,
+              text: 'About Us',
+              onTap: () {},
+            ),
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
   }
+
   Widget _buildDrawerItem(
       {required IconData icon,
       required String text,
@@ -447,6 +417,7 @@ Widget _buildDrawer() {
       ),
     );
   }
+}
 
 class ProfileHeaderClipper extends CustomClipper<Path> {
   @override
