@@ -5,7 +5,7 @@ import 'package:staff_mate/pages/view_vitals_page.dart'; // ✅ Import the page
 class NursePage extends StatelessWidget {
   const NursePage({super.key});
 
-  @override
+  @override   
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
