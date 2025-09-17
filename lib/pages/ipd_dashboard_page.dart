@@ -4,11 +4,9 @@ import 'package:intl/intl.dart';
 import 'package:staff_mate/api/ipd_service.dart';
 import 'package:staff_mate/models/dashboard_data.dart';
 import 'package:staff_mate/models/patient.dart';
-
-// ✅ import your request pages
 import 'package:staff_mate/pages/req_pres.dart';
 import 'package:staff_mate/pages/req_inve.dart';
-// add imports for other pages similarly if you have them
+
 // import 'package:staff_mate/pages/req_nursing.dart';
 // import 'package:staff_mate/pages/req_consultant.dart';
 
@@ -57,7 +55,7 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
   Future<void> _loadDashboardData() async {
     setState(() {
       _dashboardDataFuture = ipdService.fetchDashboardData();
-    });
+ });
   }
 
   void _filterPatients() {

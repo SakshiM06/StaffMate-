@@ -58,6 +58,8 @@ class _LoginPageState extends State<LoginPage> {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         final innerData = decoded['data'];
+              debugPrint("Body_ppppppppp: $innerData");
+
         if (innerData != null) {
           // ✅ save token and other info
           final prefs = await SharedPreferences.getInstance();
@@ -68,7 +70,6 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setString('userId', innerData['userId'] ?? 'aureus');
           await prefs.setString('zoneId', innerData['zoneid'] ?? 'Asia/Kolkata');
           await prefs.setString('expiryTime', innerData['expirytime'] ?? '');
-          await prefs.setInt('branchId', innerData['branch_id'] ?? 1);
 
           // ✅ immediately call ClinicService to fetch & save clinic details
           final clinicService = ClinicService();
