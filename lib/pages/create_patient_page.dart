@@ -69,6 +69,10 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
         dischargeStatus: '0',
         isMlc: '0',
         patientBalance: 0,
+        active: 1,
+        isPrivateTp: '0',
+        isUnderMaintenance: 0,
+      bedid: 1,
       );
 
       ScaffoldMessenger.of(context).showSnackBar(

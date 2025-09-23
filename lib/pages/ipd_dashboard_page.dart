@@ -7,9 +7,6 @@ import 'package:staff_mate/models/patient.dart';
 import 'package:staff_mate/pages/req_pres.dart';
 import 'package:staff_mate/pages/req_inve.dart';
 
-// import 'package:staff_mate/pages/req_nursing.dart';
-// import 'package:staff_mate/pages/req_consultant.dart';
-
 class IpdDashboardPage extends StatefulWidget {
   const IpdDashboardPage({super.key});
 
@@ -19,15 +16,14 @@ class IpdDashboardPage extends StatefulWidget {
 
 class _IpdDashboardPageState extends State<IpdDashboardPage> {
   final IpdService ipdService = IpdService();
-  Future<IpdDashboardData>? _dashboardDataFuture;
+  late Future<IpdDashboardData> _dashboardDataFuture;
 
   List<Patient> _allPatients = [];
   List<Patient> _filteredPatients = [];
 
   final TextEditingController _searchController = TextEditingController();
-
-  String _selectedFilterCategory = 'Inhouse Patients';
-  String? _selectedWard = 'All Ward';
+  String? _selectedFilterCategory;
+  String _selectedWard = 'All Ward';
   String _selectedStatus = 'Active';
   String _selectedCategory = 'Format1';
   DateTimeRange? _selectedDateRange;
@@ -39,10 +35,16 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
   final List<String> statusOptions = ['Active', 'Inactive'];
   final List<String> categoryOptions = ['Format1', 'Free Case'];
 
+  // counters
+  int avaLen = 0, tpLen = 0, pTpLen = 0,
+      mlcLen = 0, selfLen = 0, totalBed = 0,
+      dischargeLen = 0, exceedLen = 0, inhouseLen = 0;
+  bool bedCountLoading = false;
+
   @override
   void initState() {
     super.initState();
-    _loadDashboardData();
+    _dashboardDataFuture = ipdService.fetchDashboardData();
     _searchController.addListener(_filterPatients);
   }
 
@@ -52,59 +54,191 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     super.dispose();
   }
 
-  Future<void> _loadDashboardData() async {
-    setState(() {
-      _dashboardDataFuture = ipdService.fetchDashboardData();
- });
+//   void _filterPatients() {
+//     List<Patient> tempPatients = List.from(_allPatients);
+
+// tempPatients.removeWhere((p) => p.ward.isEmpty);
+// final seenBedIds = <dynamic>{};
+// tempPatients = tempPatients.where((p) => seenBedIds.add(p.bedid)).toList();
+// debugPrint('jai ho  $seenBedIds.length');
+
+// // Sort patients by bedid
+// tempPatients.sort((a, b) => a.bedid.compareTo(b.bedid));
+
+//     // Apply filter categories
+//     switch (_selectedFilterCategory) {
+//       case 'To be Discharged':
+//         tempPatients = tempPatients.where((p) => p.dischargeStatus != '0').toList();
+//         break;
+//       case 'Excess Amount':
+//         tempPatients = tempPatients.where((p) => p.patientBalance > 0).toList();
+//         break;
+//       case 'MLC':
+//         tempPatients = tempPatients.where((p) => p.isMlc != '0').toList();
+//         break;
+//       case 'Self':
+//         tempPatients = tempPatients.where((p) =>
+//             p.active == 1 &&
+//             p.isMlc == '0' &&
+//             p.isPrivateTp == '0' &&
+//             p.dischargeStatus == '0' &&
+//             p.party.toLowerCase() == 'self' &&
+//             p.isUnderMaintenance == 0).toList();
+//         break;
+//       case 'TP':
+//         tempPatients = tempPatients.where((p) =>
+//             p.active == 1 &&
+//             p.isMlc == '0' &&
+//             p.isPrivateTp == '0' &&
+//             p.dischargeStatus == '0' &&
+//             p.party.toLowerCase().contains('third party') &&
+//             !p.party.toLowerCase().contains('corporate') &&
+//             p.isUnderMaintenance == 0).toList();
+//         break;
+//       case 'TP Corporate':
+//         tempPatients = tempPatients.where((p) =>
+//             p.active == 1 &&
+//             p.party.toLowerCase().contains('corporate') &&
+//             p.isUnderMaintenance == 0).toList();
+//         break;
+//       default:
+//         break;
+//     }
+
+//     // Apply ward, date range, and search filters
+//     _filteredPatients = tempPatients.where((p) {
+//       final wardMatch = _selectedWard == 'All Ward' || p.ward == _selectedWard;
+
+//       bool dateMatch = true;
+//       if (_selectedDateRange != null) {
+//         dateMatch = p.admissionDateTime.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+//                     p.admissionDateTime.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
+//       }
+
+//       final searchMatch = _searchController.text.isEmpty ||
+//           p.patientname.toLowerCase().contains(_searchController.text.toLowerCase()) ||
+//           p.ipdNo.toLowerCase().contains(_searchController.text.toLowerCase()) ||
+//           p.practitionername.toLowerCase().contains(_searchController.text.toLowerCase()) ||
+//           p.ward.toLowerCase().contains(_searchController.text.toLowerCase());
+
+//       return wardMatch && dateMatch && searchMatch;
+//     }).toList();
+
+//     setState(() {});
+//   }
+  
+  List<Patient> processPatients(List<Patient> patients) {
+  // 1. Filter out patients with null/empty ward
+  final filtered = patients.where((p) => p.ward.isNotEmpty);
+  // 2. Deduplicate by bedid (keep first occurrence)
+  debugPrint('filtered patients = $filtered.');  
+  final seen = <int>{};
+  final unique = filtered.where((p) {
+    if (seen.contains(p.bedid)) {
+      return false;
+    } else {
+      seen.add(p.bedid);
+      return true;
+    }
+  });
+
+  // 3. Sort by bedid
+  final sorted = unique.toList()
+    ..sort((a, b) => a.bedid.compareTo(b.bedid));
+
+  return sorted;
+}
+
+
+void _filterPatients() {
+  // 1️⃣ Copy all patients
+  List<Patient> tempPatients = List.from(_allPatients);
+
+  // 2️⃣ Remove patients with empty ward first (like React splice loop)
+  tempPatients.removeWhere((p) => p.ward.isEmpty);
+
+  // 3️⃣ Deduplicate by bedid
+  final seenBedIds = <int>{};
+  tempPatients = tempPatients.where((p) => seenBedIds.add(p.bedid)).toList();
+
+  // 4️⃣ Sort by bedid
+  tempPatients.sort((a, b) => a.bedid.compareTo(b.bedid));
+
+  // 5️⃣ Debug prints
+  debugPrint('unique bedids: ${tempPatients.map((p) => p.bedid).toList()}');
+  debugPrint('unique count: ${tempPatients.length}');
+
+  // 6️⃣ Apply filter category (Self, TP, MLC, etc.) – keep your original logic
+  switch (_selectedFilterCategory) {
+    case 'To be Discharged':
+      tempPatients = tempPatients.where((p) => p.dischargeStatus != '0').toList();
+      break;
+    case 'Excess Amount':
+      tempPatients = tempPatients.where((p) => p.patientBalance > 0).toList();
+      break;
+    case 'MLC':
+      tempPatients = tempPatients.where((p) => p.isMlc != '0').toList();
+      break;
+    case 'Self':
+      tempPatients = tempPatients.where((p) =>
+        p.active == 1 &&
+        p.isMlc == '0' &&
+        p.isPrivateTp == '0' &&
+        p.dischargeStatus == '0' &&
+        p.party.toLowerCase() == 'self' &&
+        p.isUnderMaintenance == 0
+      ).toList();
+      break;
+    case 'TP':
+      tempPatients = tempPatients.where((p) =>
+        p.active == 1 &&
+        p.isMlc == '0' &&
+        p.isPrivateTp == '0' &&
+        p.dischargeStatus == '0' &&
+        p.party.toLowerCase().contains('third party') &&
+        !p.party.toLowerCase().contains('corporate') &&
+        p.isUnderMaintenance == 0
+      ).toList();
+      break;
+    case 'TP Corporate':
+      tempPatients = tempPatients.where((p) =>
+        p.active == 1 &&
+        p.party.toLowerCase().contains('corporate') &&
+        p.isUnderMaintenance == 0
+      ).toList();
+      break;
+    default:
+      break;
   }
 
-  void _filterPatients() {
-    List<Patient> tempPatients = List.from(_allPatients);
+  // 7️⃣ Apply ward, date range, and search filters
+  _filteredPatients = tempPatients.where((p) {
+    final wardMatch = _selectedWard == 'All Ward' || p.ward == _selectedWard;
 
-    switch (_selectedFilterCategory) {
-      case 'To be Discharged':
-        tempPatients = tempPatients.where((p) => p.dischargeStatus != '0').toList();
-        break;
-      case 'Excess Amount':
-        tempPatients = tempPatients.where((p) => p.patientBalance > 0).toList();
-        break;
-      case 'MLC':
-        tempPatients = tempPatients.where((p) => p.isMlc != '0').toList();
-        break;
-      case 'Self':
-        tempPatients = tempPatients.where((p) => p.party.toLowerCase().contains('self')).toList();
-        break;
-      case 'TP':
-        tempPatients = tempPatients.where(
-            (p) => p.party.toLowerCase().contains('third party') && !p.party.toLowerCase().contains('corporate')).toList();
-        break;
-      case 'TP Corporate':
-        tempPatients = tempPatients.where((p) => p.party.toLowerCase().contains('corporate')).toList();
-        break;
-      default:
-        break;
+    bool dateMatch = true;
+    if (_selectedDateRange != null) {
+      dateMatch = p.admissionDateTime.isAfter(
+          _selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+          p.admissionDateTime.isBefore(
+          _selectedDateRange!.end.add(const Duration(days: 1)));
     }
 
-    if (mounted) {
-      setState(() {
-        _filteredPatients = tempPatients.where((p) {
-          final wardMatch = _selectedWard == 'All Ward' || p.ward == _selectedWard;
-          bool dateMatch = true;
-          if (_selectedDateRange != null) {
-            dateMatch = p.admissionDateTime.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
-                p.admissionDateTime.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
-          }
-          final searchMatch = _searchController.text.isEmpty ||
-              p.patientname.toLowerCase().contains(_searchController.text.toLowerCase()) ||
-              p.ipdNo.toLowerCase().contains(_searchController.text.toLowerCase()) ||
-              p.practitionername.toLowerCase().contains(_searchController.text.toLowerCase()) ||
-              p.ward.toLowerCase().contains(_searchController.text.toLowerCase());
+    final searchText = _searchController.text.toLowerCase();
+    final searchMatch = searchText.isEmpty ||
+        p.patientname.toLowerCase().contains(searchText) ||
+        p.ipdNo.toLowerCase().contains(searchText) ||
+        p.practitionername.toLowerCase().contains(searchText) ||
+        p.ward.toLowerCase().contains(searchText);
 
-          return wardMatch && dateMatch && searchMatch;
-        }).toList();
-      });
-    }
-  }
+    return wardMatch && dateMatch && searchMatch;
+  }).toList();
+
+  // 8️⃣ Refresh UI
+  setState(() {});
+}
+
+
+
 
   void _selectDateRange() async {
     final picked = await showDateRangePicker(
@@ -113,7 +247,7 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
       lastDate: DateTime(2026),
     );
     if (picked != null) {
-      setState(() => _selectedDateRange = picked);
+      _selectedDateRange = picked;
       _filterPatients();
     }
   }
@@ -121,7 +255,7 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
   void _showPatientDetailsDialog(Patient patient) {
     showDialog(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: .5),
+      barrierColor: Colors.black.withAlpha(125),
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         title: Text(patient.patientname, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
@@ -131,14 +265,12 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
             children: [
               _buildDetailRow(Icons.local_hospital_outlined, 'Ward | Bed No:', '${patient.ward} | ${patient.bedname}'),
               _buildDetailRow(Icons.person_outline, 'Consultant Name:', patient.practitionername),
-              _buildDetailRow(Icons.calendar_today_outlined, 'Admission Date:',
-                  DateFormat('dd-MM-yyyy HH:mm').format(patient.admissionDateTime)),
+              _buildDetailRow(Icons.calendar_today_outlined, 'Admission Date:', DateFormat('dd-MM-yyyy HH:mm').format(patient.admissionDateTime)),
               _buildDetailRow(Icons.money, 'Patient Balance:', '₹${patient.patientBalance}'),
               _buildDetailRow(Icons.info_outline, 'IPD No:', patient.ipdNo),
               _buildDetailRow(Icons.credit_card, 'Party:', patient.party),
               _buildDetailRow(Icons.perm_identity, 'Age/Gender:', '${patient.age}Y / ${patient.gender.toUpperCase()}'),
-              _buildDetailRow(Icons.logout, 'Discharge Status:',
-                  patient.dischargeStatus == '0' ? 'Not Discharged' : 'Discharged'),
+              _buildDetailRow(Icons.logout, 'Discharge Status:', patient.dischargeStatus == '0' ? 'Not Discharged' : 'Discharged'),
               _buildDetailRow(Icons.medical_services_outlined, 'MLC:', patient.isMlc == '0' ? 'No' : 'Yes'),
             ],
           ),
@@ -148,8 +280,8 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
-              Navigator.of(context).pop(); 
-              _showAddOptionsDialog(context); 
+              Navigator.of(context).pop();
+              _showAddOptionsDialog(context);
             },
           ),
         ],
@@ -160,38 +292,29 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
   void _showAddOptionsDialog(BuildContext context) {
     showDialog(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: .5),
+      barrierColor: Colors.black.withAlpha(125),
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         title: Text('Add New Request', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildOptionBox(context, 'Req Prescription', const ReqPrescriptionPage(patientName: '' )),
-            _buildOptionBox(context, 'Req Investigation', const ReqInvestigationPage(patientName:   '' )),
-            // replace with your actual widgets for the other two:
-            // _buildOptionBox(context, 'Req Nursing Care', const ReqNursingPage()),
-            // _buildOptionBox(context, 'Req Consultant', const ReqConsultantPage()),
+            _buildOptionBox(context, 'Req Prescription', const ReqPrescriptionPage(patientName: '')),
+            _buildOptionBox(context, 'Req Investigation', const ReqInvestigationPage(patientName: '')),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
         ],
       ),
     );
   }
 
-  // ✅ updated to accept a destination page
   Widget _buildOptionBox(BuildContext context, String title, Widget page) {
     return GestureDetector(
       onTap: () {
         Navigator.of(context).pop();
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => page),
-        );
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
       },
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 8.0),
@@ -200,41 +323,10 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16.0),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.indigo),
-          ),
+          child: Text(title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.indigo)),
         ),
-      ),
-    );
-  }
-
-  void _showStatDetailsDialog(String title, String value) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: .5),
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text(title, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text("Value: $value", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: const [
-                Icon(Icons.notifications_none, color: Colors.indigo, size: 28),
-                Icon(Icons.flag_outlined, color: Colors.indigo, size: 28),
-                Icon(Icons.favorite_border, color: Colors.indigo, size: 28),
-              ],
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("Close")),
-        ],
       ),
     );
   }
@@ -251,8 +343,7 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
+                Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
                 Text(value, style: const TextStyle(fontSize: 14)),
               ],
             ),
@@ -311,21 +402,18 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
             return const Center(child: Text("No patient data available."));
           }
 
-          final dashboardData = snapshot.data!;
+          // Initialize patients and stats once
           if (_allPatients.isEmpty) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (mounted) {
-                _allPatients = dashboardData.patients;
-                _filterPatients();
-              }
-            });
+            _allPatients = snapshot.data!.patients;
+            _filteredPatients = List.from(_allPatients);
+            _calculateBedStats();
           }
 
           return SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
-                _buildStatsGrid(dashboardData.statistics),
+                _buildStatsGrid(),
                 const SizedBox(height: 16),
                 _buildFilterSection(),
                 const SizedBox(height: 16),
@@ -338,51 +426,64 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     );
   }
 
-  Widget _buildStatsGrid(Map<String, int> statistics) {
-    final statTitles = [
-      'Excess Amount',
-      'Inhouse Patients',
-      'Total Bed',
-      'Available',
-      'Self',
-      'MLC',
-      'TP',
-      'TP Corporate',
-      'To be Discharged',
-    ];
-
-    Widget buildTappableStatCard(String title) {
-      final value = statistics[title] ?? 0;
-      final isSelected = _selectedFilterCategory == title;
-
-      return Expanded(
-        child: GestureDetector(
-          onTap: () {
-            setState(() {
-              _selectedFilterCategory = title;
-            });
-            _filterPatients();
-            _showStatDetailsDialog(title, value.toString());
-          },
-          child: StatCard(
-            title: title,
-            value: value.toString(),
-            color: _getStatCardColor(title),
-            isSelected: isSelected,
-          ),
-        ),
-      );
-    }
+  // ---------------- Stats Grid ----------------
+  Widget _buildStatsGrid() {
+    final statData = {
+      'Excess Amount': exceedLen,
+      'Inhouse Patients': inhouseLen,
+      'Total Bed': totalBed,
+      'Available': avaLen,
+      'Self': selfLen,
+      'MLC': mlcLen,
+      'TP': tpLen,
+      'TP Corporate': pTpLen,
+      'To be Discharged': dischargeLen,
+    };
 
     return Column(
       children: [
-        Row(children: statTitles.sublist(0, 5).map(buildTappableStatCard).toList()),
+        Row(
+          children: statData.entries.toList().sublist(0, 5).map((e) => Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedFilterCategory = _selectedFilterCategory == e.key ? null : e.key;
+                  _filterPatients();
+                });
+              },
+              child: StatCard(
+                title: e.key,
+                value: e.value.toString(),
+                color: _getStatCardColor(e.key),
+                isSelected: _selectedFilterCategory == e.key,
+              ),
+            ),
+          )).toList(),
+        ),
         const SizedBox(height: 8),
-        Row(children: statTitles.sublist(5, 9).map(buildTappableStatCard).toList()),
+        Row(
+          children: statData.entries.toList().sublist(5, 9).map((e) => Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedFilterCategory = _selectedFilterCategory == e.key ? null : e.key;
+                  _filterPatients();
+                });
+              },
+              child: StatCard(
+                title: e.key,
+                value: e.value.toString(),
+                color: _getStatCardColor(e.key),
+                isSelected: _selectedFilterCategory == e.key,
+              ),
+            ),
+          )).toList(),
+        ),
       ],
     );
   }
 
+  // ---------------- Filter Section ----------------
   Widget _buildFilterSection() {
     return Card(
       elevation: 2,
@@ -403,31 +504,37 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
             Row(
               children: [
                 Expanded(
-                    child: _buildDropdown(
-                        value: _selectedWard,
-                        items: wardOptions,
-                        onChanged: (val) {
-                          setState(() => _selectedWard = val);
-                          _filterPatients();
-                        })),
+                  child: _buildDropdown(
+                    value: _selectedWard,
+                    items: wardOptions,
+                    onChanged: (val) {
+                      _selectedWard = val!;
+                      _filterPatients();
+                    },
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                    child: _buildDropdown(
-                        value: _selectedStatus,
-                        items: statusOptions,
-                        onChanged: (val) {
-                          setState(() => _selectedStatus = val!);
-                          _filterPatients();
-                        })),
+                  child: _buildDropdown(
+                    value: _selectedStatus,
+                    items: statusOptions,
+                    onChanged: (val) {
+                      _selectedStatus = val!;
+                      _filterPatients();
+                    },
+                  ),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
-                    child: _buildDropdown(
-                        value: _selectedCategory,
-                        items: categoryOptions,
-                        onChanged: (val) {
-                          setState(() => _selectedCategory = val!);
-                          _filterPatients();
-                        })),
+                  child: _buildDropdown(
+                    value: _selectedCategory,
+                    items: categoryOptions,
+                    onChanged: (val) {
+                      _selectedCategory = val!;
+                      _filterPatients();
+                    },
+                  ),
+                ),
                 const SizedBox(width: 12),
                 IconButton(
                   icon: const Icon(Icons.calendar_today, color: Colors.indigo),
@@ -442,8 +549,7 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     );
   }
 
-  Widget _buildDropdown(
-      {required String? value, required List<String> items, required ValueChanged<String?> onChanged}) {
+  Widget _buildDropdown({required String? value, required List<String> items, required ValueChanged<String?> onChanged}) {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -455,15 +561,14 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
         child: DropdownButton<String>(
           value: value,
           isExpanded: true,
-          items: items
-              .map((item) => DropdownMenuItem(value: item, child: Text(item, overflow: TextOverflow.ellipsis)))
-              .toList(),
+          items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: onChanged,
         ),
       ),
     );
   }
 
+  // ---------------- Patient Grid ----------------
   Widget _buildPatientGrid() {
     if (_filteredPatients.isEmpty) {
       return const Center(
@@ -491,6 +596,34 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
         );
       },
     );
+  }
+
+  // ---------------- Get Bed Values ----------------
+  void _calculateBedStats() {
+    avaLen = tpLen = pTpLen = mlcLen = selfLen = totalBed = dischargeLen = exceedLen = inhouseLen = 0;
+
+    List<Patient> data = List.from(_allPatients);
+    data.removeWhere((p) => p.ward.isEmpty);
+
+    final seenBedIds = <dynamic>{};
+    data = data.where((p) {
+      if (seenBedIds.contains(p.bedid)) return false;
+      seenBedIds.add(p.bedid);
+      return true;
+    }).toList();
+
+    for (var p in data) {
+      if (p.patientBalance > 0) exceedLen++;
+      if (p.dischargeStatus == '0') avaLen++;
+      if (p.active == 1 && p.isPrivateTp == '1' && p.dischargeStatus == '0' && p.party.toLowerCase() == 'third party' && p.isUnderMaintenance == 0) tpLen++;
+      if (p.active == 1 && p.dischargeStatus == '0' && p.isMlc == '1' && p.isUnderMaintenance == 0) mlcLen++;
+      if (p.active == 1 && p.isMlc == '0' && p.isPrivateTp == '0' && p.dischargeStatus == '0' && p.party.toLowerCase() == 'self' && p.isUnderMaintenance == 0) selfLen++;
+      if (p.dischargeStatus != '0') dischargeLen++;
+      if (p.party.toLowerCase().contains('corporate') && p.isUnderMaintenance == 0) pTpLen++;
+      if (p.dischargeStatus == '0') inhouseLen++;
+    }
+
+    totalBed = data.length;
   }
 }
 
@@ -524,7 +657,7 @@ class StatCard extends StatelessWidget {
                 overflow: TextOverflow.ellipsis),
             const SizedBox(height: 4),
             Text(value,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 20)),
+                style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
           ],
         ),
       ),
@@ -543,7 +676,7 @@ class PatientGridCard extends StatelessWidget {
     if (patient.isMlc != '0') return const Color(0xFFC62828);
     if (patient.party.toLowerCase().contains('corporate')) return const Color(0xFF6A1B9A);
     if (patient.party.toLowerCase().contains('third party')) return const Color(0xFF2E7D32);
-    if (patient.party.toLowerCase().contains('self')) return const Color(0xFF455A64);
+    if (patient.party.toLowerCase() == 'self') return const Color(0xFF455A64);
     if (patient.patientBalance > 0) return const Color(0xFF303F9F);
     return Colors.blueGrey;
   }
@@ -565,8 +698,7 @@ class PatientGridCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(patient.patientname,
-                    style:
-                        const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 4),
