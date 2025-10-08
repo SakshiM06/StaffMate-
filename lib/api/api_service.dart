@@ -3,12 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
 class ApiService {
-  static const String baseUrl = "https://103.159.239.222:9090/sclyte";
+  static const String baseUrl = "https://test.smartcarehis.com:8443/security/auth/login";
 
   static Future<Map<String, dynamic>?> loginUser(
       String userName, String password) async {
     try {
-      final url = Uri.parse("$baseUrl/login");
+      final url = Uri.parse("$baseUrl/security/auth/login");
 
       final body = {
         "userName": userName.trim(), 

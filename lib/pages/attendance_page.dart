@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:intl/intl.dart'; // For date formatting
-
-// Make sure this path to your camera widget is correct.
-import '../widgets/camera_preview_widget.dart'; // Assuming this path is correct
+import 'package:intl/intl.dart';
+import 'package:camera/camera.dart';
 
 // Define the color palette
 class AppColors {
@@ -19,7 +17,7 @@ class AppColors {
   static const Color lightGreyColor = Color(0xFFF0F4F8);
   static const Color fieldFillColor = Color(0xFFE3E8ED);
   static const Color errorRed = Color(0xFFE53935);
-  static const Color warningOrange = Color(0xFFFFA726); // Added for warnings
+  static const Color warningOrange = Color(0xFFFFA726);
 }
 
 class AttendancePage extends StatefulWidget {
@@ -40,9 +38,22 @@ class _AttendancePageState extends State<AttendancePage>
   String _currentTime = "";
   String? _attendanceStatusMessage;
 
+  // Camera related variables
+  CameraController? _cameraController;
+  List<CameraDescription> _cameras = [];
+  bool _isCameraInitialized = false;
+  bool _cameraError = false;
+
   @override
   void initState() {
     super.initState();
+    _initializeAnimations();
+    _initializeTimer();
+    _initializeCamera();
+    _loadAttendanceState();
+  }
+
+  void _initializeAnimations() {
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 200),
@@ -51,16 +62,59 @@ class _AttendancePageState extends State<AttendancePage>
       parent: _animationController,
       curve: Curves.easeOut,
     ));
-    _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
-    _getTime(); // Initial call to set the time immediately
+  }
 
-    _loadAttendanceState();
+  void _initializeTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (Timer t) => _getTime());
+    _getTime();
+  }
+
+  Future<void> _initializeCamera() async {
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isNotEmpty) {
+        // Use front camera if available, otherwise use the first camera
+        final frontCamera = _cameras.firstWhere(
+          (camera) => camera.lensDirection == CameraLensDirection.front,
+          orElse: () => _cameras.first,
+        );
+
+        _cameraController = CameraController(
+          frontCamera,
+          ResolutionPreset.medium,
+          enableAudio: false,
+        );
+
+        await _cameraController!.initialize();
+        
+        if (mounted) {
+          setState(() {
+            _isCameraInitialized = true;
+            _cameraError = false;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _cameraError = true;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error initializing camera: $e');
+      if (mounted) {
+        setState(() {
+          _cameraError = true;
+        });
+      }
+    }
   }
 
   @override
   void dispose() {
     _animationController.dispose();
     _timer?.cancel();
+    _cameraController?.dispose();
     super.dispose();
   }
 
@@ -74,9 +128,7 @@ class _AttendancePageState extends State<AttendancePage>
   }
 
   void _loadAttendanceState() {
-    // In a real application, you would load these values from persistent storage
-    // (e.g., SharedPreferences, a database, or a backend API) for the current day.
-    // For this example, we start fresh each time the page loads.
+    // Load from persistent storage in real app
     isPunchedIn = false;
     punchInTime = null;
     punchOutTime = null;
@@ -88,24 +140,22 @@ class _AttendancePageState extends State<AttendancePage>
       _animationController.reverse();
       setState(() {
         if (!isPunchedIn) {
-          // --- Punch In Logic ---
-          // Check if already punched in today
-          if (punchInTime != null && punchInTime!.day == DateTime.now().day &&
-              punchInTime!.month == DateTime.now().month &&
-              punchInTime!.year == DateTime.now().year) {
+          // Punch In Logic
+          if (punchInTime != null && 
+              _isSameDay(punchInTime!, DateTime.now())) {
             _attendanceStatusMessage = "You have already punched in today.";
-            return; // Prevent punching in again
+            return;
           }
 
           isPunchedIn = true;
           punchInTime = DateTime.now();
-          punchOutTime = null; // Clear previous punch out on new punch in
+          punchOutTime = null;
           _attendanceStatusMessage = "Punched In Successfully!";
         } else {
-          // --- Punch Out Logic ---
+          // Punch Out Logic
           if (punchInTime == null) {
             _attendanceStatusMessage = "Error: No punch-in record found to punch out.";
-            isPunchedIn = false; // Reset to ensure consistent state
+            isPunchedIn = false;
             return;
           }
 
@@ -114,65 +164,77 @@ class _AttendancePageState extends State<AttendancePage>
           // Minimum 6 hours work check
           if (workedDuration.inHours < 6) {
             _attendanceStatusMessage =
-            "Cannot punch out. Minimum 6 hours of work required. (Worked: ${workedDuration.inHours}h ${workedDuration.inMinutes.remainder(60)}m)";
-            return; // Prevent punch out
+                "Cannot punch out. Minimum 6 hours of work required. (Worked: ${workedDuration.inHours}h ${workedDuration.inMinutes.remainder(60)}m)";
+            return;
           }
 
           punchOutTime = DateTime.now();
-          isPunchedIn = false; // Reset state after punching out
+          isPunchedIn = false;
 
-          // Half-day calculation (6 to 8 hours)
+          // Half-day or full-day calculation
           if (workedDuration.inHours < 8) {
             _attendanceStatusMessage =
-            "Punched Out (Half Day - ${workedDuration.inHours}h ${workedDuration.inMinutes.remainder(60)}m)";
+                "Punched Out (Half Day - ${workedDuration.inHours}h ${workedDuration.inMinutes.remainder(60)}m)";
           } else {
             _attendanceStatusMessage =
-            "Punched Out (Full Day - ${workedDuration.inHours}h ${workedDuration.inMinutes.remainder(60)}m)";
+                "Punched Out (Full Day - ${workedDuration.inHours}h ${workedDuration.inMinutes.remainder(60)}m)";
           }
         }
       });
     });
   }
 
+  bool _isSameDay(DateTime date1, DateTime date2) {
+    return date1.year == date2.year &&
+           date1.month == date2.month &&
+           date1.day == date2.day;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final mediaQuery = MediaQuery.of(context);
-    final screenHeight = mediaQuery.size.height;
-    final screenWidth = mediaQuery.size.width;
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+    final Size screenSize = mediaQuery.size;
+    final double screenHeight = screenSize.height;
+    final double screenWidth = screenSize.width;
+    final EdgeInsets viewPadding = mediaQuery.viewPadding;
 
-    // Calculate dynamic padding for content based on header height
-    final double headerHeight = screenHeight * 0.25;
-    // The clipper's lowest point is around size.height - size.height * 0.3
-    // We want the content to start a bit below that curve
-    final double contentTopPadding = headerHeight - (screenHeight * 0.25 * 0.2);
+    final double statusBarHeight = viewPadding.top;
+    final double bottomNavHeight = viewPadding.bottom;
+    final double availableHeight = screenHeight - statusBarHeight - bottomNavHeight;
 
+    final double headerHeight = availableHeight * 0.22; 
+    final double horizontalPadding = screenWidth * 0.05;
 
     return Scaffold(
       backgroundColor: AppColors.lightGreyColor,
-      body: Stack(
+      body: Column(
         children: [
-          // Layer 1: The custom-shaped header with the clock
-          _buildHeaderAndClock(screenHeight, screenWidth),
-
-          // Layer 2: Main content, starting below the header
-          Positioned.fill(
-            top: contentTopPadding, // Adjust position to start below the header curve
+          _buildHeaderAndClock(headerHeight, screenWidth, statusBarHeight),
+          Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.symmetric(
-                horizontal: screenWidth * 0.05,
+                horizontal: horizontalPadding,
+                vertical: screenHeight * 0.02,
               ),
               child: Column(
                 children: [
-                  SizedBox(height: screenHeight * 0.03), // Space from header
                   _buildCameraPreview(screenHeight, screenWidth),
-                  SizedBox(height: screenHeight * 0.04),
-                  if (_attendanceStatusMessage != null)
+                SizedBox(height: screenHeight * 0.025),
+                  
+                 if (_attendanceStatusMessage != null)
                     _buildStatusMessage(screenHeight, screenWidth),
-                  SizedBox(height: _attendanceStatusMessage != null ? screenHeight * 0.02 : 0),
+                  
+                  if (_attendanceStatusMessage != null)
+                    SizedBox(height: screenHeight * 0.02),
+                  
+                  // Punch button
                   _buildPunchButton(screenHeight, screenWidth),
-                  SizedBox(height: screenHeight * 0.04),
+                  
+                  SizedBox(height: screenHeight * 0.025),
+                  
+                  // Punch time display
                   _buildPunchTimeDisplay(screenHeight, screenWidth),
-                  SizedBox(height: screenHeight * 0.05), // Bottom spacing
+                   SizedBox(height: screenHeight * 0.02),
                 ],
               ),
             ),
@@ -182,11 +244,11 @@ class _AttendancePageState extends State<AttendancePage>
     );
   }
 
-  Widget _buildHeaderAndClock(double screenHeight, double screenWidth) {
+  Widget _buildHeaderAndClock(double headerHeight, double screenWidth, double statusBarHeight) {
     return ClipPath(
       clipper: AttendanceHeaderClipper(),
       child: Container(
-        height: screenHeight * 0.25,
+        height: headerHeight + statusBarHeight,
         width: double.infinity,
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -207,7 +269,7 @@ class _AttendancePageState extends State<AttendancePage>
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              SizedBox(height: screenHeight * 0.01),
+              SizedBox(height: headerHeight * 0.05),
               Text(
                 _currentTime,
                 style: GoogleFonts.nunito(
@@ -224,64 +286,192 @@ class _AttendancePageState extends State<AttendancePage>
   }
 
   Widget _buildCameraPreview(double screenHeight, double screenWidth) {
+   final double squareSize = screenWidth * 0.9;
+    
     return Card(
       elevation: 8,
       shadowColor: AppColors.primaryDarkBlue.withValues(alpha: .15),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(screenWidth * 0.06)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(screenWidth * 0.04),
+      ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(screenWidth * 0.06),
+        borderRadius: BorderRadius.circular(screenWidth * 0.04),
         child: Container(
-          height: screenHeight * 0.30, // Slightly adjusted height
-          width: double.infinity,
-          color: Colors.grey[200], // Placeholder background for camera
-          child: const CameraPreviewWidget(), // Your actual camera widget
+          height: squareSize, // Square shape
+          width: squareSize,
+          color: Colors.grey[200],
+          child: _buildCameraWidget(screenHeight, screenWidth),
         ),
       ),
     );
   }
 
+  Widget _buildCameraWidget(double screenHeight, double screenWidth) {
+    if (_cameraError) {
+      return _buildCameraErrorWidget(screenWidth);
+    }
+
+    if (!_isCameraInitialized || _cameraController == null) {
+      return _buildCameraLoadingWidget(screenWidth);
+    }
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        FittedBox(
+          fit: BoxFit.cover,
+          child: SizedBox(
+            width: _cameraController!.value.previewSize?.height ?? 100,
+            height: _cameraController!.value.previewSize?.width ?? 100,
+            child: CameraPreview(_cameraController!),
+          ),
+        ),
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: AppColors.accentTeal.withValues(alpha: 0.3),
+              width: 2,
+            ),
+            borderRadius: BorderRadius.circular(screenWidth * 0.04),
+          ),
+        ),
+        Positioned(
+          top: 8,
+          right: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.accentTeal,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.videocam,
+                  color: AppColors.whiteColor,
+                  size: 12,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  "LIVE",
+                  style: GoogleFonts.poppins(
+                    color: AppColors.whiteColor,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCameraLoadingWidget(double screenWidth) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const CircularProgressIndicator(
+            color: AppColors.accentTeal,
+          ),
+          SizedBox(height: screenWidth * 0.04),
+          Text(
+            "Initializing Camera...",
+            style: GoogleFonts.poppins(
+              color: AppColors.textBodyColor,
+              fontSize: screenWidth * 0.035,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCameraErrorWidget(double screenWidth) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.camera_alt_outlined,
+            size: screenWidth * 0.12,
+            color: AppColors.textBodyColor,
+          ),
+          SizedBox(height: screenWidth * 0.03),
+          Text(
+            "Camera not available",
+            style: GoogleFonts.poppins(
+              color: AppColors.textBodyColor,
+              fontSize: screenWidth * 0.035,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          SizedBox(height: screenWidth * 0.02),
+          ElevatedButton.icon(
+            onPressed: _initializeCamera,
+            icon: const Icon(Icons.refresh, size: 16),
+            label: const Text("Retry"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accentTeal,
+              foregroundColor: AppColors.whiteColor,
+              padding: EdgeInsets.symmetric(
+                horizontal: screenWidth * 0.04,
+                vertical: screenWidth * 0.02,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPunchButton(double screenHeight, double screenWidth) {
-    final buttonSize = screenWidth * 0.48; // Responsive button size
+    final double buttonWidth = screenWidth * 0.6; // Rectangle width
+    final double buttonHeight = screenHeight * 0.08; // Rectangle height
+    
     return GestureDetector(
       onTap: _punch,
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: Container(
-          height: buttonSize,
-          width: buttonSize,
+          height: buttonHeight,
+          width: buttonWidth,
           decoration: BoxDecoration(
             gradient: LinearGradient(
               colors: isPunchedIn
-                  ? [AppColors.errorRed, AppColors.errorRed.withValues(alpha:0.8)] // Red gradient for punch out
-                  : [AppColors.accentTeal, AppColors.darkerAccentTeal], // Teal gradient for punch in
+                  ? [AppColors.errorRed, AppColors.errorRed.withValues(alpha: 0.8)]
+                  : [AppColors.accentTeal, AppColors.darkerAccentTeal],
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
             ),
-            shape: BoxShape.circle,
+            borderRadius: BorderRadius.circular(screenWidth * 0.04), // Rectangle with rounded corners
             boxShadow: [
               BoxShadow(
                 color: (isPunchedIn ? AppColors.errorRed : AppColors.accentTeal)
-                    .withValues(alpha: .5),
-                spreadRadius: 2,
-                blurRadius: 25,
-                offset: const Offset(0, 12),
+                    .withValues(alpha: .4),
+                spreadRadius: 1,
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
           child: Center(
-            child: Column(
+            child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   isPunchedIn ? Icons.logout_rounded : Icons.login_rounded,
-                  size: screenWidth * 0.16, // Responsive icon size
+                  size: screenWidth * 0.08,
                   color: AppColors.whiteColor,
                 ),
-                SizedBox(height: screenHeight * 0.01),
+                SizedBox(width: screenWidth * 0.03),
                 Text(
                   isPunchedIn ? "Punch Out" : "Punch In",
                   style: GoogleFonts.poppins(
-                    fontSize: screenWidth * 0.055,
+                    fontSize: screenWidth * 0.05,
                     fontWeight: FontWeight.bold,
                     color: AppColors.whiteColor,
                   ),
@@ -298,9 +488,14 @@ class _AttendancePageState extends State<AttendancePage>
     return Card(
       elevation: 4,
       shadowColor: AppColors.primaryDarkBlue.withValues(alpha: .05),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(screenWidth * 0.04)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(screenWidth * 0.04),
+      ),
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05, vertical: screenHeight * 0.02),
+        padding: EdgeInsets.symmetric(
+          horizontal: screenWidth * 0.05,
+          vertical: screenHeight * 0.015,
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -312,7 +507,10 @@ class _AttendancePageState extends State<AttendancePage>
                 screenWidth,
               ),
             if (punchInTime != null && punchOutTime != null)
-              Divider(height: screenHeight * 0.03, color: AppColors.fieldFillColor),
+              Divider(
+                height: screenHeight * 0.025,
+                color: AppColors.fieldFillColor,
+              ),
             if (punchOutTime != null)
               _buildPunchTimeRow(
                 "Punched Out",
@@ -341,7 +539,7 @@ class _AttendancePageState extends State<AttendancePage>
         Text(
           title,
           style: GoogleFonts.nunito(
-            fontSize: screenWidth * 0.045,
+            fontSize: screenWidth * 0.04,
             fontWeight: FontWeight.w600,
             color: AppColors.textDark,
           ),
@@ -349,7 +547,7 @@ class _AttendancePageState extends State<AttendancePage>
         Text(
           time,
           style: GoogleFonts.poppins(
-            fontSize: screenWidth * 0.045,
+            fontSize: screenWidth * 0.04,
             fontWeight: FontWeight.bold,
             color: color,
           ),
@@ -379,14 +577,14 @@ class _AttendancePageState extends State<AttendancePage>
         borderColor = AppColors.accentTeal.withValues(alpha: .3);
       }
     } else {
-      // Default / should not be reached if _attendanceStatusMessage is null
       return const SizedBox.shrink();
     }
 
     return Container(
+      width: double.infinity,
       padding: EdgeInsets.symmetric(
         horizontal: screenWidth * 0.04,
-        vertical: screenHeight * 0.015,
+        vertical: screenHeight * 0.012,
       ),
       decoration: BoxDecoration(
         color: bgColor,
@@ -394,10 +592,10 @@ class _AttendancePageState extends State<AttendancePage>
         border: Border.all(color: borderColor, width: 1.0),
       ),
       child: Text(
-        _attendanceStatusMessage!, // Using ! because we've checked for null above
+        _attendanceStatusMessage!,
         textAlign: TextAlign.center,
         style: GoogleFonts.poppins(
-          fontSize: screenWidth * 0.038,
+          fontSize: screenWidth * 0.035,
           color: textColor,
           fontWeight: FontWeight.w500,
         ),
@@ -406,16 +604,23 @@ class _AttendancePageState extends State<AttendancePage>
   }
 }
 
-// Custom Clipper for the fluid header shape (unchanged, but its effect will be with new colors)
 class AttendanceHeaderClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
     final path = Path();
-    path.lineTo(0, size.height - size.height * 0.15); // Adjusted for responsiveness
+    path.lineTo(0, size.height - size.height * 0.2);
     path.quadraticBezierTo(
-        size.width / 4, size.height, size.width / 2, size.height - size.height * 0.08);
+      size.width / 4,
+      size.height - size.height * 0.05,
+      size.width / 2,
+      size.height - size.height * 0.15,
+    );
     path.quadraticBezierTo(
-        size.width * 3 / 4, size.height - size.height * 0.15, size.width, size.height - size.height * 0.3);
+      size.width * 3 / 4,
+      size.height - size.height * 0.25,
+      size.width,
+      size.height - size.height * 0.2,
+    );
     path.lineTo(size.width, 0);
     path.close();
     return path;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/models/patient.dart';
 
 class CreatePatientPage extends StatefulWidget {
@@ -16,6 +17,8 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
   final _bedController = TextEditingController();
   final _diagnosisController = TextEditingController();
   final _scdController = TextEditingController();
+  final _patientIdController = TextEditingController();
+  final _practitionerIdController = TextEditingController();
 
   final List<String> _genderOptions = ['MALE', 'FEMALE', 'OTHER'];
   final List<String> _partyOptions = ['SELF', 'CORPORATE', 'INSURANCE'];
@@ -26,6 +29,7 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
   String? _selectedParty;
   String? _selectedDoctor;
   String? _selectedWard;
+  String? _admissionId;
 
   @override
   void initState() {
@@ -34,6 +38,48 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
     _selectedParty = _partyOptions.first;
     _selectedDoctor = _doctorOptions.first;
     _selectedWard = _wardOptions.first;
+    _loadDynamicData();
+  }
+
+  Future<void> _loadDynamicData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      // DEBUG: Print ALL SharedPreferences
+      debugPrint('╔═══════════════════════════════════════════════════════╗');
+      debugPrint('║    ALL SHARED PREFERENCES IN CREATE PATIENT          ║');
+      debugPrint('╠═══════════════════════════════════════════════════════╣');
+      final allKeys = prefs.getKeys();
+      for (final key in allKeys) {
+        final value = prefs.get(key);
+        debugPrint('║ $key: $value');
+      }
+      debugPrint('╚═══════════════════════════════════════════════════════╝');
+      
+      setState(() {
+        _admissionId = prefs.getString('admissionid') ?? '';
+        
+        // Pre-fill if values exist
+        final existingPatientId = prefs.getString('patientId');
+        final existingPractitionerId = prefs.getString('practitionerId');
+        
+        if (existingPatientId != null && existingPatientId.isNotEmpty) {
+          _patientIdController.text = existingPatientId;
+        }
+        
+        if (existingPractitionerId != null && existingPractitionerId.isNotEmpty) {
+          _practitionerIdController.text = existingPractitionerId;
+        }
+      });
+
+      debugPrint('=== DYNAMIC DATA LOADED IN CREATE PATIENT ===');
+      debugPrint('Admission ID: $_admissionId');
+      debugPrint('Pre-filled Patient ID: ${_patientIdController.text}');
+      debugPrint('Pre-filled Practitioner ID: ${_practitionerIdController.text}');
+      debugPrint('=============================================');
+    } catch (e) {
+      debugPrint('Error loading dynamic data: $e');
+    }
   }
 
   @override
@@ -43,18 +89,23 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
     _bedController.dispose();
     _diagnosisController.dispose();
     _scdController.dispose();
+    _patientIdController.dispose();
+    _practitionerIdController.dispose();
     super.dispose();
   }
 
-  void _savePatient() {
+  Future<void> _savePatient() async {
     if (_formKey.currentState?.validate() ?? false) {
       final now = DateTime.now();
-
       final int age = int.tryParse(_ageController.text) ?? 0;
+      
+      // Get IDs from text controllers
+      final patientId = _patientIdController.text.trim();
+      final practitionerId = _practitionerIdController.text.trim();
 
       final newPatient = Patient(
         patientname: _nameController.text,
-        ipdNo: 'SCD/IP/25/NEW01', 
+        ipdNo: '', 
         age: age, 
         gender: _selectedGender!, 
         party: _selectedParty!,
@@ -72,8 +123,33 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
         active: 1,
         isPrivateTp: '0',
         isUnderMaintenance: 0,
-      bedid: 1,
+        bedid: 1,
+        admissionId: _admissionId ?? '',
+        patientid: patientId,
+        practitionerid: practitionerId,
+        clientId: patientId,  // Same as patientId
       );
+
+      // Save to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('patientId', newPatient.patientid);
+      await prefs.setString('practitionerId', newPatient.practitionerid);
+      await prefs.setString('admissionid', newPatient.admissionId);
+      await prefs.setString('clientId', newPatient.clientId);
+
+      debugPrint('\n=== NEW PATIENT CREATED ===');
+      debugPrint('Name: ${newPatient.patientname}');
+      debugPrint('Patient ID: ${newPatient.patientid}');
+      debugPrint('Practitioner ID: ${newPatient.practitionerid}');
+      debugPrint('Client ID: ${newPatient.clientId}');
+      debugPrint('Admission ID: ${newPatient.admissionId}');
+      debugPrint('Age: ${newPatient.age}');
+      debugPrint('Gender: ${newPatient.gender}');
+      debugPrint('Ward: ${newPatient.ward}');
+      debugPrint('Bed: ${newPatient.bedname}');
+      debugPrint('===========================\n');
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Patient ${newPatient.patientname} saved!')),
@@ -104,6 +180,30 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
                 labelText: 'Patient Name',
                 validator: (value) =>
                     value!.isEmpty ? 'Please enter a name' : null,
+              ),
+              const SizedBox(height: 16),
+              _buildTextFormField(
+                controller: _patientIdController,
+                labelText: 'Patient ID (Required)',
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a patient ID';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              _buildTextFormField(
+                controller: _practitionerIdController,
+                labelText: 'Practitioner ID (Required)',
+                keyboardType: TextInputType.number,
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter a practitioner ID';
+                  }
+                  return null;
+                },
               ),
               const SizedBox(height: 16),
               _buildTextFormField(

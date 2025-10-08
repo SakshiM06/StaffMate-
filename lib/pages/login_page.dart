@@ -48,9 +48,8 @@ class _LoginPageState extends State<LoginPage> {
     });
 
     try {
-      final response =
-          await http.post(Uri.parse(apiUrl), headers: headers, body: body);
-      if (!mounted) return;
+      final response =   await http.post(Uri.parse(apiUrl), headers: headers, body: body);
+      // if (!mounted) return;
 
       debugPrint("Status: ${response.statusCode}");
       debugPrint("Body: ${response.body}");
@@ -68,16 +67,16 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.setString('auth_token', token);
           await prefs.setString('clinicId', innerData['clinicid'] ?? 'aureus');
           await prefs.setString('userId', innerData['userId'] ?? 'aureus');
-          await prefs.setString('zoneId', innerData['zoneid'] ?? 'Asia/Kolkata');
+          await prefs.setString('zoneid', innerData['zoneid'] ?? 'Asia/Kolkata');
           await prefs.setString('expiryTime', innerData['expirytime'] ?? '');
 
           // ✅ immediately call ClinicService to fetch & save clinic details
           final clinicService = ClinicService();
           await clinicService.fetchAndSaveClinicDetails(
-            token: token,
+            token: token, 
             clinicId: innerData['clinicid'] ?? 'aureus',
             userId: innerData['userId'] ?? 'aureus',
-            zoneId: innerData['zoneid'] ?? 'Asia/Kolkata',
+            zoneid: innerData['zoneid'] ?? 'Asia/Kolkata',
             branchId: innerData['branch_id'] ?? 1,
           );
 
@@ -87,7 +86,7 @@ class _LoginPageState extends State<LoginPage> {
             token: token,
             clinicId: innerData['clinicid'] ?? 'aureus',
             userId: innerData['userId'] ?? 'aureus',
-            zoneId: innerData['zoneid'] ?? 'Asia/Kolkata',
+            zoneid: innerData['zoneid'] ?? 'Asia/Kolkata',
             branchId: innerData['branch_id'] ?? 1,
           );
 

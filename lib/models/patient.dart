@@ -1,5 +1,3 @@
-import 'package:intl/intl.dart';
-
 class Patient {
   final String patientname;
   final String ipdNo;
@@ -7,7 +5,7 @@ class Patient {
   final String dob;
   final int age;
   final String gender;
-  final String party; // whopay
+  final String party;
   final String practitionername;
   final String ward;
   final String bedname;
@@ -17,11 +15,14 @@ class Patient {
   final String dischargeStatus;
   final String isMlc;
   final num patientBalance;
-  final int active; // active == 1
-  final String isPrivateTp; // isprivatetp === "0"
+  final int active;
+  final String isPrivateTp;
   final int isUnderMaintenance;
   final int bedid;
-  // isUnderMaintainance == 0
+  final String admissionId; 
+  final String patientid;
+  final String practitionerid;
+  final String clientId;
 
   Patient({
     required this.patientname,
@@ -44,27 +45,13 @@ class Patient {
     required this.isPrivateTp,
     required this.isUnderMaintenance,
     required this.bedid,
+    required this.admissionId,
+    required this.patientid,
+    required this.practitionerid,
+    required this.clientId
   });
 
-  static DateTime _parseAdmissionDate(String? dateStr) {
-    if (dateStr == null || dateStr.isEmpty) {
-      return DateTime.now();
-    }
-    try {
-      return DateFormat('dd-MM-yyyy HH:mm:ss').parse(dateStr);
-    } catch (_) {
-      try {
-        return DateFormat('yyyy-MM-dd').parse(dateStr);
-      } catch (_) {
-        try {
-          return DateTime.parse(dateStr);
-        } catch (_) {
-          return DateTime.now();
-        }
-      }
-    }
-  }
-
+  // Factory constructor to create Patient from JSON
   factory Patient.fromJson(Map<String, dynamic> json) {
     return Patient(
       patientname: json['patient_name']?.toString() ?? 'N/A',
@@ -83,21 +70,25 @@ class Patient {
       diagnosis: json['diagnosis']?.toString() ?? 'N/A',
       scdNo: json['scdNo']?.toString() ?? 'N/A',
       dischargeStatus: json['discharge_status']?.toString() ?? '0',
-      isMlc: json['is_mlc']?.toString() ?? '0',
+      isMlc: json['ismlc']?.toString() ?? '0',
       bedid: json['bedid'] is int
           ? json['bedid']
           : int.tryParse(json['bedid']?.toString() ?? '') ?? 0,
       patientBalance:
           num.tryParse(json['patient_balance']?.toString() ?? '') ?? 0,
-
-      // ➕ map new fields
       active: int.tryParse(json['active']?.toString() ?? '') ?? 0,
+
       isPrivateTp: json['isprivatetp']?.toString() ?? '0',
       isUnderMaintenance:
           int.tryParse(json['isUnderMaintainance']?.toString() ?? '') ?? 0,
+      admissionId: json['admissionid']?.toString() ?? '0',
+      patientid: json['patientid']?.toString() ?? '0',
+     practitionerid: json['practitionerid']?.toString() ?? '0',
+     clientId: json['clientid']?.toString() ?? '0',
     );
   }
 
+  // Convert Patient object to JSON
   Map<String, dynamic> toJson() {
     return {
       "patient_name": patientname,
@@ -109,7 +100,6 @@ class Patient {
       "whopay": party,
       "practitioner_name": practitionername,
       "wardname": ward,
-      
       "bedname": bedname,
       "admissiondate": admissionDateTime.toIso8601String(),
       "diagnosis": diagnosis,
@@ -121,6 +111,24 @@ class Patient {
       "isprivatetp": isPrivateTp,
       "isUnderMaintainance": isUnderMaintenance,
       "bedid": bedid,
+      "admissionid": admissionId,
+      "patientid": patientid,
+      "practitionerid": practitionerid,
+      "clientId": clientId,
     };
+  }
+
+  // Private helper to parse admission date
+  static DateTime _parseAdmissionDate(String? dateStr) {
+    if (dateStr == null || dateStr.isEmpty) {
+      // Return a default date if null or empty
+      return DateTime(1970, 1, 1);
+    }
+    try {
+      return DateTime.parse(dateStr);
+    } catch (e) {
+      // Handle invalid date format
+      return DateTime(1970, 1, 1);
+    }
   }
 }
