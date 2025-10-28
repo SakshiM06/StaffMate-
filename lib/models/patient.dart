@@ -77,16 +77,18 @@ class Patient {
       patientBalance:
           num.tryParse(json['patient_balance']?.toString() ?? '') ?? 0,
       active: int.tryParse(json['active']?.toString() ?? '') ?? 0,
-
       isPrivateTp: json['isprivatetp']?.toString() ?? '0',
       isUnderMaintenance:
           int.tryParse(json['isUnderMaintainance']?.toString() ?? '') ?? 0,
       admissionId: json['admissionid']?.toString() ?? '0',
-      patientid: json['patientid']?.toString() ?? '0',
+      patientid: json['clientid']?.toString() ?? '0',
      practitionerid: json['practitionerid']?.toString() ?? '0',
      clientId: json['clientid']?.toString() ?? '0',
     );
   }
+  
+
+  get id => null;
 
   // Convert Patient object to JSON
   Map<String, dynamic> toJson() {
@@ -116,6 +118,7 @@ class Patient {
       "practitionerid": practitionerid,
       "clientId": clientId,
     };
+    
   }
 
   // Private helper to parse admission date

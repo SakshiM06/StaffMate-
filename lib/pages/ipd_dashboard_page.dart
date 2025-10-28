@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/api/ipd_service.dart';
 import 'package:staff_mate/models/dashboard_data.dart';
 import 'package:staff_mate/models/patient.dart';
@@ -10,6 +9,7 @@ import 'package:staff_mate/pages/req_inve.dart';
 
 class IpdDashboardPage extends StatefulWidget {
   const IpdDashboardPage({super.key});
+  
 
   @override
   State<IpdDashboardPage> createState() => _IpdDashboardPageState();
@@ -30,34 +30,16 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
   DateTimeRange? _selectedDateRange;
 
   final List<String> wardOptions = [
-    'All Ward',
-    'GEN',
-    'ICU',
-    'CathLab ICU',
-    'Isolation',
-    'Post-Ops',
-    'Twin Sharing',
-    'DLX',
-    'Suite',
-    'BMT',
-    'Casuality',
-    'Day Care',
-    'MBS',
+    'All Ward', 'GEN', 'ICU', 'CathLab ICU', 'Isolation', 'Post-Ops',
+    'Twin Sharing', 'DLX', 'Suite', 'BMT', 'Casuality', 'Day Care', 'MBS'
   ];
   final List<String> statusOptions = ['Active', 'Inactive'];
   final List<String> categoryOptions = ['Format1', 'Free Case'];
 
   // counters
-  int avaLen = 0,
-      tpLen = 0,
-      pTpLen = 0,
-      mlcLen = 0,
-      selfLen = 0,
-      totalBed = 0,
-      dischargeLen = 0,
-      exceedLen = 0,
-      inhouseLen = 0;
-  bool bedCountLoading = false;
+  int avaLen = 0, tpLen = 0, pTpLen = 0,
+      mlcLen = 0, selfLen = 0, totalBed = 0,
+      dischargeLen = 0, exceedLen = 0, inhouseLen = 0;
 
   @override
   void initState() {
@@ -72,118 +54,104 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     super.dispose();
   }
 
+  // ✅ FIXED FILTER LOGIC — unified with _calculateBedStats()
   void _filterPatients() {
     List<Patient> tempPatients = List.from(_allPatients);
 
-    // Filter out patients with empty ward and N/A beds - MUST have active bed
-    tempPatients.removeWhere(
-      (p) =>
-          p.ward.isEmpty ||
-          p.ward.toUpperCase() == "N/A" ||
-          p.bedname.toUpperCase() == "N/A" ||
-          p.bedname.isEmpty ||
-          p.active != 1, // ONLY show active patients (admitted to bed)
-    );
+    // Remove duplicates by bedid (keep N/A beds for Available filter)
+    final seenBedIds = <dynamic>{};
+    tempPatients = tempPatients.where((p) => seenBedIds.add(p.bedid)).toList();
 
-    debugPrint(
-      'Total ACTIVE patients after filtering N/A: ${tempPatients.length}',
-    );
+    // Sort by bedid
+    tempPatients.sort((a, b) => a.bedid.compareTo(b.bedid));
 
-    // Apply filter categories
+    // Apply category filter
     switch (_selectedFilterCategory) {
+      case 'Available':
+        // Show empty beds (active == 0) but exclude N/A wards
+        tempPatients = tempPatients.where((p) => 
+            p.active == 0 && 
+            p.isUnderMaintenance == 0 &&
+            p.ward.isNotEmpty && 
+            p.ward != "N/A").toList();
+        break;
       case 'To be Discharged':
-        tempPatients = tempPatients
-            .where((p) => p.dischargeStatus != '0')
-            .toList();
+        tempPatients = tempPatients.where((p) => 
+            p.ward.isNotEmpty && 
+            p.ward != "N/A" && 
+            p.dischargeStatus != '0').toList();
         break;
       case 'Excess Amount':
-        tempPatients = tempPatients.where((p) => p.patientBalance > 0).toList();
+        tempPatients = tempPatients.where((p) => 
+            p.ward.isNotEmpty && 
+            p.ward != "N/A" && 
+            p.patientBalance > 0).toList();
         break;
       case 'MLC':
-        tempPatients = tempPatients.where((p) => p.isMlc != '0').toList();
+        tempPatients = tempPatients.where((p) => 
+            p.ward.isNotEmpty && 
+            p.ward != "N/A" && 
+            p.isMlc != '0').toList();
         break;
       case 'Self':
-        tempPatients = tempPatients
-            .where(
-              (p) =>
-                  p.active == 1 &&
-                  p.isMlc == '0' &&
-                  p.isPrivateTp == '0' &&
-                  p.dischargeStatus == '0' &&
-                  p.party == 'Self' &&
-                  p.isUnderMaintenance == 0,
-            )
-            .toList();
+        tempPatients = tempPatients.where((p) =>
+            p.ward.isNotEmpty && 
+            p.ward != "N/A" && 
+            p.active == 1 &&
+            p.isMlc == '0' &&
+            p.isPrivateTp == '0' &&
+            p.dischargeStatus == '0' &&
+            p.party.toLowerCase() == 'self' &&
+            p.isUnderMaintenance == 0).toList();
         break;
       case 'TP':
-        tempPatients = tempPatients
-            .where(
-              (p) =>
-                  p.active == 1 &&
-                  p.isMlc == '0' &&
-                  p.isPrivateTp == '0' &&
-                  p.dischargeStatus == '0' &&
-                  p.party == 'Third Party' &&
-                  p.isUnderMaintenance == 0,
-            )
-            .toList();
+        tempPatients = tempPatients.where((p) =>
+            p.ward.isNotEmpty && 
+            p.ward != "N/A" && 
+            p.active == 1 &&
+            p.isMlc == '0' &&
+            p.isPrivateTp == '0' &&
+            p.dischargeStatus == '0' &&
+            p.party.toLowerCase().contains('third party') &&
+            !p.party.toLowerCase().contains('corporate') &&
+            p.isUnderMaintenance == 0).toList();
         break;
       case 'TP Corporate':
-        tempPatients = tempPatients
-            .where(
-              (p) =>
-                  p.active == 1 &&
-                  p.party.toLowerCase().contains('corporate') &&
-                  p.isUnderMaintenance == 0,
-            )
-            .toList();
+        tempPatients = tempPatients.where((p) =>
+            p.ward.isNotEmpty && 
+            p.ward != "N/A" && 
+            p.active == 1 &&
+            p.party.toLowerCase().contains('corporate') &&
+            p.isUnderMaintenance == 0
+        ).toList();
         break;
       default:
+        // For other filters, exclude N/A beds
+        tempPatients.removeWhere((p) => p.ward.isEmpty || p.ward == "N/A");
         break;
     }
 
-    // Apply ward, date range, and search filters
+    // Apply additional filters: ward, date, search
     _filteredPatients = tempPatients.where((p) {
       final wardMatch = _selectedWard == 'All Ward' || p.ward == _selectedWard;
 
       bool dateMatch = true;
       if (_selectedDateRange != null) {
-        dateMatch =
-            p.admissionDateTime.isAfter(
-              _selectedDateRange!.start.subtract(const Duration(days: 1)),
-            ) &&
-            p.admissionDateTime.isBefore(
-              _selectedDateRange!.end.add(const Duration(days: 1)),
-            );
+        dateMatch = p.admissionDateTime.isAfter(_selectedDateRange!.start.subtract(const Duration(days: 1))) &&
+                    p.admissionDateTime.isBefore(_selectedDateRange!.end.add(const Duration(days: 1)));
       }
 
-      final searchMatch =
-          _searchController.text.isEmpty ||
-          p.patientname.toLowerCase().contains(
-            _searchController.text.toLowerCase(),
-          ) ||
-          p.ipdNo.toLowerCase().contains(
-            _searchController.text.toLowerCase(),
-          ) ||
-          p.practitionername.toLowerCase().contains(
-            _searchController.text.toLowerCase(),
-          ) ||
-          p.ward.toLowerCase().contains(_searchController.text.toLowerCase());
+      final searchText = _searchController.text.toLowerCase();
+      final searchMatch = searchText.isEmpty ||
+          p.patientname.toLowerCase().contains(searchText) ||
+          p.ipdNo.toLowerCase().contains(searchText) ||
+          p.practitionername.toLowerCase().contains(searchText) ||
+          p.ward.toLowerCase().contains(searchText);
 
       return wardMatch && dateMatch && searchMatch;
     }).toList();
 
-    // Sort by bedid
-    _filteredPatients.sort((a, b) => a.bedid.compareTo(b.bedid));
-
-    debugPrint(
-      'Filtered patients count after all filters: ${_filteredPatients.length}',
-    );
-
-    // Only call setState if not already in build phase
-    if (mounted) {
-      setState(() {});
-    }
+    setState(() {});
   }
 
   void _selectDateRange() async {
@@ -198,104 +166,36 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     }
   }
 
-  Future<void> _showPatientDetailsDialog(Patient patient) async {
-    // Print patient details to terminal when clicked
-    debugPrint('========================================');
-    debugPrint('PATIENT CLICKED: ${patient.patientname}');
-    debugPrint('========================================');
-    debugPrint('IPD No: ${patient.ipdNo}');
-    debugPrint('Ward: ${patient.ward}');
-    debugPrint('Bed: ${patient.bedname}');
-    debugPrint('Bed ID: ${patient.bedid}');
-    debugPrint('Doctor: ${patient.practitionername}');
-    debugPrint('admissionId: ${patient.admissionId}');
-    debugPrint('Admission Date: ${DateFormat('dd-MM-yyyy HH:mm').format(patient.admissionDateTime)}');
-    debugPrint('Age: ${patient.age} | Gender: ${patient.gender}');
-    debugPrint('Party: ${patient.party}');
-    debugPrint('Balance: ₹${patient.patientBalance}');
-    debugPrint('MLC: ${patient.isMlc == '0' ? 'No' : 'Yes'}');
-    debugPrint('Discharge Status: ${patient.dischargeStatus == '0' ? 'Not Discharged' : 'Discharged'}');
-    debugPrint('Active: ${patient.active}');
-    debugPrint('UHID: ${patient.uhid}');
-    // debugPrint('Contact: ${patient.contactNumber}');
-    // debugPrint('Address: ${patient.address}');
-    debugPrint('========================================\n');
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('admissionid', patient.admissionId);
-    await prefs.setString('patientid', patient.clientId);
-    await prefs.setString('practitionerid', patient.practitionerid);
-
-debugPrint('clientId : ${patient.clientId}');
-debugPrint('practitionerid : ${patient.practitionerid}');
-
-
+  void _showPatientDetailsDialog(Patient patient) {
     showDialog(
       context: context,
       barrierColor: Colors.black.withAlpha(125),
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text(
-          patient.patientname,
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
+        title: Text(patient.patientname, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
         content: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildDetailRow(
-                Icons.local_hospital_outlined,
-                'Ward | Bed No:',
-                '${patient.ward} | ${patient.bedname}',
-              ),
-              _buildDetailRow(
-                Icons.person_outline,
-                'Consultant Name:',
-                patient.practitionername,
-              ),
-              _buildDetailRow(
-                Icons.calendar_today_outlined,
-                'Admission Date:',
-                DateFormat(
-                  'dd-MM-yyyy HH:mm',
-                ).format(patient.admissionDateTime),
-              ),
-              _buildDetailRow(
-                Icons.money,
-                'Patient Balance:',
-                '₹${patient.patientBalance}',
-              ),
+              _buildDetailRow(Icons.local_hospital_outlined, 'Ward | Bed No:', '${patient.ward} | ${patient.bedname}'),
+              _buildDetailRow(Icons.person_outline, 'Consultant Name:', patient.practitionername),
+              _buildDetailRow(Icons.calendar_today_outlined, 'Admission Date:', DateFormat('dd-MM-yyyy HH:mm').format(patient.admissionDateTime)),
+              _buildDetailRow(Icons.money, 'Patient Balance:', '₹${patient.patientBalance}'),
               _buildDetailRow(Icons.info_outline, 'IPD No:', patient.ipdNo),
               _buildDetailRow(Icons.credit_card, 'Party:', patient.party),
-              _buildDetailRow(
-                Icons.perm_identity,
-                'Age/Gender:',
-                '${patient.age}Y / ${patient.gender.toUpperCase()}',
-              ),
-              _buildDetailRow(
-                Icons.logout,
-                'Discharge Status:',
-                patient.dischargeStatus == '0'
-                    ? 'Not Discharged'
-                    : 'Discharged',
-              ),
-              _buildDetailRow(
-                Icons.medical_services_outlined,
-                'MLC:',
-                patient.isMlc == '0' ? 'No' : 'Yes',
-              ),
+              _buildDetailRow(Icons.perm_identity, 'Age/Gender:', '${patient.age}Y / ${patient.gender.toUpperCase()}'),
+              _buildDetailRow(Icons.logout, 'Discharge Status:', patient.dischargeStatus == '0' ? 'Not Discharged' : 'Discharged'),
+              _buildDetailRow(Icons.medical_services_outlined, 'MLC:', patient.isMlc == '0' ? 'No' : 'Yes'),
             ],
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
           IconButton(
             icon: const Icon(Icons.add),
             onPressed: () {
               Navigator.of(context).pop();
-              _showAddOptionsDialog(context);
+              _showAddOptionsDialog(context, patient);
             },
           ),
         ],
@@ -303,36 +203,29 @@ debugPrint('practitionerid : ${patient.practitionerid}');
     );
   }
 
-  void _showAddOptionsDialog(BuildContext context) {
+  void _showAddOptionsDialog(BuildContext context, Patient patient) {
     showDialog(
       context: context,
       barrierColor: Colors.black.withAlpha(125),
       builder: (context) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text(
-          'Add New Request',
-          style: GoogleFonts.poppins(fontWeight: FontWeight.bold),
-        ),
+        title: Text('Add New Request', style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _buildOptionBox(
-              context,
-              'Req Prescription',
-              const ReqPrescriptionPage(patientName: ''),
-            ),
+            _buildOptionBox(context, 'Req Prescription', const ReqPrescriptionPage(patientName: '')),
             _buildOptionBox(
               context,
               'Req Investigation',
-              const ReqInvestigationPage(patientName: ''),
+              ReqInvestigationPage(
+                patientName: patient.patientname,
+                patient: patient,
+              ),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
-          ),
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Close')),
         ],
       ),
     );
@@ -351,15 +244,9 @@ debugPrint('practitionerid : ${patient.practitionerid}');
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(16.0),
-          child: Text(
-            title,
-            textAlign: TextAlign.center,
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              color: Colors.indigo,
-            ),
-          ),
+          child: Text(title,
+              textAlign: TextAlign.center,
+              style: GoogleFonts.poppins(fontSize: 16, fontWeight: FontWeight.w500, color: Colors.indigo)),
         ),
       ),
     );
@@ -377,14 +264,7 @@ debugPrint('practitionerid : ${patient.practitionerid}');
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Colors.grey,
-                  ),
-                ),
+                Text(label, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.grey)),
                 Text(value, style: const TextStyle(fontSize: 14)),
               ],
             ),
@@ -426,13 +306,8 @@ debugPrint('practitionerid : ${patient.practitionerid}');
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 1,
-        title: Text(
-          'IPD Dashboard',
-          style: GoogleFonts.poppins(
-            color: Colors.black87,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: Text('IPD Dashboard',
+            style: GoogleFonts.poppins(color: Colors.black87, fontWeight: FontWeight.w600)),
         leading: const Icon(Icons.home_outlined, color: Colors.black54),
       ),
       body: FutureBuilder<IpdDashboardData>(
@@ -451,44 +326,8 @@ debugPrint('practitionerid : ${patient.practitionerid}');
           // Initialize patients and stats once
           if (_allPatients.isEmpty) {
             _allPatients = snapshot.data!.patients;
-
-            // FIRST: Filter out N/A beds from _allPatients before any processing
-            _allPatients.removeWhere(
-              (p) =>
-                  p.ward.isEmpty ||
-                  p.ward.toUpperCase() == "N/A" ||
-                  p.bedname.toUpperCase() == "N/A" ||
-                  p.bedname.isEmpty ||
-                  p.active != 1, // ONLY keep active/admitted patients
-            );
-
-            debugPrint('\n========================================');
-            debugPrint('IPD DASHBOARD - ADMITTED PATIENTS ONLY');
-            debugPrint('========================================');
-            debugPrint(
-              'Total ADMITTED patients (N/A beds excluded): ${_allPatients.length}',
-            );
-
-            // Print only admitted patient names and basic info
-            for (int i = 0; i < _allPatients.length; i++) {
-              final p = _allPatients[i];
-              debugPrint(
-                '${i + 1}. ${p.patientname} | Ward: ${p.ward} | Bed: ${p.bedname} | IPD: ${p.ipdNo}',
-              );
-            }
-            debugPrint('========================================\n');
-
-            _calculateBedStats();
-
-            // Calculate filtered patients without calling setState
-            List<Patient> tempPatients = List.from(_allPatients);
-            _filteredPatients = tempPatients;
-            _filteredPatients.sort((a, b) => a.bedid.compareTo(b.bedid));
-
-            debugPrint(
-              'Patients displayed on screen: ${_filteredPatients.length}',
-            );
-            debugPrint('========================================\n');
+            _filteredPatients = List.from(_allPatients);
+            _calculateBedStats(); // ✅ stats now consistent with filter
           }
 
           return SingleChildScrollView(
@@ -525,61 +364,46 @@ debugPrint('practitionerid : ${patient.practitionerid}');
     return Column(
       children: [
         Row(
-          children: statData.entries
-              .toList()
-              .sublist(0, 5)
-              .map(
-                (e) => Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedFilterCategory =
-                            _selectedFilterCategory == e.key ? null : e.key;
-                      });
-                      _filterPatients();
-                    },
-                    child: StatCard(
-                      title: e.key,
-                      value: e.value.toString(),
-                      color: _getStatCardColor(e.key),
-                      isSelected: _selectedFilterCategory == e.key,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
+          children: statData.entries.toList().sublist(0, 5).map((e) => Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedFilterCategory = _selectedFilterCategory == e.key ? null : e.key;
+                  _filterPatients();
+                });
+              },
+              child: StatCard(
+                title: e.key,
+                value: e.value.toString(),
+                color: _getStatCardColor(e.key),
+                isSelected: _selectedFilterCategory == e.key,
+              ),
+            ),
+          )).toList(),
         ),
         const SizedBox(height: 8),
         Row(
-          children: statData.entries
-              .toList()
-              .sublist(5, 9)
-              .map(
-                (e) => Expanded(
-                  child: GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        _selectedFilterCategory =
-                            _selectedFilterCategory == e.key ? null : e.key;
-                      });
-                      _filterPatients();
-                    },
-                    child: StatCard(
-                      title: e.key,
-                      value: e.value.toString(),
-                      color: _getStatCardColor(e.key),
-                      isSelected: _selectedFilterCategory == e.key,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
+          children: statData.entries.toList().sublist(5, 9).map((e) => Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() {
+                  _selectedFilterCategory = _selectedFilterCategory == e.key ? null : e.key;
+                  _filterPatients();
+                });
+              },
+              child: StatCard(
+                title: e.key,
+                value: e.value.toString(),
+                color: _getStatCardColor(e.key),
+                isSelected: _selectedFilterCategory == e.key,
+              ),
+            ),
+          )).toList(),
         ),
       ],
     );
   }
 
-  // ---------------- Filter Section ----------------
   Widget _buildFilterSection() {
     return Card(
       elevation: 2,
@@ -593,9 +417,7 @@ debugPrint('practitionerid : ${patient.practitionerid}');
               decoration: InputDecoration(
                 hintText: 'Search by Patient, IPD No, Doctor...',
                 prefixIcon: const Icon(Icons.search),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               ),
             ),
             const SizedBox(height: 12),
@@ -606,9 +428,7 @@ debugPrint('practitionerid : ${patient.practitionerid}');
                     value: _selectedWard,
                     items: wardOptions,
                     onChanged: (val) {
-                      setState(() {
-                        _selectedWard = val!;
-                      });
+                      _selectedWard = val!;
                       _filterPatients();
                     },
                   ),
@@ -619,9 +439,7 @@ debugPrint('practitionerid : ${patient.practitionerid}');
                     value: _selectedStatus,
                     items: statusOptions,
                     onChanged: (val) {
-                      setState(() {
-                        _selectedStatus = val!;
-                      });
+                      _selectedStatus = val!;
                       _filterPatients();
                     },
                   ),
@@ -632,9 +450,7 @@ debugPrint('practitionerid : ${patient.practitionerid}');
                     value: _selectedCategory,
                     items: categoryOptions,
                     onChanged: (val) {
-                      setState(() {
-                        _selectedCategory = val!;
-                      });
+                      _selectedCategory = val!;
                       _filterPatients();
                     },
                   ),
@@ -653,11 +469,7 @@ debugPrint('practitionerid : ${patient.practitionerid}');
     );
   }
 
-  Widget _buildDropdown({
-    required String? value,
-    required List<String> items,
-    required ValueChanged<String?> onChanged,
-  }) {
+  Widget _buildDropdown({required String? value, required List<String> items, required ValueChanged<String?> onChanged}) {
     return Container(
       height: 48,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -669,30 +481,19 @@ debugPrint('practitionerid : ${patient.practitionerid}');
         child: DropdownButton<String>(
           value: value,
           isExpanded: true,
-          items: items
-              .map(
-                (item) => DropdownMenuItem(
-                  value: item,
-                  child: Text(item, overflow: TextOverflow.ellipsis),
-                ),
-              )
-              .toList(),
+          items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, overflow: TextOverflow.ellipsis))).toList(),
           onChanged: onChanged,
         ),
       ),
     );
   }
 
-  // ---------------- Patient Grid ----------------
   Widget _buildPatientGrid() {
     if (_filteredPatients.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(32.0),
-          child: Text(
-            "No patients found matching your criteria.",
-            style: TextStyle(fontSize: 16),
-          ),
+          child: Text("No patients found matching your criteria.", style: TextStyle(fontSize: 16)),
         ),
       );
     }
@@ -716,68 +517,36 @@ debugPrint('practitionerid : ${patient.practitionerid}');
     );
   }
 
-  // ---------------- Get Bed Values ----------------
+  // ✅ FIXED STATS COUNTER — matches filter logic
   void _calculateBedStats() {
-    avaLen = tpLen = pTpLen = mlcLen = selfLen = totalBed = dischargeLen =
-        exceedLen = inhouseLen = 0;
-
-    // Get unique beds for counting total beds (from already filtered data)
-    List<Patient> dataForBeds = List.from(_allPatients);
-    final seenBedIds = <dynamic>{};
-    dataForBeds = dataForBeds.where((p) {
-      if (seenBedIds.contains(p.bedid)) return false;
-      seenBedIds.add(p.bedid);
-      return true;
-    }).toList();
-
-    totalBed = seenBedIds.length;
-
-    // Calculate statistics from admitted patients only (already filtered)
+    avaLen = tpLen = pTpLen = mlcLen = selfLen = totalBed = dischargeLen = exceedLen = inhouseLen = 0;
     List<Patient> data = List.from(_allPatients);
+    
+    // Remove invalid wards and duplicates by bedid (exclude N/A for total count)
+    data.removeWhere((p) => p.ward.isEmpty || p.ward == "N/A");
+    final seenBedIds = <dynamic>{};
+    data = data.where((p) => seenBedIds.add(p.bedid)).toList();
+    data.sort((a, b) => a.bedid.compareTo(b.bedid));
 
     for (var p in data) {
-      if (p.active == 1 &&
-          p.isMlc == '0' &&
-          p.isPrivateTp == '0' &&
-          p.dischargeStatus == '0' &&
-          p.party == 'Third Party' &&
-          p.isUnderMaintenance == 0) {
-        tpLen++;
-      }
-      if (p.active == 1 &&
-          p.dischargeStatus == '0' &&
-          p.isMlc == '1' &&
-          p.isUnderMaintenance == 0) {
-        mlcLen++;
-      }
-      if (p.active == 1 &&
-          p.isMlc == '0' &&
-          p.isPrivateTp == '0' &&
-          p.dischargeStatus == '0' &&
-          p.party.toLowerCase() == 'self' &&
-          p.isUnderMaintenance == 0) {
-        selfLen++;
-      }
-      if (p.active == 1 &&
-          p.dischargeStatus == '1' &&
-          p.isUnderMaintenance == 0) {
-        dischargeLen++;
-      }
-      if (p.active == 1 &&
-          p.isPrivateTp == '1' &&
-          p.dischargeStatus == '0' &&
-          p.isUnderMaintenance == 0 &&
-          p.party == 'Third Party') {
+      // TP Corporate - check first as it's more specific
+      if (p.active == 1 && p.party.toLowerCase().contains('corporate') && p.isUnderMaintenance == 0) {
         pTpLen++;
       }
+      // TP - third party but NOT corporate
+      else if (p.active == 1 && p.isMlc == '0' && p.isPrivateTp == '0' && p.dischargeStatus == '0' && p.party.toLowerCase().contains('third party') && !p.party.toLowerCase().contains('corporate') && p.isUnderMaintenance == 0) {
+        tpLen++;
+      }
+      
+      if (p.active == 1 && p.dischargeStatus == '0' && p.isMlc == '1' && p.isUnderMaintenance == 0) mlcLen++;
+      if (p.active == 1 && p.isMlc == '0' && p.isPrivateTp == '0' && p.dischargeStatus == '0' && p.party.toLowerCase() == 'self' && p.isUnderMaintenance == 0) selfLen++;
+      if (p.active == 1 && p.dischargeStatus == '1' && p.isUnderMaintenance == 0) dischargeLen++;
       if (p.dischargeStatus == '0') inhouseLen++;
       if (p.active == 0 && p.isUnderMaintenance == 0) avaLen++;
       if (p.patientBalance > 0) exceedLen++;
     }
 
-    debugPrint(
-      'Stats - Occupied Beds: $totalBed, Available: $avaLen, Self: $selfLen, TP: $tpLen, MLC: $mlcLen, Discharge: $dischargeLen',
-    );
+    totalBed = seenBedIds.length;
   }
 }
 
@@ -800,7 +569,6 @@ class StatCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth > 600;
-
     final cardWidth = isTablet ? screenWidth / 6 - 8 : screenWidth / 3 - 12;
     final cardHeight = isTablet ? 100.0 : 80.0;
 
@@ -812,9 +580,7 @@ class StatCard extends StatelessWidget {
         color: color,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: isSelected
-              ? const BorderSide(color: Colors.black, width: 2.5)
-              : BorderSide.none,
+          side: isSelected ? const BorderSide(color: Colors.black, width: 2.5) : BorderSide.none,
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -856,14 +622,15 @@ class PatientGridCard extends StatelessWidget {
   const PatientGridCard({super.key, required this.patient});
 
   Color _getCardColor() {
+    // Available bed - sky blue color (only for beds with valid ward)
+    if (patient.active == 0 && patient.isUnderMaintenance == 0 && patient.ward.isNotEmpty && patient.ward != "N/A") {
+      return const Color(0xFF42A5F5); // Sky blue for available beds
+    }
+    
     if (patient.dischargeStatus != '0') return const Color(0xFF9E9D24);
     if (patient.isMlc != '0') return const Color(0xFFC62828);
-    if (patient.party.toLowerCase().contains('corporate')) {
-      return const Color(0xFF6A1B9A);
-    }
-    if (patient.party.toLowerCase().contains('third party')) {
-      return const Color(0xFF2E7D32);
-    }
+    if (patient.party.toLowerCase().contains('corporate')) return const Color(0xFF6A1B9A);
+    if (patient.party.toLowerCase().contains('third party')) return const Color(0xFF2E7D32);
     if (patient.party.toLowerCase() == 'self') return const Color(0xFF455A64);
     if (patient.patientBalance > 0) return const Color(0xFF303F9F);
     return Colors.blueGrey;
@@ -871,6 +638,12 @@ class PatientGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Check if bed is available (with valid ward)
+    bool isAvailable = patient.active == 0 && 
+                       patient.isUnderMaintenance == 0 && 
+                       patient.ward.isNotEmpty && 
+                       patient.ward != "N/A";
+    
     return Card(
       elevation: 2.0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8.0)),
@@ -878,51 +651,75 @@ class PatientGridCard extends StatelessWidget {
       color: _getCardColor(),
       child: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: isAvailable 
+          ? Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Text(
-                  patient.patientname,
+                  '${patient.ward} | ${patient.bedname}',
                   style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                    color: Colors.white,
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 14, 
+                    color: Colors.white
                   ),
                   maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  '${patient.ward} | ${patient.bedname}',
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(height: 8),
+                const Icon(
+                  Icons.bed_outlined,
+                  color: Colors.white,
+                  size: 32,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'IPD No: ${patient.ipdNo}',
-                  style: const TextStyle(fontSize: 12, color: Colors.white70),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                const SizedBox(height: 8),
+                const Text(
+                  'AVAILABLE BED',
+                  style: TextStyle(
+                    fontSize: 12, 
+                    color: Colors.white,
+                    fontWeight: FontWeight.w500
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            )
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(patient.patientname,
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text('${patient.ward} | ${patient.bedname}',
+                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                    const SizedBox(height: 4),
+                    Text('IPD No: ${patient.ipdNo}',
+                        style: const TextStyle(fontSize: 12, color: Colors.white70),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: const [
+                    Icon(Icons.notifications_none, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Icon(Icons.flag_outlined, color: Colors.white, size: 20),
+                    SizedBox(width: 8),
+                    Icon(Icons.favorite_border, color: Colors.white, size: 20),
+                  ],
                 ),
               ],
             ),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: const [
-                Icon(Icons.notifications_none, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Icon(Icons.flag_outlined, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Icon(Icons.favorite_border, color: Colors.white, size: 20),
-              ],
-            ),
-          ],
-        ),
       ),
     );
   }
