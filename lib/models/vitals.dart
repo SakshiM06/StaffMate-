@@ -1,9 +1,9 @@
+// models/vitals.dart
 class VitalsEntry {
   final String patientName;
-  final DateTime date;       
-  final int hour;            
-  final int minute;          
-
+  final DateTime date;
+  final int hour;
+  final int minute;
   final String tempF;
   final String hr;
   final String rr;
@@ -25,18 +25,4 @@ class VitalsEntry {
     required this.rbs,
     required this.spo2,
   });
-
-  Map<String, dynamic> toMap() => {
-        'patientName': patientName,
-        'date': date.toIso8601String(),
-        'hour': hour,
-        'minute': minute,
-        'tempF': tempF,
-        'hr': hr,
-        'rr': rr,
-        'sysBp': sysBp,
-        'diaBp': diaBp,
-        'rbs': rbs,
-        'spo2': spo2,
-      };
 }

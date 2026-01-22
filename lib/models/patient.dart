@@ -23,6 +23,7 @@ class Patient {
   final String patientid;
   final String practitionerid;
   final String clientId;
+final double patientBalanceDouble;
 
   Patient({
     required this.patientname,
@@ -48,7 +49,8 @@ class Patient {
     required this.admissionId,
     required this.patientid,
     required this.practitionerid,
-    required this.clientId
+    required this.clientId,
+    required this.patientBalanceDouble,
   });
 
   // Factory constructor to create Patient from JSON
@@ -81,14 +83,20 @@ class Patient {
       isUnderMaintenance:
           int.tryParse(json['isUnderMaintainance']?.toString() ?? '') ?? 0,
       admissionId: json['admissionid']?.toString() ?? '0',
-      patientid: json['clientid']?.toString() ?? '0',
+      patientid: json['patientid']?.toString() ?? json['clientid']?.toString() ?? '0',
      practitionerid: json['practitionerid']?.toString() ?? '0',
      clientId: json['clientid']?.toString() ?? '0',
+      patientBalanceDouble: double.tryParse(json['patient_balance']?.toString() ?? '') ?? 0.0
     );
   }
-  
+  String get patientId => patientid;
+String get id => patientid; // Alias for compatibility
+String get addmissionId => admissionId;
+String get ipdNumber => ipdNo;
 
-  get id => null;
+  // get id => null;
+
+  // get patientId => null;
 
   // Convert Patient object to JSON
   Map<String, dynamic> toJson() {
@@ -121,16 +129,13 @@ class Patient {
     
   }
 
-  // Private helper to parse admission date
   static DateTime _parseAdmissionDate(String? dateStr) {
     if (dateStr == null || dateStr.isEmpty) {
-      // Return a default date if null or empty
       return DateTime(1970, 1, 1);
     }
     try {
       return DateTime.parse(dateStr);
     } catch (e) {
-      // Handle invalid date format
       return DateTime(1970, 1, 1);
     }
   }

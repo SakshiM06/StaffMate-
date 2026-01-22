@@ -127,7 +127,8 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
         admissionId: _admissionId ?? '',
         patientid: patientId,
         practitionerid: practitionerId,
-        clientId: patientId,  // Same as patientId
+        clientId: patientId, 
+         patientBalanceDouble: 0.0,
       );
 
       // Save to SharedPreferences

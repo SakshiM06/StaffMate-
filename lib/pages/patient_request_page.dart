@@ -37,7 +37,7 @@ class PatientRequestPage extends StatelessWidget {
             _buildRequestCard(
               Icons.description,
               "Request Prescription",
-             ReqPrescriptionPage(patientName: patientName),
+             ReqPrescriptionPage(patientName: patientName, patient: patient),
               context,
             ),
            _buildRequestCard(

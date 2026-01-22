@@ -95,4 +95,6 @@ class FrequencyService {
     await prefs.setStringList('cached_routes', routes);
     await prefs.setStringList('cached_dosagetimes', dosageTimes);
   }
+
+  static Future fetchFrequencyData() async {}
 }

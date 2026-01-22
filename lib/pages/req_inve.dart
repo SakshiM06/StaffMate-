@@ -1,234 +1,1908 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:flutter_typeahead/flutter_typeahead.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:staff_mate/models/patient.dart';
+import 'package:staff_mate/services/notification_service.dart';
 import '../services/investigation_service.dart';
 
 class ReqInvestigationPage extends StatefulWidget {
   final String patientName;
   final Patient patient;
-  const ReqInvestigationPage({super.key, required this.patient, required this.patientName});
-  
+  const ReqInvestigationPage({
+    super.key,
+    required this.patient,
+    required this.patientName,
+  });
 
   @override
   State<ReqInvestigationPage> createState() => _ReqInvestigationPageState();
 }
 
 class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
-  String? _selectedLocation;
-  String? _selectedJobTitle;
-  Map<String, dynamic>? _selectedInvestigationType; // Changed to store full object
-  String? _selectedPackage;
-  bool _isUrgent = false;
-
   final TextEditingController _packageController = TextEditingController();
   final TextEditingController _dateController = TextEditingController();
   final TextEditingController _searchCodeController = TextEditingController();
   final TextEditingController _amountController = TextEditingController();
   final TextEditingController _parameterController = TextEditingController();
   final TextEditingController _indicationsController = TextEditingController();
-  final TextEditingController _totalController =
-      TextEditingController(text: "0");
-
-  /// Consultant Name TypeAhead Controller
-  final TextEditingController _consultantNameController =
-      TextEditingController();
-
-  /// Template TypeAhead Controller
+  final TextEditingController _totalController = TextEditingController(text: "0");
+  final TextEditingController _consultantNameController = TextEditingController();
   final TextEditingController _templateController = TextEditingController();
 
+  String? _selectedLocation;
+  String? _selectedJobTitle;
+  Map<String, dynamic>? _selectedInvestigationType;
+  String? _selectedPackage;
+  bool _isUrgent = false;
+
   final List<Map<String, dynamic>> _investigationItems = [];
-
   final List<String> locations = ["AH (Nagpur)", "Other Location"];
-  List<String> jobTitles = [];
+  List<String> jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
+  List<String> templateList = [];
+  List<Map<String, dynamic>> investigationTypes = [];
+  List<dynamic> parameterList = [];
 
-  List<Map<String, dynamic>> investigationTypes = []; // Store full objects
-  List<dynamic> parameterList = []; // Store parameter list
-
+  String? _tpId;
+  String? _wardId;
+  Map<String, dynamic>? _patientIpdData;
+  Map<String, bool> selectedParameters = {};
+  bool _showParameterDropdown = false;
   bool _isLoadingAmount = false;
-  bool _isLoadingJobTitles = true;
+  bool _isLoadingJobTitles = false; 
+  bool _isLoadingTemplates = true;
   bool _isLoadingParameters = false;
-  
-  get selectedTpId => null;
-  
-  get selectedTestTypeId => null;
-  
-  get selectedWardId => null;
+  bool _isLoadingPatientIpdData = false;
+  bool _isSubmitting = false;
+  bool _isLoadingInvestigationTypes = false;
+
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _speechAvailable = false;
+  bool _isListeningForPackage = false;
+  bool _isListeningForInvestigationType = false;
+  String _recognizedText = '';
+  Timer? _speechTimeoutTimer;
+
+  final Map<String, int> _jobTitleToTypeId = {
+    'Pathlab': 5,      
+    'Radiology': 7,     
+    'Cardiology': 20,   
+    'Other': 1,         
+  };
 
   @override
   void initState() {
     super.initState();
     _dateController.text = DateFormat('dd/MM/yyyy').format(DateTime.now());
+    _selectedLocation = locations.isNotEmpty ? locations[0] : "AH (Nagpur)";
     _loadInitialData();
+    _loadTemplates();
+    _initSpeech();
   }
 
-//   Future<void> _loadInitialData() async {
-//     debugPrint('Loading initial data...: ${widget.patient.patientid}');
-//     final patientData = await InvestigationService.fetchPatientInformation(patientId: widget.patient.patientid);
-
-
-//     if (patientData != null) {
-//       debugPrint('✅ Patient Info fetched successfully');
-//       debugPrint('👤 ${jsonEncode(patientData)}');
-
-//       // After fetching patient info, call GetCharge API
-//       await _fetchChargeForInvestigation(patientData['investigationType'] ?? '');
-//     } else {
-//       debugPrint('⚠️ No patient info found for ${widget.patient.patientid}');
-//     }
-
-// setState(() {
-//   _isLoading =false;
-// });
-
-
-//     debugPrint('Patient Data: $patientData');
-//     setState(() {
-//       _isLoadingJobTitles = true;
-//     });
-
-//     try {
-//       // Fetch job titles dynamically
-//       final jobTitleData = await InvestigationService.fetchJobTitleList();
-      
-//       debugPrint('Job Title Data: $jobTitleData');
-
-//       if (jobTitleData.isEmpty) {
-//         setState(() {
-//           jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-//           _isLoadingJobTitles = false;
-//         });
-//         return;
-//       }
-
-//       setState(() {
-//         try {
-//           final allowedTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-//           final extractedTitles = jobTitleData
-//               .map((e) {
-//                 if (e is Map<String, dynamic>) {
-//                   return (e['jobTitle'] ?? e['name'] ?? e['title'] ?? e['jobtitle'] ?? e['jobname'] ?? '').toString();
-//                 } else if (e is String) {
-//                   return e;
-//                 } else {
-//                   return '';
-//                 }
-//               })
-//               .where((name) => name.isNotEmpty)
-//               .toList();
-          
-//           debugPrint('Extracted Job Titles: $extractedTitles');
-//           jobTitles = allowedTitles
-//               .where((title) => extractedTitles.any((extracted) => 
-//                   extracted.toLowerCase() == title.toLowerCase()))
-//               .toList();
-          
-//           if (jobTitles.isEmpty) {
-//             jobTitles = allowedTitles;
-//           }
-          
-//           debugPrint('Filtered Job Titles (Only 4): $jobTitles');
-//         } catch (e) {
-//           debugPrint('Error extracting job titles: $e');
-//           jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-//         }
-        
-//         _isLoadingJobTitles = false;
-//       });
-//     } catch (e) {
-//       debugPrint('Error fetching job titles: $e');
-//       setState(() {
-//         jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-//         _isLoadingJobTitles = false;
-//       });
-//     }
-//   }
-
-
-
-Future<void> _loadInitialData() async {
-  debugPrint('Loading initial data...: ${widget.patient.patientid}');
-
-  final patientData = await InvestigationService.fetchPatientInformation(
-    patientId: widget.patient.patientid,
-  );
-
-  if (patientData != null) {
-    debugPrint('✅ Patient Info fetched successfully');
-    debugPrint('Patient Data:  ${jsonEncode(patientData)}');
-
-    // After fetching patient info, call GetCharge API
-    await _fetchChargeForInvestigation(
-        patientData['investigationType'] ?? '');
-  } else {
-    debugPrint('⚠️ No patient info found for ${widget.patient.patientid}');
+  Future<void> _initSpeech() async {
+    _speechAvailable = await _speech.initialize(
+      onStatus: (status) {
+        if (mounted) {
+          setState(() {
+            if (status == stt.SpeechToText.notListeningStatus) {
+              _isListeningForPackage = false;
+              _isListeningForInvestigationType = false;
+            }
+          });
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            _isListeningForPackage = false;
+            _isListeningForInvestigationType = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Speech recognition error: $error'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+      },
+    );
   }
 
-  setState(() {
-    bool _isLoading = false;
-    });
-
-  debugPrint('Patient Data: $patientData');
-  setState(() {
-    _isLoadingJobTitles = true;
-  });
-
-  try {
-    final jobTitleData = await InvestigationService.fetchJobTitleList();
-    debugPrint('Job Title Data: $jobTitleData');
-
-    if (jobTitleData.isEmpty) {
-      setState(() {
-        jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-        _isLoadingJobTitles = false;
-      });
+  Future<void> _startVoiceSearchForPackage() async {
+    if (_isListeningForPackage) {
+      _stopListening();
       return;
     }
 
-    setState(() {
-      final allowedTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-      final extractedTitles = jobTitleData
-          .map((e) {
-            if (e is Map<String, dynamic>) {
-              return (e['jobTitle'] ??
-                      e['name'] ??
-                      e['title'] ??
-                      e['jobtitle'] ??
-                      e['jobname'] ??
-                      '')
-                  .toString();
-            } else if (e is String) {
-              return e;
-            } else {
-              return '';
-            }
-          })
-          .where((name) => name.isNotEmpty)
-          .toList();
+    if (!_speechAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition is not available on this device'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
 
-      debugPrint('Extracted Job Titles: $extractedTitles');
-      jobTitles = allowedTitles
-          .where((title) => extractedTitles.any((extracted) =>
-              extracted.toLowerCase() == title.toLowerCase()))
-          .toList();
-
-      if (jobTitles.isEmpty) {
-        jobTitles = allowedTitles;
+    bool hasPermission = await _speech.hasPermission;
+    if (!hasPermission) {
+      bool permissionGranted = await _speech.initialize();
+      if (!permissionGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone permission is required for voice input'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
       }
+    }
 
-      debugPrint('Filtered Job Titles (Only 4): $jobTitles');
-      _isLoadingJobTitles = false;
-    });
-  } catch (e) {
-    debugPrint('Error fetching job titles: $e');
     setState(() {
-      jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
-      _isLoadingJobTitles = false;
+      _isListeningForPackage = true;
+      _isListeningForInvestigationType = false;
+      _recognizedText = '';
+    });
+
+    await _speech.listen(
+      onResult: (result) {
+        setState(() {
+          _recognizedText = result.recognizedWords;
+        });
+        _speechTimeoutTimer?.cancel();
+        _speechTimeoutTimer = Timer(const Duration(seconds: 3), () {
+          if (_isListeningForPackage) {
+            _processPackageVoiceCommand(_recognizedText);
+          }
+        });
+
+        if (_recognizedText.toLowerCase().contains('search for') ||
+            _recognizedText.toLowerCase().contains('find') ||
+            _recognizedText.toLowerCase().contains('that\'s it') ||
+            _recognizedText.toLowerCase().contains('done') ||
+            _recognizedText.length > 20) { 
+          _processPackageVoiceCommand(_recognizedText);
+        }
+      },
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
+      partialResults: true,
+      localeId: 'en_US',
+    );
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Listening for package name... Speak now'),
+        backgroundColor: Colors.blue,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _startVoiceSearchForInvestigationType() async {
+    if (_isListeningForInvestigationType) {
+      _stopListening();
+      return;
+    }
+
+    if (!_speechAvailable) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Speech recognition is not available on this device'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedJobTitle == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a job title first'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    bool hasPermission = await _speech.hasPermission;
+    if (!hasPermission) {
+      bool permissionGranted = await _speech.initialize();
+      if (!permissionGranted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Microphone permission is required for voice input'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return;
+      }
+    }
+
+    setState(() {
+      _isListeningForInvestigationType = true;
+      _isListeningForPackage = false;
+      _recognizedText = '';
+    });
+
+    await _speech.listen(
+      onResult: (result) {
+        setState(() {
+          _recognizedText = result.recognizedWords;
+        });
+        _speechTimeoutTimer?.cancel();
+        _speechTimeoutTimer = Timer(const Duration(seconds: 3), () {
+          if (_isListeningForInvestigationType) {
+            _processInvestigationTypeVoiceCommand(_recognizedText);
+          }
+        });
+        if (_recognizedText.toLowerCase().contains('select') ||
+            _recognizedText.toLowerCase().contains('choose') ||
+            _recognizedText.toLowerCase().contains('that\'s it') ||
+            _recognizedText.toLowerCase().contains('done') ||
+            _recognizedText.length > 20) { 
+          _processInvestigationTypeVoiceCommand(_recognizedText);
+        }
+      },
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
+      partialResults: true,
+      localeId: 'en_US',
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Listening for investigation type... Speak now'),
+        backgroundColor: Colors.blue,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _stopListening() {
+    _speech.stop();
+    _speechTimeoutTimer?.cancel();
+    setState(() {
+      _isListeningForPackage = false;
+      _isListeningForInvestigationType = false;
     });
   }
-}
+
+  void _processPackageVoiceCommand(String text) {
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No speech detected. Please try again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    _stopListening();
+
+    String cleanText = text.toLowerCase();
+    
+    cleanText = cleanText
+        .replaceAll('search for', '')
+        .replaceAll('find', '')
+        .replaceAll('package', '')
+        .replaceAll('test', '')
+        .trim();
+
+    if (cleanText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not recognize package name. Please try again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    setState(() {
+      _packageController.text = cleanText;
+      _selectedPackage = cleanText;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Package set to: $cleanText'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  void _processInvestigationTypeVoiceCommand(String text) {
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No speech detected. Please try again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    _stopListening();
+    String cleanText = text.toLowerCase();
+    
+    cleanText = cleanText
+        .replaceAll('select', '')
+        .replaceAll('choose', '')
+        .replaceAll('investigation', '')
+        .replaceAll('test', '')
+        .replaceAll('type', '')
+        .trim();
+
+    if (cleanText.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not recognize investigation type. Please try again.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    final matchedType = investigationTypes.firstWhere(
+      (type) {
+        final typeName = (type['name'] ?? '').toString().toLowerCase();
+        return typeName.contains(cleanText) || cleanText.contains(typeName);
+      },
+      orElse: () => {},
+    );
+
+    if (matchedType.isNotEmpty) {
+      _onInvestigationTypeSelected(matchedType);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Investigation type selected: ${matchedType['name']}'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No investigation type found for "$cleanText"'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
+  Future<void> _loadInitialData() async {
+    setState(() {
+      _isLoadingPatientIpdData = true;
+    });
+
+    try {
+      final ipdData = await InvestigationService.fetchPatientIpdDetails(
+        patientId: widget.patient.patientid,
+      );
+
+      if (ipdData != null && ipdData.isNotEmpty) {
+        String? extractedTpId = ipdData['tpId']?.toString() ??
+            ipdData['treatmentPlanId']?.toString() ??
+            ipdData['tpid']?.toString();
+        String? extractedWardId = ipdData['wardId']?.toString() ??
+            ipdData['wardid']?.toString() ??
+            ipdData['ward_id']?.toString();
+
+        if (extractedTpId == 'null') extractedTpId = null;
+        if (extractedWardId == 'null') extractedWardId = null;
+
+        setState(() {
+          _patientIpdData = ipdData;
+          _tpId = extractedTpId;
+          _wardId = extractedWardId;
+          _isLoadingPatientIpdData = false;
+        });
+      } else {
+        setState(() => _isLoadingPatientIpdData = false);
+      }
+    } catch (e) {
+      debugPrint('Error loading initial data: $e');
+      setState(() {
+        _isLoadingPatientIpdData = false;
+      });
+    }
+  }
+
+  Future<void> _loadTemplates() async {
+    setState(() => _isLoadingTemplates = true);
+    try {
+      final templates = await InvestigationService.fetchInvestigationTemplates();
+      if (mounted) {
+        setState(() {
+          templateList = templates;
+          _isLoadingTemplates = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading templates: $e');
+      if (mounted) setState(() => _isLoadingTemplates = false);
+    }
+  }
+
+  Future<void> _loadInvestigationTypesForJobTitle(String jobTitle) async {
+    if (jobTitle.isEmpty) return;
+    
+    setState(() => _isLoadingInvestigationTypes = true);
+    
+    try {
+      int typeId = _jobTitleToTypeId[jobTitle] ?? 1; 
+      
+      debugPrint('🔹 Loading investigation types for job title: $jobTitle (Type ID: $typeId)');
+      
+      final types = await InvestigationService.fetchInvestigationTypes(typeId: typeId);
+      
+      if (mounted) {
+        setState(() {
+          investigationTypes = types;
+          _isLoadingInvestigationTypes = false;
+          _selectedInvestigationType = null;
+          _amountController.clear();
+          _searchCodeController.clear();
+          parameterList = [];
+          selectedParameters = {};
+          _parameterController.clear();
+          _showParameterDropdown = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading investigation types: $e');
+      if (mounted) {
+        setState(() {
+          investigationTypes = [];
+          _isLoadingInvestigationTypes = false;
+          _selectedInvestigationType = null;
+        });
+       
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to load investigations for $jobTitle'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _onInvestigationTypeSelected(Map<String, dynamic> investigationType) async {
+    setState(() {
+      _selectedInvestigationType = investigationType;
+    });
+    await Future.wait([
+      _fetchChargeForInvestigation(investigationType['name']),
+      _fetchParametersForInvestigationType(),
+    ]);
+  }
+
+  Future<void> _fetchParametersForInvestigationType() async {
+    if (_selectedInvestigationType == null) return;
+    setState(() => _isLoadingParameters = true);
+
+    try {
+      final int typeId = _selectedInvestigationType!['id'] ?? 0;
+      final String gender = widget.patient.gender;
+
+      final params = await InvestigationService.fetchParameterList(
+        investigationTypeId: typeId,
+        gender: gender,
+      );
+
+      setState(() {
+        parameterList = params;
+        selectedParameters = {
+          for (var param in params)
+            (param['parameterName'] ?? param['name'] ?? '').toString(): true
+        };
+        _parameterController.text = _getSelectedParametersString();
+        _isLoadingParameters = false;
+      });
+    } catch (e) {
+      debugPrint('Error fetching parameters: $e');
+      setState(() {
+        parameterList = [];
+        selectedParameters = {};
+        _isLoadingParameters = false;
+      });
+    }
+  }
+
+  Future<void> _fetchChargeForInvestigation(String investigationType) async {
+    if (_isLoadingPatientIpdData) {
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    setState(() => _isLoadingAmount = true);
+
+    try {
+      final int testTypeId = _selectedInvestigationType?['id'] ?? 0;
+      final String testTypeName = investigationType.isNotEmpty
+          ? investigationType
+          : (_selectedInvestigationType?['name'] ?? '');
+      final String fallbackCharge =
+          _selectedInvestigationType?['charge']?.toString() ?? '0';
+
+      if (_tpId == null || _wardId == null || testTypeId == 0) {
+        setState(() {
+          _amountController.text = fallbackCharge;
+          _isLoadingAmount = false;
+        });
+        return;
+      }
+
+      final chargeResponse = await InvestigationService.getCharge(
+        tpId: _tpId!,
+        investigationId: testTypeId,
+        wardId: _wardId!,
+        name: testTypeName,
+      );
+
+      setState(() {
+        dynamic amount = chargeResponse['data'] ??
+            chargeResponse['charge'] ??
+            chargeResponse['amount'] ??
+            chargeResponse['rate'];
+        if (amount == null || amount.toString() == '0') amount = fallbackCharge;
+        _amountController.text = amount.toString();
+        _isLoadingAmount = false;
+      });
+    } catch (e) {
+      debugPrint('Error fetching charge: $e');
+      setState(() {
+        final fallbackCharge = _selectedInvestigationType?['charge']?.toString() ?? '0';
+        _amountController.text = fallbackCharge;
+        _isLoadingAmount = false;
+      });
+    }
+  }
+
+  String _getSelectedParametersString() {
+    final selected = selectedParameters.entries
+        .where((entry) => entry.value == true)
+        .map((entry) => entry.key)
+        .toList();
+    return selected.join(', ');
+  }
+
+  void _addItem() {
+    if (_selectedInvestigationType == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select an Investigation Type.'), backgroundColor: Colors.red));
+      return;
+    }
+
+    String packageName = _packageController.text.trim();
+    if (packageName.isEmpty && _selectedPackage != null) {
+      packageName = _selectedPackage!;
+    }
+
+    setState(() {
+      _investigationItems.add({
+        'package': packageName,
+        'type': _selectedInvestigationType!['name'] ?? '',
+        'typeId': _selectedInvestigationType!['id'] ?? 0,
+        'gender': _selectedInvestigationType!['gender'] ?? '',
+        'searchCode': _searchCodeController.text.trim(),
+        'amount': _amountController.text.trim().isEmpty ? '0' : _amountController.text.trim(),
+        'parameter': _getSelectedParametersString(),
+        'indications': _indicationsController.text.trim(),
+        'urgent': _isUrgent,
+      });
+
+      _clearForm();
+      _updateTotal();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item added successfully!'), backgroundColor: Colors.green, duration: Duration(milliseconds: 800)));
+  }
+
+  void _clearForm() {
+    _packageController.clear();
+    _selectedPackage = null;
+    _selectedInvestigationType = null;
+    _searchCodeController.clear();
+    _amountController.clear();
+    _parameterController.clear();
+    _indicationsController.clear();
+    _isUrgent = false;
+    parameterList = [];
+    selectedParameters = {};
+    _showParameterDropdown = false;
+  }
+
+  void _updateTotal() {
+    double total = 0;
+    for (var item in _investigationItems) {
+      total += double.tryParse(item['amount']?.toString() ?? '0') ?? 0;
+    }
+    _totalController.text = total.toStringAsFixed(2);
+  }
+
+  void _handleTemplateSelection(String template) {
+    setState(() {
+      _templateController.text = template;
+      _suggestJobTitleFromTemplate(template);
+    });
+  }
+
+  void _suggestJobTitleFromTemplate(String template) {
+    final lowerTemplate = template.toLowerCase();
+    String? suggestedJobTitle;
+
+    if (lowerTemplate.contains('path') || lowerTemplate.contains('lab') || lowerTemplate.contains('blood')) {
+      suggestedJobTitle = "Pathlab";
+    } else if (lowerTemplate.contains('radio') || lowerTemplate.contains('x-ray') || lowerTemplate.contains('scan')) {
+      suggestedJobTitle = "Radiology";
+    } else if (lowerTemplate.contains('cardio') || lowerTemplate.contains('heart') || lowerTemplate.contains('ecg')) {
+      suggestedJobTitle = "Cardiology";
+    }
+
+    if (suggestedJobTitle != null && jobTitles.contains(suggestedJobTitle) && _selectedJobTitle != suggestedJobTitle) {
+      setState(() {
+        _selectedJobTitle = suggestedJobTitle;
+      });
+      
+      _loadInvestigationTypesForJobTitle(suggestedJobTitle);
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Suggested Job Title: $suggestedJobTitle'),
+          backgroundColor: Colors.teal,
+          duration: const Duration(seconds: 2)
+        )
+      );
+    }
+  }
+
+  Future<void> _submitInvestigationRequest() async {
+    if (_investigationItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please add at least one investigation item.'),
+        backgroundColor: Colors.red
+      ));
+      return;
+    }
+
+    if (_selectedJobTitle == null || _selectedJobTitle!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Please select a Job Title.'),
+        backgroundColor: Colors.red
+      ));
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final result = await InvestigationService.saveInvestigationRequest(
+        patientId: widget.patient.patientid,
+        jobTitle: _selectedJobTitle!,
+        location: _selectedLocation ?? "AH (Nagpur)",
+        consultantName: _consultantNameController.text.trim(),
+        testList: _investigationItems,
+        investigations: _investigationItems,
+        totalAmount: _totalController.text,
+        isUrgent: _isUrgent,
+        tpId: _tpId,
+        wardId: _wardId,
+      );
+
+      final bool isSuccess = result['success'] == true;
+      final String responseMessage = result['message']?.toString() ?? '';
+
+      if (isSuccess) {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_investigation_save_time', DateTime.now().toIso8601String());
+        await prefs.setBool('shouldRefreshNotifications', true);
+        await NotificationRefreshService().markInvestigationSaved();
+        
+        String successMessage = responseMessage.isNotEmpty 
+            ? responseMessage 
+            : 'Investigation Request Submitted Successfully!';
+        
+        if (successMessage.endsWith('.')) {
+          successMessage = successMessage.substring(0, successMessage.length - 1);
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('$successMessage. Notifications will refresh automatically.'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3)
+          )
+        );
+        await Future.delayed(const Duration(milliseconds: 1500));
+        
+        if (mounted) {
+          _investigationItems.clear();
+          _updateTotal();
+          Navigator.pop(context, true);
+        }
+      } else {
+        String errorMessage = 'Failed to submit investigation request';
+        if (responseMessage.isNotEmpty) {
+          errorMessage = responseMessage;
+        }
+        
+        final lowerMessage = responseMessage.toLowerCase();
+        if (lowerMessage.contains('saved successfully') || 
+            lowerMessage.contains('investigation request saved')) {
+          debugPrint('✅ Investigation saved despite 400 status');
+          
+          
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('last_investigation_save_time', DateTime.now().toIso8601String());
+          await prefs.setBool('shouldRefreshNotifications', true);
+          await NotificationRefreshService().markInvestigationSaved();
+          
+         
+          String successMessage = responseMessage.isNotEmpty 
+              ? responseMessage 
+              : 'Investigation Request Submitted Successfully!';
+          
+          if (successMessage.endsWith('.')) {
+            successMessage = successMessage.substring(0, successMessage.length - 1);
+          }
+          
+          // ScaffoldMessenger.of(context).showSnackBar(
+          //   SnackBar(
+          //     content: Text('$successMessage. Notifications will refresh automatically.'),
+          //     backgroundColor: Colors.green,
+          //     duration: const Duration(seconds: 3)
+          //   )
+          // );
+          
+          await Future.delayed(const Duration(milliseconds: 1500));
+          
+          if (mounted) {
+            _investigationItems.clear();
+            _updateTotal();
+            Navigator.pop(context, true);
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 4)
+            )
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error submitting investigation: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Network error occurred while submitting'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 4)
+        )
+      );
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Widget _buildModernInput({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    bool readOnly = false,
+    Widget? suffixIcon,
+    Function(String)? onChanged,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey[600])),
+        const SizedBox(height: 3), 
+        Container(
+          height: 44, 
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(10), 
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: TextField(
+            controller: controller,
+            readOnly: readOnly,
+            onChanged: onChanged,
+            style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
+            decoration: InputDecoration(
+              prefixIcon: Icon(icon, color: Colors.grey[500], size: 16), 
+              suffixIcon: suffixIcon,
+              border: InputBorder.none,
+              isDense: true,
+              hintText: "Enter $label",
+              hintStyle: TextStyle(color: Colors.grey[400], fontSize: 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11), 
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFieldContainer({required Widget child}) {
+    return Container(
+      height: 44, 
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.grey[200]!),
+      ),
+      alignment: Alignment.centerLeft,
+      child: child,
+    );
+  }
+
+  Widget _buildSelectableField({
+    required String? value,
+    required String label,
+    required IconData icon,
+    required VoidCallback onTap,
+    String placeholder = "Select",
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: GoogleFonts.poppins(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey[600])),
+        const SizedBox(height: 3),
+        GestureDetector(
+          onTap: () {
+            FocusScope.of(context).unfocus();
+            onTap();
+          },
+          child: Container(
+            height: 44,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey[50],
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey[200]!),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: (value != null && value.isNotEmpty) ? const Color(0xFF1A237E) : Colors.grey[500], size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    (value != null && value.isNotEmpty) ? value : placeholder,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: (value != null && value.isNotEmpty) ? Colors.black87 : Colors.grey[400],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Icon(Icons.keyboard_arrow_down, color: Colors.grey[500], size: 16),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showSearchableSelectionSheet({
+    required String title,
+    required Future<List<String>> Function(String query) searchCallback,
+    required Function(String) onSelected,
+    bool showMic = false,
+    Function()? onMicTap,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => _SearchableSheetContent(
+        title: title, 
+        searchCallback: searchCallback, 
+        onSelected: onSelected,
+        showMic: showMic,
+        onMicTap: onMicTap,
+        speech: _speech,
+      ),
+    );
+  }
+
+  void _showInvestigationTypeSheet(List<Map<String, dynamic>> types) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        List<Map<String, dynamic>> filteredList = List.from(types);
+        bool isListening = false;
+        String recognizedText = '';
+
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setSheetState) {
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.85,
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Column(
+                children: [
+                  Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10, bottom: 20), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
+                  Text("Select Investigation Type", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 15),
+                  Container(
+                    decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            autofocus: false,
+                            controller: TextEditingController(text: recognizedText),
+                            style: GoogleFonts.poppins(fontSize: 14),
+                            onChanged: (value) {
+                              setSheetState(() {
+                                if (value.isEmpty) {
+                                  filteredList = List.from(types);
+                                } else {
+                                  filteredList = types.where((element) => (element['name'] ?? '').toString().toLowerCase().contains(value.toLowerCase())).toList();
+                                }
+                              });
+                            },
+                            decoration: InputDecoration(
+                              hintText: isListening ? "Listening..." : "Search type...", 
+                              border: InputBorder.none, 
+                              prefixIcon: Icon(isListening ? Icons.mic : Icons.search, color: isListening ? Colors.blue : Colors.grey), 
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          icon: isListening
+                            ? const Icon(Icons.stop, color: Colors.red)
+                            : Icon(Icons.mic, color: Colors.blue[700]),
+                          onPressed: () async {
+                            if (isListening) {
+                              _speech.stop();
+                              setSheetState(() => isListening = false);
+                            } else {
+                              if (await _speech.hasPermission) {
+                                setSheetState(() => isListening = true);
+                                await _speech.listen(
+                                  onResult: (result) {
+                                    setSheetState(() {
+                                      recognizedText = result.recognizedWords;
+                                      filteredList = types.where((element) => (element['name'] ?? '').toString().toLowerCase().contains(recognizedText.toLowerCase())).toList();
+                                    });
+                                  },
+                                  listenFor: const Duration(seconds: 10),
+                                  localeId: 'en_US',
+                                );
+                              }
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: filteredList.isEmpty
+                        ? Center(child: Text("No investigation types found", style: GoogleFonts.poppins(color: Colors.grey)))
+                        : ListView.separated(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            itemCount: filteredList.length,
+                            separatorBuilder: (c, i) => const Divider(height: 1),
+                            itemBuilder: (context, index) {
+                              final type = filteredList[index];
+                              return ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.indigo[50],
+                                    borderRadius: BorderRadius.circular(8)
+                                  ),
+                                  child: const Icon(Icons.science, color: Colors.indigo, size: 20)
+                                ),
+                                title: Text(type['name'] ?? '', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
+                                subtitle: type['description']?.toString().isNotEmpty == true
+                                    ? Text(type['description'].toString(), style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis)
+                                    : null,
+                                onTap: () async {
+                                  Navigator.pop(context);
+                                  await _onInvestigationTypeSelected(type);
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showInvestigationListPopup() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(10)
+              )
+            ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text("Request List", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18)),
+                Text("${_investigationItems.length} items", style: GoogleFonts.poppins(color: Colors.grey))
+              ]
+            ),
+            if (_selectedJobTitle != null) ...[
+              const SizedBox(height: 5),
+              Row(
+                children: [
+                  Icon(Icons.work, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Text('Category: $_selectedJobTitle', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]))
+                ],
+              )
+            ],
+            const SizedBox(height: 10),
+            Expanded(
+              child: _investigationItems.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.science_outlined, size: 60, color: Colors.grey[300]),
+                          const SizedBox(height: 10),
+                          Text("No investigations added", style: GoogleFonts.poppins(color: Colors.grey)),
+                          const SizedBox(height: 5),
+                          Text("Add investigations using the form above", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]))
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _investigationItems.length,
+                      separatorBuilder: (c, i) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final item = _investigationItems[index];
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.grey[200]!)
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: Colors.indigo.withOpacity(0.1),
+                                radius: 14,
+                                child: Text(
+                                  "${index + 1}",
+                                  style: const TextStyle(
+                                    color: Colors.indigo,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12
+                                  )
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['type'] ?? '',
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14
+                                      )
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      "₹${item['amount']} | ${item['urgent'] ? 'Urgent' : 'Normal'}",
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: item['urgent'] ? Colors.red : Colors.grey[600],
+                                        fontWeight: item['urgent'] ? FontWeight.bold : FontWeight.normal
+                                      )
+                                    ),
+                                    if (item['parameter']?.toString().isNotEmpty == true) ...[
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        item['parameter'].toString(),
+                                        style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis
+                                      )
+                                    ]
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_rounded, color: Colors.redAccent),
+                                onPressed: () {
+                                  setState(() {
+                                    _investigationItems.removeAt(index);
+                                    _updateTotal();
+                                  });
+                                  Navigator.pop(context);
+                                  _showInvestigationListPopup();
+                                }
+                              )
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const Color darkBlue = Color(0xFF1A237E);
+    const Color bgGrey = Color(0xFFF5F7FA);
+    String formattedDate = DateFormat('dd MMM yyyy, hh:mm a').format(DateTime.now());
+
+    return Scaffold(
+      backgroundColor: bgGrey,
+      body: Column(
+        children: [
+          Container(
+            padding: EdgeInsets.only(
+              top: MediaQuery.of(context).padding.top + 5,
+              left: 20,
+              right: 20,
+              bottom: 15
+            ),
+            decoration: const BoxDecoration(
+              color: darkBlue,
+              borderRadius: BorderRadius.only(
+                bottomLeft: Radius.circular(20),
+                bottomRight: Radius.circular(20)
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(8)
+                        ),
+                        child: const Icon(Icons.arrow_back, color: Colors.white, size: 18),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Investigation Request",
+                            style: GoogleFonts.poppins(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600
+                            )
+                          ),
+                          Text(
+                            widget.patientName,
+                            style: GoogleFonts.poppins(color: Colors.white70, fontSize: 11)
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8)
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.calendar_today, color: Colors.white70, size: 12),
+                          const SizedBox(width: 6),
+                          Text(formattedDate, style: GoogleFonts.poppins(color: Colors.white, fontSize: 10)),
+                        ],
+                      ),
+                    )
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(12), 
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "INVESTIGATION CATEGORY",
+                    style: GoogleFonts.poppins(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: darkBlue
+                    )
+                  ),
+                  const SizedBox(height: 6),
+                 SizedBox(
+                    height: 32, 
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: jobTitles.length,
+                      separatorBuilder: (c, i) => const SizedBox(width: 8),
+                      itemBuilder: (context, index) {
+                        bool isSelected = _selectedJobTitle == jobTitles[index];
+                        return GestureDetector(
+                          onTap: () {
+                            final selectedTitle = jobTitles[index];
+                            setState(() {
+                              _selectedJobTitle = selectedTitle;
+                            });
+                            _loadInvestigationTypesForJobTitle(selectedTitle);
+                          },
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                            decoration: BoxDecoration(
+                              color: isSelected ? darkBlue : Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: isSelected ? darkBlue : Colors.grey[300]!)
+                            ),
+                            child: Center(
+                              child: Text(
+                                jobTitles[index],
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? Colors.white : Colors.grey[700]
+                                )
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "SEARCH PACKAGE", 
+                        style: GoogleFonts.poppins(
+                          fontSize: 10, 
+                          fontWeight: FontWeight.w600, 
+                          color: Colors.grey[600]
+                        )
+                      ),
+                      const SizedBox(height: 3),
+                      GestureDetector(
+                        onTap: () {
+                          _showSearchableSelectionSheet(
+                            title: "Search Package",
+                            searchCallback: (query) async {
+                              if (query.isEmpty) return await InvestigationService.getCachedInvestigations();
+                              return await InvestigationService.fetchInvestigations(query: query);
+                            },
+                            onSelected: (val) {
+                              setState(() {
+                                _packageController.text = val;
+                                _selectedPackage = val;
+                              });
+                            },
+                            showMic: true,
+                            onMicTap: _startVoiceSearchForPackage,
+                          );
+                        },
+                        child: Container(
+                          height: 44,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.grey[50],
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey[200]!)
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.search, color: (_packageController.text.isNotEmpty) ? darkBlue : Colors.grey[500], size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _isListeningForPackage ? "Listening... $_recognizedText" : (_packageController.text.isNotEmpty ? _packageController.text : "Search Package..."),
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: (_isListeningForPackage || _packageController.text.isNotEmpty) ? Colors.black87 : Colors.grey[400]
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              _isListeningForPackage
+                                ? IconButton(
+                                    icon: const Icon(Icons.stop, color: Colors.red, size: 18),
+                                    onPressed: _stopListening,
+                                  )
+                                : IconButton(
+                                    icon: Icon(Icons.mic, color: Colors.blue[700], size: 18),
+                                    onPressed: _startVoiceSearchForPackage,
+                                  ),
+                              Icon(Icons.keyboard_arrow_down, color: Colors.grey[500], size: 16),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_isListeningForPackage)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0, left: 8.0),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: Colors.red,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Listening... Speak clearly',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  color: Colors.blue[700],
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  Container(
+                    padding: const EdgeInsets.all(12), 
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0,5)
+                        )
+                      ]
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Investigation Details",
+                          style: GoogleFonts.poppins(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: darkBlue
+                          )
+                        ),
+                        const SizedBox(height: 10),
+                        
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    "Investigation Type",
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.grey[600]
+                                    )
+                                  ),
+                                ),
+                                if (_isLoadingInvestigationTypes)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2)
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            GestureDetector(
+                              onTap: _selectedJobTitle == null
+                                  ? () {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Please select a Job Title first'),
+                                          backgroundColor: Colors.red,
+                                          duration: Duration(seconds: 2)
+                                        )
+                                      );
+                                    }
+                                  : () {
+                                      if (investigationTypes.isNotEmpty && !_isLoadingInvestigationTypes) {
+                                        _showInvestigationTypeSheet(investigationTypes);
+                                      } else if (_isLoadingInvestigationTypes) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('Loading investigation types...'),
+                                            backgroundColor: Colors.blue,
+                                            duration: const Duration(seconds: 1)
+                                          )
+                                        );
+                                      } else {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          const SnackBar(
+                                            content: Text('No investigation types available for this category'),
+                                            backgroundColor: Colors.orange,
+                                            duration: const Duration(seconds: 2)
+                                          )
+                                        );
+                                      }
+                                    },
+                              child: Container(
+                                height: 44,
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey[50],
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.grey[200]!)
+                                ),
+                                child: Row(
+                                  children: [
+                                    Icon(
+                                      Icons.science,
+                                      color: (_selectedInvestigationType != null) ? darkBlue : Colors.grey[500],
+                                      size: 16
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _isListeningForInvestigationType ? "Listening... $_recognizedText" : (_selectedInvestigationType?['name'] ?? 
+                                          (_selectedJobTitle == null 
+                                            ? 'Select Job Title First'
+                                            : investigationTypes.isEmpty 
+                                              ? 'No investigations available'
+                                              : 'Select Investigation Type')),
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: (_isListeningForInvestigationType || _selectedInvestigationType != null) 
+                                            ? Colors.black87 
+                                            : Colors.grey[400]
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                    _isListeningForInvestigationType
+                                      ? IconButton(
+                                          icon: const Icon(Icons.stop, color: Colors.red, size: 18),
+                                          onPressed: _stopListening,
+                                        )
+                                      : IconButton(
+                                          icon: Icon(Icons.mic, color: Colors.blue[700], size: 18),
+                                          onPressed: _startVoiceSearchForInvestigationType,
+                                        ),
+                                    Icon(
+                                      Icons.keyboard_arrow_down,
+                                      color: Colors.grey[500],
+                                      size: 16
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            if (_isListeningForInvestigationType)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 4.0, left: 8.0),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 8,
+                                      height: 8,
+                                      decoration: BoxDecoration(
+                                        color: Colors.red,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      'Listening... Speak investigation type name',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 10,
+                                        color: Colors.blue[700],
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            if (_selectedJobTitle != null && investigationTypes.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                '${investigationTypes.length} investigation types available for $_selectedJobTitle',
+                                style: GoogleFonts.poppins(fontSize: 10, color: Colors.grey[600])
+                              )
+                            ]
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 8), 
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Stack(
+                                children: [
+                                  _buildModernInput(
+                                    controller: _amountController,
+                                    label: "Amount",
+                                    icon: Icons.currency_rupee
+                                  ),
+                                  if (_isLoadingAmount)
+                                    Positioned(
+                                      right: 8,
+                                      top: 0,
+                                      bottom: 0,
+                                      child: Center(
+                                        child: SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: darkBlue
+                                          )
+                                        )
+                                      )
+                                    )
+                                ]
+                              )
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _buildModernInput(
+                                controller: _searchCodeController,
+                                label: "Search Code",
+                                icon: Icons.qr_code
+                              )
+                            ),
+                          ],
+                        ),
+                        
+                        const SizedBox(height: 8),
+                        
+                        GestureDetector(
+                          onTap: () {
+                            if (parameterList.isNotEmpty && !_isLoadingParameters) {
+                              setState(() => _showParameterDropdown = !_showParameterDropdown);
+                            }
+                          },
+                          child: Column(
+                             crossAxisAlignment: CrossAxisAlignment.start,
+                             children: [
+                                Text(
+                                  "Parameters",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey[600]
+                                  )
+                                ),
+                                const SizedBox(height: 3),
+                                _buildFieldContainer(
+                                  child: AbsorbPointer(
+                                    child: TextField(
+                                      controller: _parameterController,
+                                      style: GoogleFonts.poppins(fontSize: 13, fontWeight: FontWeight.w500),
+                                      decoration: InputDecoration(
+                                        prefixIcon: Icon(Icons.list, color: Colors.grey[500], size: 16),
+                                        suffixIcon: _isLoadingParameters 
+                                          ? const Padding(
+                                              padding: EdgeInsets.all(12),
+                                              child: SizedBox(
+                                                width: 10,
+                                                height: 10,
+                                                child: CircularProgressIndicator(strokeWidth: 2)
+                                              )
+                                            ) 
+                                          : Icon(
+                                              _showParameterDropdown ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                              color: Colors.grey,
+                                              size: 18
+                                            ),
+                                        border: InputBorder.none,
+                                        isDense: true,
+                                        hintText: "Parameters",
+                                        hintStyle: TextStyle(color: Colors.grey[400], fontSize: 12),
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 11),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                             ],
+                          ),
+                        ),
+                        
+                        if (_showParameterDropdown && parameterList.isNotEmpty)
+                          Container(
+                            margin: const EdgeInsets.only(top: 8),
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[50],
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey[200]!)
+                            ),
+                            child: Column(
+                              children: [
+                                CheckboxListTile(
+                                  dense: true,
+                                  visualDensity: VisualDensity.compact,
+                                  title: Text(
+                                    "Select All",
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12
+                                    )
+                                  ),
+                                  value: selectedParameters.values.every((v) => v),
+                                  activeColor: darkBlue,
+                                  onChanged: (val) {
+                                    setState(() {
+                                      selectedParameters = {
+                                        for (var p in parameterList) 
+                                          (p['parameterName'] ?? p['name']).toString(): val ?? true
+                                      };
+                                      _parameterController.text = _getSelectedParametersString();
+                                    });
+                                  },
+                                ),
+                                const Divider(height: 1),
+                                Container(
+                                  constraints: const BoxConstraints(maxHeight: 120),
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: parameterList.length,
+                                    itemBuilder: (context, index) {
+                                      final name = (parameterList[index]['parameterName'] ?? parameterList[index]['name']).toString();
+                                      return CheckboxListTile(
+                                        dense: true,
+                                        visualDensity: VisualDensity.compact,
+                                        title: Text(name, style: GoogleFonts.poppins(fontSize: 11)),
+                                        value: selectedParameters[name] ?? false,
+                                        activeColor: darkBlue,
+                                        onChanged: (val) {
+                                          setState(() {
+                                            selectedParameters[name] = val ?? false;
+                                            _parameterController.text = _getSelectedParametersString();
+                                          });
+                                        },
+                                      );
+                                    },
+                                  ),
+                                )
+                              ],
+                            ),
+                          ),
+
+                        const SizedBox(height: 8),
+                        
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              flex: 3, 
+                              child: _buildModernInput(
+                                controller: _indicationsController,
+                                label: "Indications",
+                                icon: Icons.info_outline
+                              )
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              flex: 2,
+                              child: GestureDetector(
+                                onTap: () => setState(() => _isUrgent = !_isUrgent),
+                                child: Container(
+                                  height: 44, 
+                                  decoration: BoxDecoration(
+                                    color: _isUrgent ? Colors.red[50] : Colors.grey[100],
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: _isUrgent ? Colors.red : Colors.grey[300]!
+                                    )
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.warning_amber_rounded,
+                                        size: 16,
+                                        color: _isUrgent ? Colors.red : Colors.grey
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "Urgent",
+                                        style: GoogleFonts.poppins(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 12,
+                                          color: _isUrgent ? Colors.red : Colors.grey
+                                        )
+                                      )
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            )
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+                  
+                  _buildSelectableField(
+                    value: _consultantNameController.text,
+                    label: "CONSULTANT",
+                    icon: Icons.person_outline,
+                    placeholder: "Select Consultant",
+                    onTap: () {
+                      _showSearchableSelectionSheet(
+                        title: "Select Consultant",
+                        searchCallback: (query) async {
+                          if (query.isEmpty) return [];
+                          String branchId = (_selectedLocation ?? "AH (Nagpur)") == "AH (Nagpur)" ? "1" : "2";
+                          final names = await InvestigationService.fetchPractitionersNames(
+                            branchId: branchId,
+                            specializationId: 0,
+                            isVisitingConsultant: 0
+                          );
+                          return names.where((n) => n.toLowerCase().contains(query.toLowerCase())).toList();
+                        },
+                        onSelected: (val) {
+                          setState(() => _consultantNameController.text = val);
+                        }
+                      );
+                    }
+                  ),
+
+                  const SizedBox(height: 80), 
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: Container(
+        padding: const EdgeInsets.fromLTRB(16, 10, 16, 16), 
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0,-5)
+            )
+          ]
+        ),
+        child: SafeArea(
+          child: Row(
+            children: [
+              Expanded(
+                flex: 4,
+                child: ElevatedButton(
+                  onPressed: _addItem,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: darkBlue,
+                    side: const BorderSide(color: darkBlue),
+                    padding: const EdgeInsets.symmetric(vertical: 12), 
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: Text("Add +", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 8),
+               Expanded(
+                 flex: 2,
+                 child: ElevatedButton(
+                   onPressed: _investigationItems.isNotEmpty ? _showInvestigationListPopup : null,
+                   style: ElevatedButton.styleFrom(
+                     backgroundColor: Colors.grey[100],
+                     foregroundColor: Colors.black87,
+                     padding: const EdgeInsets.symmetric(vertical: 12),
+                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                     elevation: 0,
+                   ),
+                   child: Row(
+                     mainAxisAlignment: MainAxisAlignment.center,
+                     children: [
+                       const Icon(Icons.list, size: 18),
+                       if(_investigationItems.isNotEmpty) ...[
+                         const SizedBox(width: 4),
+                         Container(
+                           padding: const EdgeInsets.all(4),
+                           decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                           child: Text(
+                             "${_investigationItems.length}",
+                             style: const TextStyle(fontSize: 10, color: Colors.white, height: 1)
+                           )
+                         )
+                       ]
+                     ],
+                   ),
+                 ),
+               ),
+              const SizedBox(width: 8),
+              Expanded(
+                flex: 4,
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _submitInvestigationRequest,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: darkBlue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 5,
+                    shadowColor: darkBlue.withOpacity(0.3),
+                  ),
+                  child: _isSubmitting 
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                      )
+                    : Text("Submit", style: GoogleFonts.poppins(fontWeight: FontWeight.w600, fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   void dispose() {
@@ -241,832 +1915,169 @@ Future<void> _loadInitialData() async {
     _totalController.dispose();
     _consultantNameController.dispose();
     _templateController.dispose();
+    _speechTimeoutTimer?.cancel();
+    _speech.stop();
     super.dispose();
-  }
-
-  Future<void> _selectDate(BuildContext context) async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-    if (picked != null) {
-      setState(() {
-        _dateController.text = DateFormat('dd/MM/yyyy').format(picked);
-      });
-    }
-  }
-
-// Future<void> _fetchChargeForInvestigation(String investigationType) async {
-//   setState(() {
-//     _isLoadingAmount = true;
-//   });
-
-//   try {
-//     // String tpId = selectedTpId;             
-//     // int testTypeId = selectedTestTypeId ?? 0;    
-//     // String wardID = selectedWardId ?? '';         
-//     // String testTypeName = investigationType;     
-//         final String tpId = (selectedTpId ?? '').toString();
-//     final int testTypeId = selectedTestTypeId ?? 0;
-//     final String wardID = (selectedWardId ?? '').toString();
-//     final String testTypeName = investigationType.isNotEmpty ? investigationType : '';
-
-//     // ✅ Validate before calling API
-//     if (tpId.isEmpty || wardID.isEmpty || testTypeId == 0 || testTypeName.isEmpty) {
-//       debugPrint("⚠️ Missing required fields to fetch charge");
-//         debugPrint("tpId=$tpId, wardID=$wardID, testTypeId=$testTypeId, testTypeName=$testTypeName");
-
-//       if (mounted) {
-//         ScaffoldMessenger.of(context).showSnackBar(
-//           const SnackBar(
-//             content: Text('Please select TP, Ward, and Investigation type first.'),
-//             backgroundColor: Colors.orange,
-//           ),
-//         );
-//       }
-//       setState(() {
-//         _isLoadingAmount = false;
-//       });
-//       return;
-//     }
-
-//     // ✅ Call API
-//     final chargeResponse = await InvestigationService.getCharge(
-//       tpId: tpId,
-//       investigationId: testTypeId,
-//       wardId: wardID,
-//       name: testTypeName,
-//     );
-
-//     debugPrint('💰 Charge Response: $chargeResponse');
-
-//     // ✅ Handle response
-//     setState(() {
-//       final amount = chargeResponse['charge'] ??
-//           chargeResponse['amount'] ??
-//           chargeResponse['data']?['charge'] ??
-//           '0';
-//       _amountController.text = amount.toString();
-//       _isLoadingAmount = false;
-//     });
-//   } catch (e) {
-//     debugPrint('❌ Error fetching charge: $e');
-//     setState(() {
-//       _isLoadingAmount = false;
-//     });
-
-
-Future<void> _fetchChargeForInvestigation(String investigationType) async {
-  setState(() {
-    _isLoadingAmount = true;
-  });
-
-  try {
-    // ✅ Dynamically assign values (even if some are empty)
-    final String tpId = selectedTpId?.toString() ?? '';
-    final int testTypeId = selectedTestTypeId ?? 0;
-    final String wardID = selectedWardId?.toString() ?? '';
-    final String testTypeName = investigationType.isNotEmpty
-        ? investigationType
-        : (_selectedInvestigationType != null ? _selectedInvestigationType!['name'] ?? '' : '');
-
-    // ✅ Log values instead of showing alert
-    debugPrint('🔹 Fetching Charge with:');
-    debugPrint('tpId=$tpId');
-    debugPrint('wardID=$wardID');
-    debugPrint('testTypeId=$testTypeId');
-    debugPrint('testTypeName=$testTypeName');
-
-    // ✅ Call API regardless (your backend will handle if anything is missing)
-    final chargeResponse = await InvestigationService.getCharge(
-      tpId: tpId,
-      investigationId: testTypeId,
-      wardId: wardID,
-      name: testTypeName,
-    );
-
-    debugPrint('💰 Charge API Response: $chargeResponse');
-
-    setState(() {
-      final amount = chargeResponse['charge'] ??
-          chargeResponse['amount'] ??
-          chargeResponse['data']?['charge'] ??
-          '0';
-      _amountController.text = amount.toString();
-      _isLoadingAmount = false;
-    });
-  } catch (e) {
-    debugPrint('❌ Error fetching charge: $e');
-    setState(() => _isLoadingAmount = false);
   }
 }
 
+class _SearchableSheetContent extends StatefulWidget {
+  final String title;
+  final Future<List<String>> Function(String query) searchCallback;
+  final Function(String) onSelected;
+  final bool showMic;
+  final Function()? onMicTap;
+  final stt.SpeechToText speech;
 
-  // Fetch parameters when investigation type is selected
-  Future<void> _fetchParametersForInvestigationType() async {
-    if (_selectedInvestigationType == null) return;
+  const _SearchableSheetContent({
+    required this.title,
+    required this.searchCallback,
+    required this.onSelected,
+    this.showMic = false,
+    this.onMicTap,
+    required this.speech,
+  });
 
-    setState(() {
-      _isLoadingParameters = true;
-    });
+  @override
+  State<_SearchableSheetContent> createState() => _SearchableSheetContentState();
+}
 
+class _SearchableSheetContentState extends State<_SearchableSheetContent> {
+  final TextEditingController _searchController = TextEditingController();
+  List<String> _results = [];
+  bool _isLoading = false;
+  bool _isListening = false;
+  String _recognizedText = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _performSearch('');
+  }
+
+  Future<void> _performSearch(String query) async {
+    setState(() => _isLoading = true);
     try {
-      final int typeId = _selectedInvestigationType!['id'] ?? 0;
-      final String gender = widget.patient.gender;
-
-      debugPrint('Fetching parameters for ID: $typeId, Gender: $gender');
-
-      final params = await InvestigationService.fetchParameterList(
-        investigationTypeId: typeId,
-        gender: gender,
-      );
-
-      setState(() {
-        parameterList = params;
-        _isLoadingParameters = false;
-      });
-
-      debugPrint('Parameters fetched: ${parameterList.length} items');
-    } catch (e) {
-      debugPrint('Error fetching parameters: $e');
-      setState(() {
-        parameterList = [];
-        _isLoadingParameters = false;
-      });
-    }
-  }
-
-  void _addItem() {
-    if (_selectedInvestigationType != null &&
-        _searchCodeController.text.isNotEmpty) {
-      setState(() {
-        _investigationItems.add({
-          'package': _selectedPackage ?? '',
-          'type': _selectedInvestigationType!['name'] ?? '',
-          'typeId': _selectedInvestigationType!['id'] ?? 0,
-          'gender': _selectedInvestigationType!['gender'] ?? '',
-          'searchCode': _searchCodeController.text,
-          'amount': _amountController.text,
-          'parameter': _parameterController.text,
-          'indications': _indicationsController.text,
-          'urgent': _isUrgent,
+      final results = await widget.searchCallback(query);
+      if (mounted) {
+        setState(() {
+          _results = results;
+          _isLoading = false;
         });
-        _packageController.clear();
-        _selectedPackage = null;
-        _selectedInvestigationType = null;
-        _searchCodeController.clear();
-        _amountController.clear();
-        _parameterController.clear();
-        _indicationsController.clear();
-        _isUrgent = false;
-        parameterList = [];
-        _updateTotal();
-      });
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Please select an Investigation Type and enter a Search Code.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _updateTotal() {
-    double total = 0;
-    for (var item in _investigationItems) {
-      total += double.tryParse(item['amount']?.toString() ?? '0') ?? 0;
-    }
-    _totalController.text = total.toStringAsFixed(2);
+  Future<void> _startVoiceSearchInSheet() async {
+    if (_isListening || widget.onMicTap == null) return;
+    
+    setState(() => _isListening = true);
+    
+    await widget.speech.listen(
+      onResult: (result) {
+        setState(() {
+          _recognizedText = result.recognizedWords;
+          _searchController.text = _recognizedText;
+        });
+        _performSearch(_recognizedText);
+      },
+      listenFor: const Duration(seconds: 10),
+      pauseFor: const Duration(seconds: 3),
+      partialResults: true,
+      localeId: 'en_US',
+    );
+  }
+
+  void _stopListeningInSheet() {
+    widget.speech.stop();
+    setState(() => _isListening = false);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    widget.speech.stop();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-
-    return Scaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 1,
-        title: Text(
-          'Investigation Request',
-          style: GoogleFonts.poppins(
-              fontWeight: FontWeight.w600, color: Colors.black87),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24))
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.all(screenWidth * 0.04),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Patient: ${widget.patient.patientname}',
-                style: GoogleFonts.poppins(
-                    fontWeight: FontWeight.w600,
-                    fontSize: screenWidth * 0.04)),
-            SizedBox(height: screenWidth * 0.05),
-            Row(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: Colors.grey[300],
+              borderRadius: BorderRadius.circular(10)
+            )
+          ),
+          Text(widget.title, style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18)),
+          const SizedBox(height: 15),
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(12)
+            ),
+            child: Row(
               children: [
                 Expanded(
-                  child: _buildInputSection(
-                    screenWidth,
-                    "Location",
-                    dropdownItems: locations,
-                    selectedValue: _selectedLocation,
-                    onChanged: (val) => setState(() => _selectedLocation = val),
-                  ),
-                ),
-                SizedBox(width: screenWidth * 0.03),
-                Expanded(child: _buildDateSelectionField(screenWidth)),
-              ],
-            ),
-            SizedBox(height: screenWidth * 0.03),
-    
-            _isLoadingJobTitles
-                ? Container(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: screenWidth * 0.03,
-                        vertical: screenWidth * 0.035),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(screenWidth * 0.02),
-                    ),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                        SizedBox(width: screenWidth * 0.03),
-                        Text('Loading Job Titles...',
-                            style: GoogleFonts.poppins(
-                                fontSize: screenWidth * 0.038)),
-                      ],
-                    ),
-                  )
-                : _buildInputSection(
-                    screenWidth,
-                    "Job Title",
-                    dropdownItems: jobTitles,
-                    selectedValue: _selectedJobTitle,
-                    onChanged: (val) => setState(() => _selectedJobTitle = val),
-                  ),
-            
-            SizedBox(height: screenWidth * 0.03),
-
-            TypeAheadField<String>(
-              suggestionsCallback: (pattern) async {
-                final cached =
-                    await InvestigationService.getCachedInvestigationTemplates();
-                if (pattern.isEmpty && cached.isNotEmpty) return cached;
-                final templates =
-                    await InvestigationService.fetchInvestigationTemplates();
-                return templates
-                    .where((t) =>
-                        t.toLowerCase().contains(pattern.toLowerCase()))
-                    .toList();
-              },
-              itemBuilder: (context, suggestion) =>
-                  ListTile(title: Text(suggestion)),
-              onSelected: (suggestion) {
-                _templateController.text = suggestion;
-              },
-              builder: (context, controller, focusNode) {
-                controller.text = _templateController.text;
-                return TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  decoration: InputDecoration(
-                    hintText: 'Investigation Template',
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(screenWidth * 0.02),
-                        borderSide: BorderSide.none),
-                    contentPadding: EdgeInsets.symmetric(
-                        horizontal: screenWidth * 0.03,
-                        vertical: screenWidth * 0.035),
-                  ),
-                );
-              },
-            ),
-            SizedBox(height: screenWidth * 0.03),
-            Divider(height: screenWidth * 0.03, color: Colors.grey[400]),
-            SizedBox(height: screenWidth * 0.03),
-            Text('Investigation Items',
-                style: GoogleFonts.poppins(
-                  fontSize: screenWidth * 0.05,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                )),
-            SizedBox(height: screenWidth * 0.02),
-            _buildInvestigationInputRow(screenWidth),
-            SizedBox(height: screenWidth * 0.02),
-            if (_investigationItems.isNotEmpty)
-              SizedBox(
-                height: 300,
-                child: Scrollbar(
-                  thumbVisibility: true,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.vertical,
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: _buildInvestigationTable(screenWidth),
-                    ),
-                  ),
-                ),
-              ),
-            SizedBox(height: screenWidth * 0.02),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('Total',
-                      style: GoogleFonts.poppins(
-                          fontSize: screenWidth * 0.045,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87)),
-                  SizedBox(width: screenWidth * 0.02),
-                  SizedBox(
-                    width: screenWidth * 0.25,
-                    child: _buildInputSection(
-                      screenWidth,
-                      "",
-                      textController: _totalController,
-                      readOnly: true,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(height: screenWidth * 0.03),
-
-            /// Consultant Name TypeAhead
-            TypeAheadField<String>(
-              suggestionsCallback: (pattern) async {
-                if (pattern.isEmpty) return [];
-                final names = await InvestigationService.fetchPractitionersNames(
-                  branchId: _selectedLocation == "AH (Nagpur)" ? "1" : "2",
-                  specializationId: 0,
-                  isVisitingConsultant: 0,
-                );
-                return names
-                    .where((name) =>
-                        name.toLowerCase().contains(pattern.toLowerCase()))
-                    .toList();
-              },
-              itemBuilder: (context, suggestion) =>
-                  ListTile(title: Text(suggestion)),
-              onSelected: (suggestion) {
-                setState(() {
-                  _consultantNameController.text = suggestion;
-                });
-              },
-              builder: (context, controller, focusNode) {
-                controller.text = _consultantNameController.text;
-                return TextField(
-                  controller: controller,
-                  focusNode: focusNode,
-                  decoration: InputDecoration(
-                    hintText: 'Consultant Name',
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(screenWidth * 0.02),
-                        borderSide: BorderSide.none),
-                    contentPadding: EdgeInsets.symmetric(
-                        horizontal: screenWidth * 0.03,
-                        vertical: screenWidth * 0.035),
-                  ),
-                );
-              },
-            ),
-
-            SizedBox(height: screenWidth * 0.06),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Investigation Request Submitted!')),
-                  );
-                  Navigator.pop(context);
-                },
-                icon: const Icon(Icons.check, color: Colors.white),
-                label: Text('Submit Request',
-                    style: GoogleFonts.poppins(
-                        fontSize: screenWidth * 0.04, color: Colors.white)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo,
-                  padding: EdgeInsets.symmetric(vertical: screenWidth * 0.035),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(screenWidth * 0.025)),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputSection(double screenWidth, String hint,
-      {TextEditingController? textController,
-      List<String>? dropdownItems,
-      String? selectedValue,
-      ValueChanged<String?>? onChanged,
-      int maxLines = 1,
-      bool readOnly = false}) {
-    return textController != null
-        ? TextField(
-            controller: textController,
-            maxLines: maxLines,
-            readOnly: readOnly,
-            decoration: InputDecoration(
-              hintText: hint,
-              filled: true,
-              fillColor: Colors.white,
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(screenWidth * 0.02),
-                  borderSide: BorderSide.none),
-              contentPadding: EdgeInsets.symmetric(
-                  horizontal: screenWidth * 0.03,
-                  vertical: screenWidth * 0.035),
-            ),
-            style: GoogleFonts.poppins(fontSize: screenWidth * 0.038),
-          )
-        : Container(
-            padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(screenWidth * 0.02),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.grey.withAlpha(25),
-                    spreadRadius: 1,
-                    blurRadius: 3,
-                    offset: const Offset(0, 1))
-              ],
-            ),
-            child: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: selectedValue,
-                hint: Text(hint,
-                    style:
-                        GoogleFonts.poppins(fontSize: screenWidth * 0.038)),
-                isExpanded: true,
-                icon: Icon(Icons.arrow_drop_down, color: Colors.indigo),
-                items: dropdownItems
-                        ?.map((e) => DropdownMenuItem(
-                              value: e,
-                              child: Text(e,
-                                  style: GoogleFonts.poppins(
-                                      fontSize: screenWidth * 0.038)),
-                            ))
-                        .toList() ??
-                    [],
-                onChanged: onChanged,
-              ),
-            ),
-          );
-  }
-
-  Widget _buildDateSelectionField(double screenWidth) {
-    return GestureDetector(
-      onTap: () => _selectDate(context),
-      child: AbsorbPointer(
-        child: TextField(
-          controller: _dateController,
-          readOnly: true,
-          decoration: InputDecoration(
-            hintText: 'Date / Time',
-            filled: true,
-            fillColor: Colors.white,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(screenWidth * 0.02),
-                borderSide: BorderSide.none),
-            contentPadding: EdgeInsets.symmetric(
-                horizontal: screenWidth * 0.03, vertical: screenWidth * 0.035),
-            suffixIcon: Icon(Icons.calendar_today,
-                size: screenWidth * 0.05, color: Colors.indigo),
-          ),
-          style: GoogleFonts.poppins(fontSize: screenWidth * 0.038),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInvestigationInputRow(double screenWidth) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: TypeAheadField<String>(
-                suggestionsCallback: (pattern) async {
-                  if (pattern.isEmpty) {
-                    return await InvestigationService.getCachedInvestigations();
-                  }
-                  return await InvestigationService.fetchInvestigations(
-                      query: pattern);
-                },
-                itemBuilder: (context, suggestion) {
-                  return ListTile(title: Text(suggestion));
-                },
-                onSelected: (suggestion) {
-                  setState(() {
-                    _packageController.text = suggestion;
-                    _selectedPackage = suggestion;
-                  });
-                },
-                builder: (context, controller, focusNode) {
-                  controller.text = _packageController.text;
-                  return TextField(
-                    controller: controller,
-                    focusNode: focusNode,
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: (val) => _performSearch(val),
                     decoration: InputDecoration(
-                      hintText: 'Search Package',
-                      filled: true,
-                      fillColor: Colors.white,
-                      border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.circular(screenWidth * 0.02),
-                          borderSide: BorderSide.none),
-                      contentPadding: EdgeInsets.symmetric(
-                          horizontal: screenWidth * 0.03,
-                          vertical: screenWidth * 0.035),
+                      hintText: _isListening ? "Listening..." : "Type to search...",
+                      border: InputBorder.none,
+                      prefixIcon: Icon(_isListening ? Icons.mic : Icons.search, color: _isListening ? Colors.blue : Colors.grey),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)
                     ),
-                  );
-                },
-              ),
-            ),
-            SizedBox(width: screenWidth * 0.03),
-            Expanded(
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: investigationTypes.isEmpty
-                    ? InvestigationService.fetchInvestigationTypes(typeId: 5)
-                    : Future.value(investigationTypes),
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return Container(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: screenWidth * 0.03,
-                          vertical: screenWidth * 0.035),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(screenWidth * 0.02),
-                      ),
-                      child: Row(
-                        children: [
-                          SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                          SizedBox(width: screenWidth * 0.02),
-                          Text('Loading...',
-                              style: GoogleFonts.poppins(
-                                  fontSize: screenWidth * 0.038)),
-                        ],
-                      ),
-                    );
-                  }
-                  if (snapshot.hasError) {
-                    return const Text("Error loading types");
-                  }
-                  if (investigationTypes.isEmpty && snapshot.hasData) {
-                    investigationTypes = snapshot.data!;
-                  }
-                  return Container(
-                    padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(screenWidth * 0.02),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<Map<String, dynamic>>(
-                        value: _selectedInvestigationType,
-                        hint: Text('Investigation Type',
-                            style: GoogleFonts.poppins(
-                                fontSize: screenWidth * 0.038)),
-                        isExpanded: true,
-                        icon: Icon(Icons.arrow_drop_down, color: Colors.indigo),
-                        items: investigationTypes
-                            .map((type) => DropdownMenuItem<Map<String, dynamic>>(
-                                  value: type,
-                                  child: Text(type['name'] ?? '',
-                                      style: GoogleFonts.poppins(
-                                          fontSize: screenWidth * 0.038)),
-                                ))
-                            .toList(),
-                        onChanged: (newValue) async {
-                          setState(() => _selectedInvestigationType = newValue);
-                          // Fetch charge and parameters when investigation type is selected
-                          if (newValue != null) {
-                            await _fetchChargeForInvestigation(newValue['name']);
-                            await _fetchParametersForInvestigationType();
-                          }
-                        },
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: screenWidth * 0.03),
-        Row(
-          children: [
-            Expanded(
-              child: _buildInputSection(screenWidth, 'Search Code',
-                  textController: _searchCodeController),
-            ),
-            SizedBox(width: screenWidth * 0.03),
-            Expanded(
-              child: Stack(
-                children: [
-                  _buildInputSection(screenWidth, 'Amount',
-                      textController: _amountController),
-                  if (_isLoadingAmount)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.white.withValues(alpha: .7),
-                        child: const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        SizedBox(height: screenWidth * 0.03),
-        Row(
-          children: [
-            Expanded(
-              child: Stack(
-                children: [
-                  _buildInputSection(screenWidth, 'Parameter',
-                      textController: _parameterController),
-                  if (_isLoadingParameters)
-                    Positioned.fill(
-                      child: Container(
-                        color: Colors.white.withValues(alpha: .7),
-                        child: const Center(
-                          child: SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            SizedBox(width: screenWidth * 0.03),
-            Expanded(
-              child: _buildInputSection(screenWidth, 'Indications',
-                  textController: _indicationsController),
-            ),
-          ],
-        ),
-        // if (parameterList.isNotEmpty)
-        //   Column(
-        //     crossAxisAlignment: CrossAxisAlignment.start,
-        //     children: [
-        //       SizedBox(height: screenWidth * 0.02),
-        //       Text('Available Parameters:',
-        //           style: GoogleFonts.poppins(
-        //               fontSize: screenWidth * 0.035,
-        //               fontWeight: FontWeight.w500,
-        //               color: Colors.grey[700])),
-        //       SizedBox(height: screenWidth * 0.01),
-        //       Wrap(
-        //         spacing: 8,
-        //         runSpacing: 8,
-        //         children: parameterList.map((param) {
-        //           final paramName = param['parameterName'] ?? 
-        //                            param['name'] ?? 
-        //                            param['parameter'] ?? 
-        //                            'Unknown';
-        //           return Chip(
-        //             label: Text(paramName,
-        //                 style: GoogleFonts.poppins(fontSize: screenWidth * 0.03)),
-        //             backgroundColor: Colors.blue[50],
-        //             onDeleted: null,
-        //           );
-        //         }).toList(),
-        //       ),
-        //     ],
-        //   ),
-        SizedBox(height: screenWidth * 0.03),
-        Row(
-          children: [
-            // Urgent Checkbox
-            Row(
-              children: [
-                Checkbox(
-                  value: _isUrgent,
-                  onChanged: (value) {
-                    setState(() {
-                      _isUrgent = value ?? false;
-                    });
-                  },
-                  activeColor: Colors.blue,
-                  checkColor: Colors.white,
-                ),
-                Text(
-                  'Urgent',
-                  style: GoogleFonts.poppins(
-                    fontSize: screenWidth * 0.038,
-                    color: Colors.black87,
                   ),
                 ),
+                if (widget.showMic && widget.onMicTap != null)
+                  _isListening
+                    ? IconButton(
+                        icon: const Icon(Icons.stop, color: Colors.red),
+                        onPressed: _stopListeningInSheet,
+                      )
+                    : IconButton(
+                        icon: Icon(Icons.mic, color: Colors.blue[700]),
+                        onPressed: _startVoiceSearchInSheet,
+                      ),
               ],
             ),
-            const Spacer(),
-            GestureDetector(
-              onTap: _addItem,
-              child: Container(
-                padding: EdgeInsets.all(screenWidth * 0.03),
-                decoration: BoxDecoration(
-                    color: Colors.green,
-                    borderRadius: BorderRadius.circular(screenWidth * 0.02)),
-                child: Icon(Icons.add,
-                    color: Colors.white, size: screenWidth * 0.06),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildInvestigationTable(double screenWidth) {
-    return DataTable(
-      columnSpacing: screenWidth * 0.03,
-      headingRowColor: WidgetStateProperty.all(Colors.indigo.withAlpha(25)),
-      dataRowColor: WidgetStateProperty.all(Colors.white),
-      border: TableBorder.all(color: Colors.grey.withAlpha(80), width: 1),
-      columns: const [
-        DataColumn(label: Text('#')),
-        DataColumn(label: Text('Package')),
-        DataColumn(label: Text('Type')),
-        DataColumn(label: Text('Search Code')),
-        DataColumn(label: Text('Amount')),
-        DataColumn(label: Text('Parameter')),
-        DataColumn(label: Text('Indications')),
-        DataColumn(label: Text('Urgent')),
-        DataColumn(label: Text('Actions')),
-      ],
-      rows: _investigationItems.asMap().entries.map((entry) {
-        int index = entry.key;
-        Map<String, dynamic> item = entry.value;
-        return DataRow(cells: [
-          DataCell(Text((index + 1).toString())),
-          DataCell(Text(item['package'] ?? '')),
-          DataCell(Text(item['type'] ?? '')),
-          DataCell(Text(item['searchCode'] ?? '')),
-          DataCell(Text(item['amount']?.toString() ?? '0')),
-          DataCell(Text(item['parameter'] ?? '')),
-          DataCell(Text(item['indications'] ?? '')),
-          DataCell(
-            Icon(
-              item['urgent'] == true ? Icons.check_circle : Icons.cancel,
-              color: item['urgent'] == true ? Colors.blue : Colors.grey,
-              size: screenWidth * 0.05,
-            ),
           ),
-          DataCell(IconButton(
-            icon: Icon(Icons.delete,
-                size: screenWidth * 0.04, color: Colors.redAccent),
-            onPressed: () {
-              setState(() {
-                _investigationItems.removeAt(index);
-                _updateTotal();
-              });
-            },
-          )),
-        ]);
-      }).toList(),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _isLoading 
+              ? const Center(child: CircularProgressIndicator())
+              : _results.isEmpty 
+                  ? Center(child: Text("No results found", style: GoogleFonts.poppins(color: Colors.grey)))
+                  : ListView.separated(
+                      itemCount: _results.length,
+                      separatorBuilder: (c, i) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        return ListTile(
+                          title: Text(_results[index], style: GoogleFonts.poppins(fontSize: 14)),
+                          onTap: () {
+                            widget.onSelected(_results[index]);
+                            Navigator.pop(context);
+                          },
+                        );
+                      },
+                    ),
+          )
+        ],
+      ),
     );
   }
 }

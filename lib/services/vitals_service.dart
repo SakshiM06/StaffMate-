@@ -19,4 +19,6 @@ class VitalsService {
 
   // ✅ Add this missing method
   List<VitalsEntry> getAll() => List.unmodifiable(entries.value);
+
+  void add(VitalsEntry vitals) {}
 }

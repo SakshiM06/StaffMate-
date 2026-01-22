@@ -1,16 +1,172 @@
 import 'dart:convert';
-import 'dart:developer';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:staff_mate/models/dashboard_data.dart';
 import 'package:staff_mate/models/patient.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:staff_mate/services/investigation_service.dart';
 
 class IpdService {
   static const String _baseUrl =
       "https://test.smartcarehis.com:8443/ipd/patient/all";
+  static const String _practitionerUrl =
+      "https://test.smartcarehis.com:8443/smartcaremain/practitionerlist";
+  static const String _specializationUrl =
+      "https://test.smartcarehis.com:8443/smartcaremain/clinic/specializationlist";
+  static const String _wardListUrl =
+      "https://test.smartcarehis.com:8443/smartcaremain/clinic/branchwisewardlist/"; 
+  static const String _vitalsMasterUrl =
+      "https://test.smartcarehis.com:8443/ipd/common/get/vitals";
+  static const String _saveVitalsUrl =
+      "https://test.smartcarehis.com:8443/ipd/common/save/timewise/vitals";
+  static const String _prescriptionNotificationUrl =
+      "https://test.smartcarehis.com:8443/ipd/patient/getNotification/priscription/"; 
+  static const String _investigationNotificationUrl =
+      "https://test.smartcarehis.com:8443/ipd/patient/getNotification/investigation/"; 
 
-  Future<IpdDashboardData> fetchDashboardData() async {
+  Future<Map<String, dynamic>> fetchPrescriptionNotifications(String admissionId) async {
+    debugPrint('Fetching prescription notifications for admission ID: $admissionId');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      final fullUrl = '$_prescriptionNotificationUrl$admissionId';
+      debugPrint('Prescription Notification URL: $fullUrl');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Prescription Notification Headers: $headers');
+
+      final response = await http.get(
+        Uri.parse(fullUrl),
+        headers: headers,
+      );
+
+      debugPrint('Prescription API Status Code: ${response.statusCode}');
+      debugPrint('Prescription API Response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        
+        if (decoded is Map<String, dynamic>) {
+          return {
+            'success': true,
+            'statusCode': decoded['status_code'] ?? 200,
+            'message': decoded['message'] ?? 'Success',
+            'timestamp': decoded['timestamp'] ?? '',
+            'data': decoded['data'] ?? [], 
+            'error': decoded['error'],
+          };
+        } else {
+          throw Exception('Unexpected API response format. Expected a map but got: ${decoded.runtimeType}');
+        }
+      } else {
+        throw Exception(
+          'Failed to load prescription notifications (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching prescription notifications: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchInvestigationNotifications(String admissionId) async {
+    debugPrint('Fetching investigation notifications for admission ID: $admissionId');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      final fullUrl = '$_investigationNotificationUrl$admissionId';
+      debugPrint('Investigation Notification URL: $fullUrl');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Investigation Notification Headers: $headers');
+
+      final response = await http.get(
+        Uri.parse(fullUrl),
+        headers: headers,
+      );
+
+      debugPrint('Investigation API Status Code: ${response.statusCode}');
+      debugPrint('Investigation API Response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        
+       
+        if (decoded is Map<String, dynamic>) {
+          return {
+            'success': true,
+            'statusCode': decoded['status_code'] ?? 200,
+            'message': decoded['message'] ?? 'Success',
+            'timestamp': decoded['timestamp'] ?? '',
+            'data': decoded['data'] ?? [], 
+            'error': decoded['error'],
+          };
+        } else {
+          throw Exception('Unexpected API response format. Expected a map but got: ${decoded.runtimeType}');
+        }
+      } else {
+        throw Exception(
+          'Failed to load investigation notifications (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching investigation notifications: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+  }
+  Future<IpdDashboardData> fetchDashboardData({required String wardId}) async {
     debugPrint('Fetching IPD dashboard data...');
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -21,11 +177,8 @@ class IpdService {
       }
 
       final token = getPrefAsString('auth_token');
-      // final clinicId = getPrefAsString('userId');
       final clinicId = getPrefAsString('clinicId');
-      // final branchId = getPrefAsString('branchId');
       final userId = getPrefAsString('userId');
-      // final zoneid = getPrefAsString('zoneid');
 
       if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
         throw Exception('⚠️ Missing session values. Please login again.');
@@ -38,18 +191,19 @@ class IpdService {
         'clinicid': clinicId,
         'userid': userId,
         'ZONEID': "Asia/Kolkata",
-        'branchId': 1,
+        'branchId': '1',
       };
 
       debugPrint('Headerss $headers');
-
+      debugPrint('Patient All: $_baseUrl');
+      debugPrint('Dataa $headers');
+      
       final body = {
         "branchid": 1,
         "filterWardId": "0",
         "searchText": "",
         "patientFrom": 0,
         "showTpPatient": false,
-        
       };
       debugPrint('--IPDDASHBOARD-- $body , $headers ');
 
@@ -66,73 +220,824 @@ class IpdService {
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
 
-       if (decoded is List) {
-  final patientList = decoded
-      .map((json) => Patient.fromJson(json as Map<String, dynamic>))
-      .toList();
+        if (decoded is List) {
+          final patientList = decoded
+              .map((json) => Patient.fromJson(json as Map<String, dynamic>))
+              .toList();
 
-  // ✅ Save first patient's admissionId (or whichever is needed)
-  if (patientList.isNotEmpty) {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('admissionid', patientList.first.admissionId);
-        debugPrint("Admission ID saved: ${patientList.first.admissionId}");
-  }
+          if (patientList.isNotEmpty) {
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('admissionid', patientList.first.admissionId);
+            debugPrint("Admission ID saved: ${patientList.first.admissionId}");
+          }
 
-  return IpdDashboardData(
-    patients: patientList,
-  );
-}
- else {
+          return IpdDashboardData(
+            patients: patientList,
+          );
+        } else {
           throw Exception(
             'Unexpected API format. Expected a list of patients but got: ${decoded.runtimeType}',
           );
         }
       } else {
         throw Exception(
-          'Failed too load IPD data (Status ${response.statusCode}). Body: ${response.body}',
+          'Failed to load IPD data (Status ${response.statusCode}). Body: ${response.body}',
         );
       }
     } catch (e, stackTrace) {
       debugPrint('Error fetching dashboard data: $e');
-      log('StackTrace: $stackTrace');
+      debugPrint('StackTrace: $stackTrace');
       rethrow;
     }
   }
 
-  /// Calculate dashboard counts from patient list
-  // Map<String, int> _calculateStatistics(List<Patient> patients) {
-  //   int excessAmount = 0;
-  //   int self = 0;
-  //   int mlc = 0;
-  //   int tp = 0;
-  //   int tpCorporate = 0;
-  //   int toBeDischarged = 0;
+  
+  /// [branchId] - Branch ID (default: "1")
+  /// [specializationId] - Specialization filter (default: 0 for all)
+  /// [isVisitingConsultant] - Filter for visiting consultants (1 = yes, 0 = no)
+  Future<List<dynamic>> fetchPractitionerList({
+    String branchId = "1",
+    int specializationId = 0,
+    int isVisitingConsultant = 1,
+  }) async {
+    debugPrint('Fetching practitioner list...');
+    try {
+      final prefs = await SharedPreferences.getInstance();
 
-  //   for (final p in patients) {
-  //     if (p.dischargeStatus != '0') toBeDischarged++;
-  //     if (p.isMlc != '0') mlc++;
-  //     if (p.patientBalance > 0) excessAmount++;
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
 
-  //     final partyLower = p.party.toLowerCase();
-  //     if (partyLower.contains('corporate')) {
-  //       tpCorporate++;
-  //     } else if (partyLower.contains('third party')) {
-  //       tp++;
-  //     } else if (partyLower.contains('self')) {
-  //       self++;
-  //     }
-  //   }
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
 
-  //   return {
-  //     'Excess Amount': excessAmount,
-  //     'Inhouse Patients': patients.length,
-  //     'Self': self,
-  //     'MLC': mlc,
-  //     'TP': tp,
-  //     'TP Corporate': tpCorporate,
-  //     'To be Discharged': toBeDischarged,
-  //     'Total Bed': 97,
-  //     'Available': 97 - patients.length,
-  //   };
-  // }
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+      };
+
+      final body = {
+        "branchid": branchId,
+        "specializationid": specializationId,
+        "isVisitingConsultant": isVisitingConsultant,
+      };
+
+      debugPrint('--PRACTITIONER API-- Body: $body, Headers: $headers');
+
+      final response = await http.post(
+        Uri.parse(_practitionerUrl),
+        headers: headers.map((k, v) => MapEntry(k, v.toString())),
+        body: jsonEncode(body),
+      );
+
+      debugPrint('Practitioner API Status Code: ${response.statusCode}');
+      debugPrint('Practitioner API Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('practitionerList')) {
+            final practitionerList = decoded['practitionerList'];
+            
+            if (practitionerList is List) {
+              debugPrint('Successfully fetched ${practitionerList.length} practitioners');
+              return practitionerList;
+            } else {
+              throw Exception(
+                'practitionerList is not a list. Got: ${practitionerList.runtimeType}',
+              );
+            }
+          } else {
+            throw Exception(
+              'API response missing "practitionerList" key. Response keys: ${decoded.keys}',
+            );
+          }
+        } 
+        else if (decoded is List) {
+          debugPrint('Successfully fetched ${decoded.length} practitioners (direct list format)');
+          return decoded;
+        } else {
+          throw Exception(
+            'Unexpected API format. Expected a map with "practitionerList" key or a list but got: ${decoded.runtimeType}',
+          );
+        }
+      } else {
+        throw Exception(
+          'Failed to load practitioner data (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching practitioner list: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+  }
+
+
+  /// [branchId] - Branch ID (default: "1")
+  Future<List<dynamic>> fetchSpecializationList({
+    String branchId = "1",
+  }) async {
+    debugPrint('Fetching specialization list...');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+      final headers = {
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+      };
+
+      debugPrint('--SPECIALIZATION API-- Headers: $headers');
+
+      
+      final response = await http.get(
+        Uri.parse(_specializationUrl),
+        headers: headers,
+      );
+
+      debugPrint('Specialization API Status Code: ${response.statusCode}');
+      debugPrint('Specialization API Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        debugPrint('Specialization API Response Type: ${decoded.runtimeType}');
+        debugPrint('Specialization API Response: $decoded');
+
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('specializationList')) {
+            final specializationList = decoded['specializationList'];
+            
+            if (specializationList is List) {
+              debugPrint('Successfully fetched ${specializationList.length} specializations');
+              return specializationList;
+            } else {
+              throw Exception(
+                'specializationList is not a list. Got: ${specializationList.runtimeType}',
+              );
+            }
+          } else {
+            throw Exception(
+              'API response missing "specializationList" key. Response keys: ${decoded.keys}',
+            );
+          }
+        } 
+      
+        else if (decoded is List) {
+          debugPrint('Successfully fetched ${decoded.length} specializations (direct list format)');
+          return decoded;
+        } else {
+          throw Exception(
+            'Unexpected API format. Expected a map with "specializationList" key or a list but got: ${decoded.runtimeType}',
+          );
+        }
+      } else {
+        throw Exception(
+          'Failed to load specialization data (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching specialization list: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  /// [branchId]
+  Future<List<dynamic>> fetchBranchWardList({
+    String branchId = "1",
+  }) async {
+    debugPrint('Fetching branch-wise ward list for branch: $branchId');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      final url = '$_wardListUrl$branchId';
+      debugPrint('Ward list URL: $url');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('--WARD LIST API-- Headers: $headers');
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: headers,
+      );
+
+      debugPrint('Ward List API Status Code: ${response.statusCode}');
+      debugPrint('Ward List API Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        debugPrint('Ward List API Response Type: ${decoded.runtimeType}');
+        debugPrint('Ward List API Response: $decoded');
+
+     
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('wardList')) {
+            final wardList = decoded['wardList'];
+            if (wardList is List) {
+              debugPrint('Successfully fetched ${wardList.length} wards (from wardList key)');
+              return wardList;
+            }
+          } else if (decoded.containsKey('wards')) {
+            final wardList = decoded['wards'];
+            if (wardList is List) {
+              debugPrint('Successfully fetched ${wardList.length} wards (from wards key)');
+              return wardList;
+            }
+          } else if (decoded.containsKey('data')) {
+            final data = decoded['data'];
+            if (data is List) {
+              debugPrint('Successfully fetched ${data.length} wards (from data key)');
+              return data;
+            }
+          } else {
+ 
+            for (final entry in decoded.entries) {
+              if (entry.value is List) {
+                debugPrint('Successfully fetched ${(entry.value as List).length} wards (from ${entry.key} key)');
+                return entry.value as List;
+              }
+            }
+            
+            throw Exception(
+              'API response does not contain a list of wards. Response keys: ${decoded.keys}',
+            );
+          }
+        } 
+ 
+        else if (decoded is List) {
+          debugPrint('Successfully fetched ${decoded.length} wards (direct list format)');
+          return decoded;
+        } else {
+          throw Exception(
+            'Unexpected API format. Expected a map with ward list or a list but got: ${decoded.runtimeType}',
+          );
+        }
+      } else {
+        throw Exception(
+          'Failed to load ward list data (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching ward list: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+    
+    return [];
+  }
+
+  Future<Map<String, dynamic>> fetchVitalsMasterData() async {
+    debugPrint('Fetching vitals master data...');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': '1',
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('--VITALS MASTER API-- Headers: $headers');
+
+      final response = await http.get(
+        Uri.parse(_vitalsMasterUrl),
+        headers: headers,
+      );
+
+      debugPrint('Vitals Master API Status Code: ${response.statusCode}');
+      debugPrint('Vitals Master API Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('data') && decoded['data'] is List) {
+            debugPrint('Successfully fetched vitals master data');
+            return {
+              'success': true,
+              'data': decoded['data'],
+              'message': 'Vitals master data fetched successfully',
+            };
+          } else {
+            throw Exception('API response missing "data" key or data is not a list');
+          }
+        } else {
+          throw Exception('Unexpected API format. Expected a map but got: ${decoded.runtimeType}');
+        }
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to load vitals master data (Status ${response.statusCode})',
+          'error': response.body,
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching vitals master data: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Error fetching vitals master data: $e',
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>> savePatientVitals({
+    required String patientId,
+    required String admissionId,
+    required String date,
+    required String time,
+    required List<Map<String, dynamic>> vitalEntries,
+  }) async {
+    debugPrint('Saving patient vitals...');
+    debugPrint('Patient ID: $patientId, Admission ID: $admissionId');
+    debugPrint('Date: $date, Time: $time');
+    debugPrint('Number of vital entries: ${vitalEntries.length}');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Missing session values',
+        };
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': '1',
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Headers: $headers');
+
+  
+        final List<Map<String, dynamic>> requestBody = [];
+    
+    for (var entry in vitalEntries) {
+      final vitalMasterId = entry['vitalMasterId'];
+      final finding = entry['finding']?.toString() ?? '';
+      
+      if (finding.isEmpty) continue;
+      
+      final vitalEntry = {
+        'patientId': patientId,           
+        'addmissionId': admissionId,      
+        'date': date,                     
+        'time': time,                     
+        'finding': finding,
+        'vitalMasterId': vitalMasterId,
+        'userId': userId,
+        'branchId': int.tryParse(branchId) ?? 1,
+        'clinicId': clinicId,
+      };
+      
+      requestBody.add(vitalEntry);
+    }
+    
+    if (requestBody.isEmpty) {
+      return {
+        'success': false,
+        'message': 'No valid vitals to save',
+      };
+    }
+    
+    debugPrint('Request Body (first item): ${requestBody.first}');
+    debugPrint('Total items: ${requestBody.length}');
+    debugPrint('Full request body: ${jsonEncode(requestBody)}');
+
+    final response = await http.post(
+      Uri.parse(_saveVitalsUrl),
+      headers: headers,
+      body: jsonEncode(requestBody),
+    );
+
+    debugPrint('API Response Status: ${response.statusCode}');
+    debugPrint('API Response Body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      try {
+        final decoded = jsonDecode(response.body);
+        debugPrint('Decoded Response: $decoded');
+        
+        return {
+          'success': true,
+          'data': decoded,
+          'message': 'Vitals saved successfully',
+        };
+      } catch (e) {
+        return {
+          'success': true,
+          'message': 'Vitals saved successfully',
+          'rawResponse': response.body,
+        };
+      }
+    } else {
+      String errorMessage = 'Failed with status ${response.statusCode}';
+      try {
+        final errorBody = jsonDecode(response.body);
+        if (errorBody is Map<String, dynamic>) {
+          errorMessage = errorBody['message'] ?? 
+                        errorBody['error'] ?? 
+                        'Unknown error';
+        }
+      } catch (e) {
+        errorMessage = response.body;
+      }
+      
+      debugPrint('Error Details: $errorMessage');
+      
+      return {
+        'success': false,
+        'message': 'Failed to save vitals: $errorMessage',
+        'statusCode': response.statusCode,
+        'error': response.body,
+      };
+    }
+  } catch (e, stackTrace) {
+    debugPrint('Exception saving vitals: $e');
+    debugPrint('Stack Trace: $stackTrace');
+    return {
+      'success': false,
+      'message': 'Exception: $e',
+    };
+  }
+}
+  Future<Map<String, dynamic>?> fetchPatientInformation(String patientId) async {
+    debugPrint('Fetching patient information for ID: $patientId via InvestigationService');
+    
+    try {
+      final response = await InvestigationService.fetchPatientInformation(
+        patientId: patientId,
+      );
+      
+      if (response != null) {
+        return {
+          'success': true,
+          'data': response,
+          'message': 'Patient information fetched successfully',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to fetch patient information',
+          'error': 'No data returned from API',
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching patient information: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Error fetching patient information: $e',
+      };
+    }
+  }
+
+  Future<Map<String, dynamic>?> fetchPatientIpdDetails(String patientId) async {
+    debugPrint('Fetching patient IPD details for ID: $patientId via InvestigationService');
+    
+    try {
+      final response = await InvestigationService.fetchPatientIpdDetails(
+        patientId: patientId,
+      );
+      
+      if (response != null) {
+        return {
+          'success': true,
+          'data': response,
+          'message': 'Patient IPD details fetched successfully',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed to fetch patient IPD details',
+          'error': 'No data returned from API',
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching patient IPD details: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Error fetching patient IPD details: $e',
+      };
+    }
+  }
+
+  Future<Map<String, String>> getSavedPatientParams() async {
+    return await InvestigationService.getSavedPatientParams();
+  }
+
+  Future<Map<String, String>> getSavedIpdParams() async {
+    return await InvestigationService.getSavedIpdParams();
+  }
+
+  Map<String, dynamic> validateVitalsAgainstMaster({
+    required String temperature,
+    required String heartRate,
+    required String respiratoryRate,
+    required String systolicBp,
+    required String diastolicBp,
+    required String rbs,
+    required String spo2,
+    List<dynamic>? masterData,
+  }) {
+    final errors = <String, String>{};
+    
+    if (masterData == null || masterData.isEmpty) {
+      return _basicVitalsValidation(
+        temperature: temperature,
+        heartRate: heartRate,
+        respiratoryRate: respiratoryRate,
+        systolicBp: systolicBp,
+        diastolicBp: diastolicBp,
+        rbs: rbs,
+        spo2: spo2,
+      );
+    }
+
+    for (var vital in masterData) {
+      if (vital is Map<String, dynamic>) {
+        final vitalId = vital['id']?.toString();
+        final vitalName = vital['name']?.toString() ?? '';
+        
+        switch (vitalId) {
+          case '1':
+            _validateVital(
+              vitalName,
+              temperature,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'temperature',
+            );
+            break;
+            
+          case '2': 
+            _validateVital(
+              vitalName,
+              heartRate,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'heartRate',
+            );
+            break;
+            
+          case '3': 
+            _validateVital(
+              vitalName,
+              respiratoryRate,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'respiratoryRate',
+            );
+            break;
+            
+          case '4': 
+            _validateVital(
+              vitalName,
+              systolicBp,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'systolicBp',
+            );
+            break;
+            
+          case '5': 
+            _validateVital(
+              vitalName,
+              diastolicBp,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'diastolicBp',
+            );
+            break;
+            
+          case '6':
+            _validateVital(
+              vitalName,
+              rbs,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'rbs',
+            );
+            break;
+            
+          case '13': // SpO2
+            _validateVital(
+              vitalName,
+              spo2,
+              vital['min_value_f']?.toString(),
+              vital['max_value_f']?.toString(),
+              errors,
+              fieldName: 'spo2',
+            );
+            break;
+        }
+      }
+    }
+
+    final sys = double.tryParse(systolicBp);
+    final dia = double.tryParse(diastolicBp);
+    if (sys != null && dia != null && sys <= dia) {
+      errors['bloodPressure'] = 'Systolic must be greater than diastolic';
+    }
+
+    return {
+      'isValid': errors.isEmpty,
+      'errors': errors,
+    };
+  }
+
+  Map<String, dynamic> _basicVitalsValidation({
+    required String temperature,
+    required String heartRate,
+    required String respiratoryRate,
+    required String systolicBp,
+    required String diastolicBp,
+    required String rbs,
+    required String spo2,
+  }) {
+    final errors = <String, String>{};
+    
+    final temp = double.tryParse(temperature);
+    if (temp == null || temp < 90 || temp > 110) {
+      errors['temperature'] = 'Temperature must be between 90°F and 110°F';
+    }
+
+    final hr = int.tryParse(heartRate);
+    if (hr == null || hr < 30 || hr > 200) {
+      errors['heartRate'] = 'Heart rate must be between 30 and 200 bpm';
+    }
+    
+    final rr = int.tryParse(respiratoryRate);
+    if (rr == null || rr < 6 || rr > 60) {
+      errors['respiratoryRate'] = 'Respiratory rate must be between 6 and 60 /min';
+    }
+    
+    final sys = int.tryParse(systolicBp);
+    final dia = int.tryParse(diastolicBp);
+    if (sys == null || sys < 70 || sys > 250) {
+      errors['systolicBp'] = 'Systolic BP must be between 70 and 250 mmHg';
+    }
+    if (dia == null || dia < 40 || dia > 150) {
+      errors['diastolicBp'] = 'Diastolic BP must be between 40 and 150 mmHg';
+    }
+    if (sys != null && dia != null && sys <= dia) {
+      errors['bloodPressure'] = 'Systolic must be greater than diastolic';
+    }
+    
+    final rbsVal = int.tryParse(rbs);
+    if (rbsVal == null || rbsVal < 20 || rbsVal > 600) {
+      errors['rbs'] = 'RBS must be between 20 and 600 mg/dL';
+    }
+    
+    final spo2Val = int.tryParse(spo2);
+    if (spo2Val == null || spo2Val < 70 || spo2Val > 100) {
+      errors['spo2'] = 'SpO2 must be between 70% and 100%';
+    }
+    
+    return {
+      'isValid': errors.isEmpty,
+      'errors': errors,
+    };
+  }
+
+  void _validateVital(
+    String vitalName,
+    String value,
+    String? minValue,
+    String? maxValue,
+    Map<String, String> errors, {
+    required String fieldName,
+  }) {
+    if (value.isEmpty) return;
+    
+    final numValue = double.tryParse(value);
+    final min = double.tryParse(minValue ?? '');
+    final max = double.tryParse(maxValue ?? '');
+    
+    if (numValue == null) {
+      errors[fieldName] = '$vitalName must be a valid number';
+      return;
+    }
+    
+    if (min != null && numValue < min) {
+      errors[fieldName] = '$vitalName must be at least $min';
+    }
+    
+    if (max != null && numValue > max) {
+      errors[fieldName] = '$vitalName must be at most $max';
+    }
+  }
+
+  List<Map<String, dynamic>> prepareVitalEntries({
+    required String temperature,
+    required String heartRate,
+    required String respiratoryRate,
+    required String systolicBp,
+    required String diastolicBp,
+    required String rbs,
+    required String spo2,
+  }) {
+    return [
+      if (temperature.isNotEmpty) {'vitalMasterId': 1, 'finding': temperature},
+      if (heartRate.isNotEmpty) {'vitalMasterId': 2, 'finding': heartRate},
+      if (respiratoryRate.isNotEmpty) {'vitalMasterId': 3, 'finding': respiratoryRate},
+      if (systolicBp.isNotEmpty) {'vitalMasterId': 4, 'finding': systolicBp},
+      if (diastolicBp.isNotEmpty) {'vitalMasterId': 5, 'finding': diastolicBp},
+      if (rbs.isNotEmpty) {'vitalMasterId': 6, 'finding': rbs},
+      if (spo2.isNotEmpty) {'vitalMasterId': 13, 'finding': spo2},
+    ];
+  }
 }

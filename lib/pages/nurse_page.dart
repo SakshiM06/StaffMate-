@@ -28,19 +28,19 @@ class NursePage extends StatelessWidget {
               );
             },
           ),
-          _buildOption(
-            context,
-            Icons.visibility,
-            "View Vitals", // ✅ New option
-            () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ViewVitalsPage(),
-                ),
-              );
-            },
-          ),
+          // _buildOption(
+          //   context,
+          //   Icons.visibility,
+          //   "View Vitals", // ✅ New option
+          //   () {
+          //     Navigator.push(
+          //       context,
+          //       MaterialPageRoute(
+          //         builder: (context) => const ViewVitalsPage(),
+          //       ),
+          //     );
+          //   },
+          // ),
           _buildOption(
               context, Icons.medical_services, "Request Prescription", () {}),
           _buildOption(context, Icons.people, "Consultant", () {}),

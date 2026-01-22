@@ -3,26 +3,26 @@ import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 
 class ApiService {
-  static const String baseUrl = "https://test.smartcarehis.com:8443/security/auth/login";
+  static const String baseUrl = "https://test.smartcarehis.com:443/security/auth/login";
 
   static Future<Map<String, dynamic>?> loginUser(
       String userName, String password) async {
     try {
-      final url = Uri.parse("$baseUrl/security/auth/login");
+      // final url = Uri.parse("$baseUrl");
 
       final body = {
         "userName": userName.trim(), 
         "password": password.trim(),
+        "forceLogin": false
       };
 
-      debugPrint("Sending request to: $url");
+      debugPrint("Sending request to: $baseUrl");
       debugPrint("Body: $body");
 
       final response = await http.post(
-        url,
+        Uri.parse(baseUrl),
         headers: const {
           "Content-Type": "application/json",
-          "Accept": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
         body: jsonEncode(body),
