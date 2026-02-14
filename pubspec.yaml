@@ -30,7 +30,10 @@ dependencies:
   webview_flutter_wkwebview: ^3.23.0
   flutter_secure_storage: ^10.0.0
   flutter_tts: ^4.2.5
-  
+  local_auth: ^2.3.0
+  iconsax: ^0.0.8
+  file_picker: ^10.3.10
+  image_pickers: ^2.0.6
  
 dev_dependencies:
   flutter_test:

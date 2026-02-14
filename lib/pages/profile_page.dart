@@ -235,37 +235,42 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  Future<void> logout() async {
-    bool? confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text("Logout", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-        content: const Text("Are you sure you want to log out?"),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false), 
-            child: const Text("Cancel")
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true), 
-            child: Text("Logout", style: GoogleFonts.poppins(color: AppColors.errorRed)),
-          ),
-        ],
-      ),
-    );
+Future<void> logout() async {
+  bool? confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text("Logout", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+      content: const Text("Are you sure you want to log out?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false), 
+          child: const Text("Cancel")
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true), 
+          child: Text("Logout", style: GoogleFonts.poppins(color: AppColors.errorRed)),
+        ),
+      ],
+    ),
+  );
 
-    if (confirm != true) return;
+  if (confirm != true) return;
 
-    await SessionManager.clearSession();
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
+  await SessionManager.clearSession();
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.clear();
 
-    if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (context) => const WelcomePage()),
-      (Route<dynamic> route) => false,
-    );
-  }
+  if (!mounted) return;
+ 
+  Navigator.pushAndRemoveUntil(
+    context,
+    MaterialPageRoute(
+      builder: (context) => const WelcomePage(),
+      fullscreenDialog: true,
+    ),
+    (Route<dynamic> route) => false,
+  );
+}
 
   void _toggleEditMode() {
     setState(() {

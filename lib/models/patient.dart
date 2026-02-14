@@ -24,6 +24,8 @@ class Patient {
   final String practitionerid;
   final String clientId;
 final double patientBalanceDouble;
+final String admissionDate; 
+final String? conditionId;
 
   Patient({
     required this.patientname,
@@ -51,6 +53,8 @@ final double patientBalanceDouble;
     required this.practitionerid,
     required this.clientId,
     required this.patientBalanceDouble,
+    required this.admissionDate,
+    this.conditionId,
   });
 
   // Factory constructor to create Patient from JSON
@@ -86,7 +90,10 @@ final double patientBalanceDouble;
       patientid: json['patientid']?.toString() ?? json['clientid']?.toString() ?? '0',
      practitionerid: json['practitionerid']?.toString() ?? '0',
      clientId: json['clientid']?.toString() ?? '0',
-      patientBalanceDouble: double.tryParse(json['patient_balance']?.toString() ?? '') ?? 0.0
+      patientBalanceDouble: double.tryParse(json['patient_balance']?.toString() ?? '') ?? 0.0,
+      admissionDate: json['admissiondate']?.toString() ?? '',
+      conditionId: json['conditionId']?.toString(),
+
     );
   }
   String get patientId => patientid;
@@ -125,6 +132,8 @@ String get ipdNumber => ipdNo;
       "patientid": patientid,
       "practitionerid": practitionerid,
       "clientId": clientId,
+      admissionDate: admissionDate,
+      'conditionId': conditionId,
     };
     
   }

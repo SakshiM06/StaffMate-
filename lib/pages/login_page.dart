@@ -7,6 +7,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:staff_mate/services/clinic_service.dart';
 import 'package:staff_mate/services/user_information_service.dart';
+import 'package:staff_mate/services/session_manger.dart';
+import 'package:staff_mate/pages/forget_password.dart';
 
 // Unified Color Palette
 class AppColors {
@@ -33,7 +35,23 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
 
-  // --- EXISTING BACKEND LOGIC (UNCHANGED) ---
+  @override
+  void initState() {
+    super.initState();
+    _loadLastUsername();
+  }
+
+  Future<void> _loadLastUsername() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastUsername = prefs.getString('last_username');
+    if (lastUsername != null && lastUsername.isNotEmpty) {
+      setState(() {
+        _usernameController.text = lastUsername;
+      });
+    }
+  }
+
+  // --- UPDATED BACKEND LOGIC ---
   Future<void> _login() async {
     if (_isLoading) return;
     
@@ -85,29 +103,20 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        final prefs = await SharedPreferences.getInstance();
-        final bearer = innerData['bearer'] ?? '';
-        final token = innerData['token'] ?? '';
-        final clinicId = innerData['clinicid'] ?? '';
-        final userId = innerData['userId'] ?? '';
-        final zoneid = innerData['zoneid'] ?? 'Asia/Kolkata';
-        final expiryTime = innerData['expirytime'] ?? '';
+        // Save session using SessionManager
+        await SessionManager.saveFromApi(innerData);
 
-        await prefs.setString('bearer', bearer);
-        await prefs.setString('auth_token', token);
-        await prefs.setString('clinicId', clinicId);
-        await prefs.setString('userId', userId);
-        await prefs.setString('zoneid', zoneid);
-        await prefs.setString('expiryTime', expiryTime);
-        await prefs.setInt('subscription_remaining_days', subscriptionDays);
+        // Save username for future biometric login
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('last_username', _usernameController.text.trim());
 
         try {
           final clinicService = ClinicService();
           await clinicService.fetchAndSaveClinicDetails(
-            token: token,
-            clinicId: clinicId,
-            userId: userId,
-            zoneid: zoneid,
+            token: innerData['token'] ?? '',
+            clinicId: innerData['clinicid'] ?? '',
+            userId: innerData['userId'] ?? '',
+            zoneid: innerData['zoneid'] ?? 'Asia/Kolkata',
             branchId: 1, 
           );
         } catch (clinicError) {
@@ -117,10 +126,10 @@ class _LoginPageState extends State<LoginPage> {
         try {
           final userInfoService = UserInformationService();
           await userInfoService.fetchAndSaveUserInformation(
-            token: token,
-            clinicId: clinicId,
-            userId: userId,
-            zoneid: zoneid,
+            token: innerData['token'] ?? '',
+            clinicId: innerData['clinicid'] ?? '',
+            userId: innerData['userId'] ?? '',
+            zoneid: innerData['zoneid'] ?? 'Asia/Kolkata',
             branchId: 1, 
           );
         } catch (userError) {
@@ -184,18 +193,16 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
-  // --- NEW UI IMPLEMENTATION ---
+  // --- UI IMPLEMENTATION (Remains the same) ---
   @override
   Widget build(BuildContext context) {
     final Size size = MediaQuery.of(context).size;
-    // Essential for preventing keyboard overlap
     final double bottomInset = MediaQuery.of(context).viewInsets.bottom;
     final EdgeInsets padding = MediaQuery.of(context).padding;
 
     return Scaffold(
       backgroundColor: AppColors.primaryDarkBlue,
       extendBodyBehindAppBar: true,
-      // ✅ FIX: Prevents layout overflow when keyboard opens
       resizeToAvoidBottomInset: false, 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -215,12 +222,12 @@ class _LoginPageState extends State<LoginPage> {
           Positioned(
             top: -size.width * 0.2,
             right: -size.width * 0.2,
-            child: _buildCircle(size.width * 0.8, Colors.white.withValues(alpha: 0.05)),
+            child: _buildCircle(size.width * 0.8, Colors.white.withOpacity(0.05)),
           ),
           Positioned(
             top: size.height * 0.2,
             left: -size.width * 0.1,
-            child: _buildCircle(size.width * 0.4, Colors.white.withValues(alpha: 0.03)),
+            child: _buildCircle(size.width * 0.4, Colors.white.withOpacity(0.03)),
           ),
 
           // Main Content
@@ -231,7 +238,6 @@ class _LoginPageState extends State<LoginPage> {
                 flex: 4, // 40% height
                 child: SafeArea(
                   child: Center(
-                    // ✅ FIX: SingleChildScrollView prevents tiny overflows on small screens
                     child: SingleChildScrollView(
                       physics: const ClampingScrollPhysics(),
                       child: AnimationLimiter(
@@ -247,10 +253,10 @@ class _LoginPageState extends State<LoginPage> {
                                 padding: EdgeInsets.all(size.width * 0.05),
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: Colors.white.withValues(alpha: 0.1),
+                                  color: Colors.white.withOpacity(0.1),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withValues(alpha: 0.1),
+                                      color: Colors.black.withOpacity(0.1),
                                       blurRadius: 20,
                                       spreadRadius: 5,
                                     ),
@@ -304,7 +310,6 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                     child: SingleChildScrollView(
                       physics: const BouncingScrollPhysics(),
-                      // Add bottom inset padding to handle keyboard
                       padding: EdgeInsets.fromLTRB(30, 40, 30, 30 + bottomInset + padding.bottom),
                       child: AnimationLimiter(
                         child: Column(
@@ -370,8 +375,12 @@ class _LoginPageState extends State<LoginPage> {
                                 alignment: Alignment.centerRight,
                                 child: TextButton(
                                   onPressed: () {
-                                    // Logic preserved
-                                    debugPrint("Forgot Password pressed!");
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) => const ForgotPasswordPage(),
+                                      ),
+                                    );
                                   },
                                   style: TextButton.styleFrom(
                                     padding: EdgeInsets.zero,
@@ -430,7 +439,7 @@ class _LoginPageState extends State<LoginPage> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withValues(alpha: 0.1),
+            color: Colors.grey.withOpacity(0.1),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -447,7 +456,7 @@ class _LoginPageState extends State<LoginPage> {
             color: Colors.grey.shade400,
             fontSize: 14,
           ),
-          prefixIcon: Icon(icon, color: AppColors.primaryDarkBlue.withValues(alpha: 0.7), size: 22),
+          prefixIcon: Icon(icon, color: AppColors.primaryDarkBlue.withOpacity(0.7), size: 22),
           suffixIcon: isPassword
               ? IconButton(
                   icon: Icon(
@@ -484,7 +493,7 @@ class _LoginPageState extends State<LoginPage> {
           backgroundColor: AppColors.primaryDarkBlue,
           foregroundColor: AppColors.whiteColor,
           elevation: 8,
-          shadowColor: AppColors.primaryDarkBlue.withValues(alpha: 0.4),
+          shadowColor: AppColors.primaryDarkBlue.withOpacity(0.4),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),

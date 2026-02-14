@@ -272,24 +272,26 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
       width: double.infinity,
       height: 56, // Standard touch target size (fixed is fine here)
       child: ElevatedButton(
-        onPressed: () {
-          HapticFeedback.mediumImpact();
-          Navigator.push(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (context, animation, secondaryAnimation) =>
-                  const AuthOptionsPage(),
-              transitionsBuilder: (context, animation, secondaryAnimation, child) {
-                const begin = Offset(1.0, 0.0);
-                const end = Offset.zero;
-                const curve = Curves.easeInOutQuart;
-                var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
-                return SlideTransition(position: animation.drive(tween), child: child);
-              },
-              transitionDuration: const Duration(milliseconds: 500),
-            ),
-          );
-        },
+  // In WelcomePage's _buildGetStartedButton method:
+onPressed: () {
+  HapticFeedback.mediumImpact();
+  Navigator.push(
+    context,
+    PageRouteBuilder(
+      pageBuilder: (context, animation, secondaryAnimation) =>
+          const AuthOptionsPage(),
+      transitionsBuilder: (context, animation, secondaryAnimation, child) {
+        const begin = Offset(1.0, 0.0);
+        const end = Offset.zero;
+        const curve = Curves.easeInOutQuart;
+        var tween = Tween(begin: begin, end: end).chain(CurveTween(curve: curve));
+        return SlideTransition(position: animation.drive(tween), child: child);
+      },
+      transitionDuration: const Duration(milliseconds: 500),
+      fullscreenDialog: true, // ADD THIS LINE
+    ),
+  );
+},
         style: ElevatedButton.styleFrom(
           backgroundColor: primaryDarkBlue,
           foregroundColor: whiteColor,

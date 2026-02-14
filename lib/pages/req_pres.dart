@@ -152,7 +152,14 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
           const SnackBar(
             content: Text('Speech recognition is not available on this device'),
             backgroundColor: Colors.orange,
+             duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
           ),
+        ),
         );
         return;
       }
@@ -165,7 +172,14 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
             const SnackBar(
               content: Text('Microphone permission is required for voice input'),
               backgroundColor: Colors.orange,
+              duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
             ),
+          ),
           );
           return;
         }
@@ -184,7 +198,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
           });
 
           _speechTimeoutTimer?.cancel();
-          _speechTimeoutTimer = Timer(const Duration(seconds: 5), () {
+          _speechTimeoutTimer = Timer(const Duration(seconds: 60), () {
             if (_isListening) {
               _processVoiceCommand(_recognizedText);
             }
@@ -231,6 +245,13 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       SnackBar(
         content: Text('Voice command processed: ${text.substring(0, text.length > 50 ? 50 : text.length)}...'),
         backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
       ),
     );
   }
@@ -287,8 +308,9 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     bool hasAfternoon = text.contains('afternoon') || text.contains('noon') || text.contains('lunch');
     bool hasNight = text.contains('night') || text.contains('evening') || text.contains('dinner') || text.contains('bedtime');
     bool hasOnce = text.contains('once') || text.contains('one time') || text.contains('daily');
-    bool hasTwice = text.contains('twice') || text.contains('two times');
-    bool hasThrice = text.contains('thrice') || text.contains('three times');
+    bool hasTwice = text.contains('twice') || text.contains('two times') || text.contains('two times a day') || text.contains('twice a day');
+    bool hasThrice = text.contains('thrice') || text.contains('three times') || text.contains('three times a day')|| text.contains('thrice a day');
+    
     
     if (hasOnce) {
       frequency = '0-0-1';
@@ -641,11 +663,27 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
 
   void _addPrescriptionItem() async {
     if (_prescriptionItems.length >= _maxMedicineLimit) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Limit Reached"), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Limit Reached"), backgroundColor: Colors.red,
+       duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
+      ));
       return;
     }
     if (medicineController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a medicine")));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a medicine"),
+       duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
+      ));
       return;
     }
 
@@ -707,13 +745,30 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
 
     } catch (e) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"),
+       duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
+      ));
     }
   }
 
   void _savePrescription() async {
     if (_prescriptionItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add medicine"), backgroundColor: Colors.orange));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add medicine"), backgroundColor: Colors.orange,
+       duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
+          ),
+          );
       return;
     }
 
@@ -722,6 +777,13 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Patient admission data is missing. Please select a patient from IPD dashboard."),
         backgroundColor: Colors.red,
+         duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
       ));
       debugPrint('ERROR: Missing admission data for prescription');
       debugPrint('  admissionId: $_admissionId');
@@ -734,6 +796,13 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Practitioner data is missing. Please select a patient from IPD dashboard."),
         backgroundColor: Colors.red,
+         duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
       ));
       debugPrint('ERROR: Missing practitioner data for prescription');
       debugPrint('  practitionerId: $_practitionerId');
@@ -797,7 +866,15 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
 
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); 
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved!"), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved!"), backgroundColor: Colors.green,
+       duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
+      ));
       setState(() { _prescriptionItems.clear(); });
       await AddMedicineService.clearRemarks();
       _clearForm();
@@ -806,7 +883,15 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     } catch (e) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red,
+       duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating, // Required for margin
+          margin: EdgeInsets.only(
+            bottom: 20,
+            left: 20,
+            right: 20,
+          ),
+      ));
     }
   }
 

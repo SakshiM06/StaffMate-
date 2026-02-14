@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:staff_mate/models/patient.dart';
@@ -43,7 +41,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
 
   final List<Map<String, dynamic>> _investigationItems = [];
   final List<String> locations = ["AH (Nagpur)", "Other Location"];
-  List<String> jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
+  final List<String> jobTitles = ["Pathlab", "Radiology", "Cardiology", "Other"];
   List<String> templateList = [];
   List<Map<String, dynamic>> investigationTypes = [];
   List<dynamic> parameterList = [];
@@ -54,8 +52,8 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
   Map<String, bool> selectedParameters = {};
   bool _showParameterDropdown = false;
   bool _isLoadingAmount = false;
-  bool _isLoadingJobTitles = false; 
-  bool _isLoadingTemplates = true;
+  final bool _isLoadingJobTitles = false; 
+  bool _isLoadingTemplates = false;
   bool _isLoadingParameters = false;
   bool _isLoadingPatientIpdData = false;
   bool _isSubmitting = false;
@@ -67,6 +65,11 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
   bool _isListeningForInvestigationType = false;
   String _recognizedText = '';
   Timer? _speechTimeoutTimer;
+
+
+  final List<Map<String, dynamic>> _recognizedTests = [];
+  bool _isProcessingMultipleTests = false;
+  bool _isSpeechInitialized = false;
 
   final Map<String, int> _jobTitleToTypeId = {
     'Pathlab': 5,      
@@ -86,60 +89,60 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
   }
 
   Future<void> _initSpeech() async {
-    _speechAvailable = await _speech.initialize(
-      onStatus: (status) {
-        if (mounted) {
-          setState(() {
-            if (status == stt.SpeechToText.notListeningStatus) {
+    try {
+      _speechAvailable = await _speech.initialize(
+        onStatus: (status) {
+          if (mounted) {
+            setState(() {
+              if (status == stt.SpeechToText.notListeningStatus) {
+                _isListeningForPackage = false;
+                _isListeningForInvestigationType = false;
+              }
+            });
+          }
+        },
+        onError: (error) {
+          debugPrint('Speech initialization error: $error');
+          if (mounted) {
+            setState(() {
+              _speechAvailable = false;
               _isListeningForPackage = false;
               _isListeningForInvestigationType = false;
-            }
-          });
-        }
-      },
-      onError: (error) {
-        if (mounted) {
-          setState(() {
-            _isListeningForPackage = false;
-            _isListeningForInvestigationType = false;
-          });
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Speech recognition error: $error'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
-      },
-    );
+            });
+            _showSnackBar('Speech recognition error: $error', Colors.orange,
+            duration: 2
+            );
+          }
+        },
+      );
+      _isSpeechInitialized = true;
+      debugPrint('Speech initialized: $_speechAvailable');
+    } catch (e) {
+      debugPrint('Failed to initialize speech: $e');
+      _speechAvailable = false;
+      _isSpeechInitialized = false;
+    }
   }
 
   Future<void> _startVoiceSearchForPackage() async {
     if (_isListeningForPackage) {
-      _stopListening();
+      await _stopListening();
       return;
     }
 
-    if (!_speechAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Speech recognition is not available on this device'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+    if (!_isSpeechInitialized) {
+      await _initSpeech();
+      if (!_speechAvailable) {
+        _showSnackBar('Speech recognition is not available on this device', Colors.orange, duration: 2);
+        return;
+      }
     }
 
     bool hasPermission = await _speech.hasPermission;
     if (!hasPermission) {
       bool permissionGranted = await _speech.initialize();
       if (!permissionGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Microphone permission is required for voice input'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        _showSnackBar('Microphone permission is required for voice input', Colors.orange, duration:1);
         return;
       }
     }
@@ -150,63 +153,71 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       _recognizedText = '';
     });
 
-    await _speech.listen(
-      onResult: (result) {
-        setState(() {
-          _recognizedText = result.recognizedWords;
-        });
-        _speechTimeoutTimer?.cancel();
-        _speechTimeoutTimer = Timer(const Duration(seconds: 3), () {
-          if (_isListeningForPackage) {
+    try {
+      final options = stt.SpeechListenOptions(
+        partialResults: true,
+        cancelOnError: false,
+        listenMode: stt.ListenMode.dictation,
+      );
+
+      await _speech.listen(
+        onResult: (result) {
+          if (!mounted) return;
+          
+          setState(() {
+            _recognizedText = result.recognizedWords;
+          });
+          
+          _speechTimeoutTimer?.cancel();
+          _speechTimeoutTimer = Timer(const Duration(seconds: 2), () {
+            if (_isListeningForPackage && _recognizedText.isNotEmpty) {
+              _processPackageVoiceCommand(_recognizedText);
+            }
+          });
+
+          if (result.finalResult) {
             _processPackageVoiceCommand(_recognizedText);
           }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+        localeId: 'en_IN',
+        listenOptions: options,
+      );
+      
+      _showSnackBar('Listening for package name... Speak now', Colors.blue,duration:1);
+    } catch (e) {
+      debugPrint('Error starting speech listening: $e');
+      if (mounted) {
+        setState(() {
+          _isListeningForPackage = false;
         });
-
-        if (_recognizedText.toLowerCase().contains('search for') ||
-            _recognizedText.toLowerCase().contains('find') ||
-            _recognizedText.toLowerCase().contains('that\'s it') ||
-            _recognizedText.toLowerCase().contains('done') ||
-            _recognizedText.length > 20) { 
-          _processPackageVoiceCommand(_recognizedText);
-        }
-      },
-      listenFor: const Duration(seconds: 10),
-      pauseFor: const Duration(seconds: 3),
-      partialResults: true,
-      localeId: 'en_US',
-    );
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Listening for package name... Speak now'),
-        backgroundColor: Colors.blue,
-        duration: Duration(seconds: 2),
-      ),
-    );
+        _showSnackBar('Failed to start listening: $e', Colors.red,duration:1);
+      }
+    }
   }
 
   Future<void> _startVoiceSearchForInvestigationType() async {
     if (_isListeningForInvestigationType) {
-      _stopListening();
+      await _stopListening();
       return;
     }
 
-    if (!_speechAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Speech recognition is not available on this device'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
+    if (!_isSpeechInitialized) {
+      await _initSpeech();
+      if (!_speechAvailable) {
+        _showSnackBar('Speech recognition is not available on this device', Colors.orange,duration: 1);
+        return;
+      }
     }
 
     if (_selectedJobTitle == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a job title first'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnackBar('Please select a job title first', Colors.orange,duration: 2);
+      return;
+    }
+
+    if (investigationTypes.isEmpty) {
+      _showSnackBar('No investigation types loaded. Please wait or select job title again.', Colors.orange, duration: 1);
       return;
     }
 
@@ -214,12 +225,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     if (!hasPermission) {
       bool permissionGranted = await _speech.initialize();
       if (!permissionGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Microphone permission is required for voice input'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        _showSnackBar('Microphone permission is required for voice input', Colors.orange, duration: 1);
         return;
       }
     }
@@ -230,57 +236,68 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       _recognizedText = '';
     });
 
-    await _speech.listen(
-      onResult: (result) {
-        setState(() {
-          _recognizedText = result.recognizedWords;
-        });
-        _speechTimeoutTimer?.cancel();
-        _speechTimeoutTimer = Timer(const Duration(seconds: 3), () {
-          if (_isListeningForInvestigationType) {
-            _processInvestigationTypeVoiceCommand(_recognizedText);
-          }
-        });
-        if (_recognizedText.toLowerCase().contains('select') ||
-            _recognizedText.toLowerCase().contains('choose') ||
-            _recognizedText.toLowerCase().contains('that\'s it') ||
-            _recognizedText.toLowerCase().contains('done') ||
-            _recognizedText.length > 20) { 
-          _processInvestigationTypeVoiceCommand(_recognizedText);
-        }
-      },
-      listenFor: const Duration(seconds: 10),
-      pauseFor: const Duration(seconds: 3),
-      partialResults: true,
-      localeId: 'en_US',
-    );
+    try {
+      final options = stt.SpeechListenOptions(
+        partialResults: true,
+        cancelOnError: false,
+        listenMode: stt.ListenMode.dictation,
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Listening for investigation type... Speak now'),
-        backgroundColor: Colors.blue,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+      await _speech.listen(
+        onResult: (result) {
+          if (!mounted) return;
+          
+          setState(() {
+            _recognizedText = result.recognizedWords;
+          });
+          
+          _speechTimeoutTimer?.cancel();
+          _speechTimeoutTimer = Timer(const Duration(seconds: 60), () {
+            if (_isListeningForInvestigationType && _recognizedText.isNotEmpty) {
+              _processMultipleInvestigationTypesVoiceCommand(_recognizedText);
+            }
+          });
+
+          if (result.finalResult) {
+            _processMultipleInvestigationTypesVoiceCommand(_recognizedText);
+          }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+        localeId: 'en_IN',
+        listenOptions: options,
+      );
+
+      _showSnackBar('Listening for multiple tests... Say "CBC, KFT, Urine"', Colors.blue, duration: 1);
+    } catch (e) {
+      debugPrint('Error starting speech listening: $e');
+      if (mounted) {
+        setState(() {
+          _isListeningForInvestigationType = false;
+        });
+        _showSnackBar('Failed to start listening: $e', Colors.red, duration: 1);
+      }
+    }
   }
 
-  void _stopListening() {
-    _speech.stop();
+  Future<void> _stopListening() async {
+    try {
+      await _speech.stop();
+    } catch (e) {
+      debugPrint('Error stopping speech: $e');
+    }
     _speechTimeoutTimer?.cancel();
-    setState(() {
-      _isListeningForPackage = false;
-      _isListeningForInvestigationType = false;
-    });
+    if (mounted) {
+      setState(() {
+        _isListeningForPackage = false;
+        _isListeningForInvestigationType = false;
+      });
+    }
   }
 
   void _processPackageVoiceCommand(String text) {
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No speech detected. Please try again.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnackBar('No speech detected. Please try again.', Colors.orange, duration: 1);
       return;
     }
 
@@ -293,41 +310,35 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         .replaceAll('find', '')
         .replaceAll('package', '')
         .replaceAll('test', '')
+        .replaceAll('tests', '')
+        .replaceAll('investigation', '')
         .trim();
 
     if (cleanText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not recognize package name. Please try again.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnackBar('Could not recognize package name. Please try again.', Colors.orange, duration: 1);
       return;
     }
+    
     setState(() {
       _packageController.text = cleanText;
       _selectedPackage = cleanText;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Package set to: $cleanText'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    
+    _showSnackBar('Package set to: $cleanText', Colors.green, duration: 1);
   }
 
-  void _processInvestigationTypeVoiceCommand(String text) {
+  Future<void> _processMultipleInvestigationTypesVoiceCommand(String text) async {
     if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No speech detected. Please try again.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnackBar('No speech detected. Please try again.', Colors.orange, duration: 1);
       return;
     }
 
-    _stopListening();
+    await _stopListening();
+    
+    if (!mounted) return;
+    
+    setState(() => _isProcessingMultipleTests = true);
+
     String cleanText = text.toLowerCase();
     
     cleanText = cleanText
@@ -335,46 +346,580 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         .replaceAll('choose', '')
         .replaceAll('investigation', '')
         .replaceAll('test', '')
+        .replaceAll('tests', '')
         .replaceAll('type', '')
+        .replaceAll('add', '')
+        .replaceAll('please', '')
+        .replaceAll('that\'s it', '')
+        .replaceAll('done', '')
+        .replaceAll('and', ',')
+        .replaceAll('plus', ',')
+        .replaceAll('with', ',')
+        .replaceAll('also', ',')
         .trim();
 
     if (cleanText.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not recognize investigation type. Please try again.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      setState(() => _isProcessingMultipleTests = false);
+      _showSnackBar('Could not recognize investigation types. Please try again.', Colors.orange, duration: 1);
       return;
     }
-    final matchedType = investigationTypes.firstWhere(
-      (type) {
-        final typeName = (type['name'] ?? '').toString().toLowerCase();
-        return typeName.contains(cleanText) || cleanText.contains(typeName);
-      },
-      orElse: () => {},
-    );
 
-    if (matchedType.isNotEmpty) {
-      _onInvestigationTypeSelected(matchedType);
+    List<String> spokenTests = cleanText
+        .split(RegExp(r',|\s+and\s+|\s+plus\s+|\s+&\s+|\s+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty && e.length > 1)
+        .toList();
+
+    debugPrint('Recognized tests: $spokenTests');
+    debugPrint('Available investigation types: ${investigationTypes.length}');
+
+    List<Map<String, dynamic>> matchedTests = [];
+    List<String> unmatchedTests = [];
+
+    for (String spokenTest in spokenTests) {
+      bool found = false;
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Investigation type selected: ${matchedType['name']}'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('No investigation type found for "$cleanText"'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      for (var type in investigationTypes) {
+        final typeName = (type['name'] ?? '').toString().toLowerCase();
+      
+        if (typeName.contains(spokenTest) || spokenTest.contains(typeName)) {
+          if (!matchedTests.any((t) => t['id'] == type['id'])) {
+            matchedTests.add(type);
+            found = true;
+            break;
+          }
+        }
+        else if (_isCommonAbbreviation(spokenTest, typeName)) {
+          if (!matchedTests.any((t) => t['id'] == type['id'])) {
+            matchedTests.add(type);
+            found = true;
+            break;
+          }
+        }
+        else if (spokenTest.split(' ').any((word) => 
+            typeName.contains(word) && word.length > 2)) {
+          if (!matchedTests.any((t) => t['id'] == type['id'])) {
+            matchedTests.add(type);
+            found = true;
+            break;
+          }
+        }
+      }
+      
+      if (!found) {
+        unmatchedTests.add(spokenTest);
+      }
+    }
+
+    debugPrint('Matched tests: ${matchedTests.length}');
+    debugPrint('Unmatched tests: $unmatchedTests');
+
+    if (!mounted) return;
+    
+    setState(() {
+      _isProcessingMultipleTests = false;
+    });
+
+    if (matchedTests.isEmpty) {
+      _showSnackBar('No matching tests found for: ${spokenTests.join(", ")}', Colors.orange, duration: 1);
+      return;
+    }
+    _showMultiTestConfirmationDialog(matchedTests, unmatchedTests);
+  }
+
+  bool _isCommonAbbreviation(String spoken, String fullName) {
+    Map<String, List<String>> commonAbbreviations = {
+      'cbc': ['complete blood count', 'blood count', 'cbc test'],
+      'kft': ['kidney function test', 'renal function', 'kidney test'],
+      'lft': ['liver function test', 'hepatic function', 'liver test'],
+      'rft': ['renal function test', 'kidney function'],
+      'tft': ['thyroid function test', 'thyroid test'],
+      'ecg': ['electrocardiogram', 'ekg', 'heart test'],
+      'xray': ['x-ray', 'radiograph', 'x ray'],
+      'ct': ['computed tomography', 'cat scan', 'ct scan'],
+      'mri': ['magnetic resonance imaging', 'mri scan'],
+      'urine': ['urine analysis', 'urinalysis', 'urine test', 'urine r/e'],
+      'stool': ['stool test', 'stool analysis', 'stool r/e'],
+      'blood': ['blood test', 'blood analysis'],
+      'sugar': ['blood sugar', 'glucose test'],
+      'lipid': ['lipid profile', 'cholesterol test'],
+    };
+
+    String normalizedSpoken = spoken.replaceAll(' ', '').toLowerCase();
+    String normalizedFull = fullName.replaceAll(' ', '').toLowerCase();
+
+    for (var entry in commonAbbreviations.entries) {
+      if (normalizedSpoken.contains(entry.key)) {
+        for (var fullForm in entry.value) {
+          String normalizedForm = fullForm.replaceAll(' ', '').toLowerCase();
+          if (normalizedFull.contains(normalizedForm) || 
+              normalizedForm.contains(normalizedSpoken)) {
+            return true;
+          }
+        }
+      }
+    }
+    
+    if (normalizedFull.contains(normalizedSpoken) && normalizedSpoken.length > 2) {
+      return true;
+    }
+    
+    return false;
+  }
+
+  void _showMultiTestConfirmationDialog(
+    List<Map<String, dynamic>> matchedTests,
+    List<String> unmatchedTests,
+  ) {
+    Map<int, Map<String, dynamic>> testDetails = {};
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            for (var test in matchedTests) {
+              if (!testDetails.containsKey(test['id'])) {
+                testDetails[test['id']] = {
+                  'name': test['name'],
+                  'charge': test['charge'] ?? '0',
+                  'code': test['code'] ?? test['searchCode'] ?? '',
+                  'parameters': '',
+                  'isLoading': true,
+                };
+              }
+            }
+            
+            _loadTestDetailsForDialog(matchedTests, testDetails, setDialogState);
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: Row(
+                children: [
+                  const Icon(Icons.check_circle_outline, color: Colors.green, size: 28),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Confirm Multiple Tests',
+                      style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Found ${matchedTests.length} test(s):',
+                      style: GoogleFonts.poppins(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    
+                    ...matchedTests.asMap().entries.map((entry) {
+                      int index = entry.key;
+                      var test = entry.value;
+                      var details = testDetails[test['id']]!;
+                      bool isLoading = details['isLoading'] == true;
+                      
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isLoading ? Colors.grey[100] : Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isLoading ? Colors.grey[300]! : Colors.green.shade200,
+                          ),
+                        ),
+                        child: isLoading
+                          ? Row(
+                              children: [
+                                const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Text(
+                                    'Loading ${test['name'] ?? 'test'} details...',
+                                    style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            )
+                          : Row(
+                              children: [
+                                CircleAvatar(
+                                  backgroundColor: Colors.green.shade100,
+                                  radius: 16,
+                                  child: Text(
+                                    '${index + 1}',
+                                    style: TextStyle(
+                                      color: Colors.green.shade700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        test['name'] ?? '',
+                                        style: GoogleFonts.poppins(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                      if (details['charge'] != null && details['charge'] != '0')
+                                        Text(
+                                          '₹${details['charge']}',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      if (details['code'] != null && details['code'].toString().isNotEmpty)
+                                        Text(
+                                          'Code: ${details['code']}',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.grey[500],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                                  onPressed: () {
+                                    setDialogState(() {
+                                      matchedTests.removeAt(index);
+                                      testDetails.remove(test['id']);
+                                    });
+                                    if (matchedTests.isEmpty) {
+                                      Navigator.pop(context);
+                                      _showSnackBar('All tests removed', Colors.orange, duration: 2);
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                      );
+                    }).toList(),
+                    
+                    if (unmatchedTests.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(
+                        'Could not find:',
+                        style: GoogleFonts.poppins(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      ...unmatchedTests.map((test) => Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.warning_amber, size: 16, color: Colors.orange),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                test,
+                                style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[700]),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )),
+                    ],
+                    const SizedBox(height: 15),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, size: 18, color: Colors.blue.shade700),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Tap "Add All" to add these tests to your request',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                color: Colors.blue.shade700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                  },
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.poppins(color: Colors.grey[600]),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: matchedTests.isEmpty
+                      ? null
+                      : () async {
+                          bool allLoaded = testDetails.values.every((detail) => detail['isLoading'] == false);
+                          
+                          if (!allLoaded) {
+                            _showSnackBar('Please wait while we load all test details...', Colors.blue, duration: 2);
+                            return;
+                          }
+                          
+                          Navigator.pop(context);
+                          await _addMultipleTests(matchedTests, testDetails);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF1A237E),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Text(
+                    'Add All (${matchedTests.length})',
+                    style: GoogleFonts.poppins(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _loadTestDetailsForDialog(
+    List<Map<String, dynamic>> tests,
+    Map<int, Map<String, dynamic>> testDetails,
+    StateSetter setDialogState,
+  ) async {
+    for (var test in tests) {
+      try {
+        final details = await _getTestDetails(test);
+        
+        if (mounted) {
+          setDialogState(() {
+            testDetails[test['id']] = {
+              'name': test['name'],
+              'charge': details['charge'] ?? test['charge'] ?? '0',
+              'code': details['code'] ?? test['code'] ?? test['searchCode'] ?? '',
+              'parameters': details['parameters'] ?? '',
+              'isLoading': false,
+            };
+          });
+        }
+      } catch (e) {
+        debugPrint('Error loading details for ${test['name']}: $e');
+        if (mounted) {
+          setDialogState(() {
+            testDetails[test['id']] = {
+              'name': test['name'],
+              'charge': test['charge'] ?? '0',
+              'code': test['code'] ?? test['searchCode'] ?? '',
+              'parameters': '',
+              'isLoading': false,
+            };
+          });
+        }
+      }
+      
+      await Future.delayed(const Duration(milliseconds: 100));
     }
   }
 
+  Future<Map<String, dynamic>> _getTestDetails(Map<String, dynamic> test) async {
+    try {
+      final int testTypeId = test['id'] ?? 0;
+      final String testTypeName = test['name'] ?? '';
+      final String fallbackCharge = test['charge']?.toString() ?? '0';
+
+    
+      if (_tpId != null && _wardId != null && testTypeId != 0) {
+        final chargeResponse = await InvestigationService.getCharge(
+          tpId: _tpId!,
+          investigationId: testTypeId,
+          wardId: _wardId!,
+          name: testTypeName,
+        );
+
+        dynamic amount = chargeResponse['data'] ??
+            chargeResponse['charge'] ??
+            chargeResponse['amount'] ??
+            chargeResponse['rate'];
+        
+        if (amount == null || amount.toString() == '0') {
+          amount = fallbackCharge;
+        }
+
+        return {
+          'name': test['name'],
+          'charge': amount.toString(),
+          'code': test['code'] ?? test['searchCode'] ?? testTypeId.toString(),
+          'parameters': '',
+        };
+      } else {
+        final String gender = widget.patient.gender;
+        final params = await InvestigationService.fetchParameterList(
+          investigationTypeId: testTypeId,
+          gender: gender,
+        );
+
+        String parameterString = '';
+        if (params.isNotEmpty) {
+          parameterString = params
+              .map((p) => (p['parameterName'] ?? p['name'] ?? '').toString())
+              .where((name) => name.isNotEmpty)
+              .join(', ');
+        }
+
+        return {
+          'name': test['name'],
+          'charge': fallbackCharge,
+          'code': test['code'] ?? test['searchCode'] ?? testTypeId.toString(),
+          'parameters': parameterString,
+        };
+      }
+    } catch (e) {
+      debugPrint('Error getting test details: $e');
+      return {
+        'name': test['name'],
+        'charge': test['charge']?.toString() ?? '0',
+        'code': test['code'] ?? test['searchCode'] ?? test['id']?.toString() ?? '',
+        'parameters': '',
+      };
+    }
+  }
+
+  Future<void> _addMultipleTests(
+    List<Map<String, dynamic>> tests,
+    Map<int, Map<String, dynamic>> testDetails,
+  ) async {
+    if (!mounted) return;
+    
+    setState(() => _isProcessingMultipleTests = true);
+
+    int addedCount = 0;
+    int failedCount = 0;
+
+    for (var test in tests) {
+      try {
+        final details = testDetails[test['id']] ?? {};
+        
+        String packageName = _packageController.text.trim();
+        if (packageName.isEmpty && _selectedPackage != null) {
+          packageName = _selectedPackage!;
+        }
+
+        String parameterString = '';
+        try {
+          final int testTypeId = test['id'] ?? 0;
+          final String gender = widget.patient.gender;
+          
+          final params = await InvestigationService.fetchParameterList(
+            investigationTypeId: testTypeId,
+            gender: gender,
+          );
+          
+          if (params.isNotEmpty) {
+            parameterString = params
+                .map((p) => (p['parameterName'] ?? p['name'] ?? '').toString())
+                .where((name) => name.isNotEmpty)
+                .join(', ');
+          }
+        } catch (e) {
+          debugPrint('Error fetching parameters for ${test['name']}: $e');
+          parameterString = details['parameters']?.toString() ?? '';
+        }
+
+     
+        Map<String, dynamic> testItem = {
+          'package': packageName,
+          'type': test['name'] ?? '',
+          'typeId': test['id'] ?? 0,
+          'gender': test['gender'] ?? widget.patient.gender,
+          'searchCode': details['code']?.toString() ?? test['code']?.toString() ?? test['searchCode']?.toString() ?? '',
+          'amount': details['charge']?.toString() ?? '0',
+          'parameter': parameterString,
+          'indications': _indicationsController.text.trim(),
+          'urgent': _isUrgent,
+        };
+
+
+        setState(() {
+          _investigationItems.add(testItem);
+        });
+        
+        addedCount++;
+        
+      } catch (e) {
+        debugPrint('Error adding test ${test['name']}: $e');
+        failedCount++;
+      }
+    
+      await Future.delayed(const Duration(milliseconds: 50));
+    }
+
+    if (mounted) {
+      setState(() {
+        _isProcessingMultipleTests = false;
+      });
+    }
+
+    _updateTotal();
+    _clearForm();
+
+ 
+    String message = '';
+    Color backgroundColor = Colors.green;
+
+    if (addedCount > 0 && failedCount == 0) {
+      message = '$addedCount test(s) added successfully!';
+    } else if (addedCount > 0 && failedCount > 0) {
+      message = '$addedCount test(s) added, $failedCount failed';
+      backgroundColor = Colors.orange;
+    } else {
+      message = 'Failed to add tests';
+      backgroundColor = Colors.red;
+    }
+
+    _showSnackBar(message, backgroundColor);
+  }
+
   Future<void> _loadInitialData() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoadingPatientIpdData = true;
     });
@@ -395,24 +940,31 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         if (extractedTpId == 'null') extractedTpId = null;
         if (extractedWardId == 'null') extractedWardId = null;
 
-        setState(() {
-          _patientIpdData = ipdData;
-          _tpId = extractedTpId;
-          _wardId = extractedWardId;
-          _isLoadingPatientIpdData = false;
-        });
+        if (mounted) {
+          setState(() {
+            _tpId = extractedTpId;
+            _wardId = extractedWardId;
+            _isLoadingPatientIpdData = false;
+          });
+        }
       } else {
-        setState(() => _isLoadingPatientIpdData = false);
+        if (mounted) {
+          setState(() => _isLoadingPatientIpdData = false);
+        }
       }
     } catch (e) {
       debugPrint('Error loading initial data: $e');
-      setState(() {
-        _isLoadingPatientIpdData = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoadingPatientIpdData = false;
+        });
+      }
     }
   }
 
   Future<void> _loadTemplates() async {
+    if (!mounted) return;
+    
     setState(() => _isLoadingTemplates = true);
     try {
       final templates = await InvestigationService.fetchInvestigationTemplates();
@@ -430,6 +982,8 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
 
   Future<void> _loadInvestigationTypesForJobTitle(String jobTitle) async {
     if (jobTitle.isEmpty) return;
+    
+    if (!mounted) return;
     
     setState(() => _isLoadingInvestigationTypes = true);
     
@@ -452,6 +1006,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
           _parameterController.clear();
           _showParameterDropdown = false;
         });
+        debugPrint('✅ Loaded ${investigationTypes.length} investigation types');
       }
     } catch (e) {
       debugPrint('Error loading investigation types: $e');
@@ -462,29 +1017,33 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
           _selectedInvestigationType = null;
         });
        
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to load investigations for $jobTitle'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        _showSnackBar('Failed to load investigations for $jobTitle', Colors.red, duration: 2);
       }
     }
   }
 
   Future<void> _onInvestigationTypeSelected(Map<String, dynamic> investigationType) async {
+    if (!mounted) return;
+    
     setState(() {
       _selectedInvestigationType = investigationType;
     });
-    await Future.wait([
-      _fetchChargeForInvestigation(investigationType['name']),
-      _fetchParametersForInvestigationType(),
-    ]);
+    
+    try {
+      await Future.wait([
+        _fetchChargeForInvestigation(investigationType['name']),
+        _fetchParametersForInvestigationType(),
+      ]);
+    } catch (e) {
+      debugPrint('Error in onInvestigationTypeSelected: $e');
+    }
   }
 
   Future<void> _fetchParametersForInvestigationType() async {
     if (_selectedInvestigationType == null) return;
+    
+    if (!mounted) return;
+    
     setState(() => _isLoadingParameters = true);
 
     try {
@@ -496,22 +1055,26 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         gender: gender,
       );
 
-      setState(() {
-        parameterList = params;
-        selectedParameters = {
-          for (var param in params)
-            (param['parameterName'] ?? param['name'] ?? '').toString(): true
-        };
-        _parameterController.text = _getSelectedParametersString();
-        _isLoadingParameters = false;
-      });
+      if (mounted) {
+        setState(() {
+          parameterList = params;
+          selectedParameters = {
+            for (var param in params)
+              (param['parameterName'] ?? param['name'] ?? '').toString(): true
+          };
+          _parameterController.text = _getSelectedParametersString();
+          _isLoadingParameters = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error fetching parameters: $e');
-      setState(() {
-        parameterList = [];
-        selectedParameters = {};
-        _isLoadingParameters = false;
-      });
+      if (mounted) {
+        setState(() {
+          parameterList = [];
+          selectedParameters = {};
+          _isLoadingParameters = false;
+        });
+      }
     }
   }
 
@@ -519,6 +1082,9 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     if (_isLoadingPatientIpdData) {
       await Future.delayed(const Duration(milliseconds: 500));
     }
+    
+    if (!mounted) return;
+    
     setState(() => _isLoadingAmount = true);
 
     try {
@@ -530,10 +1096,12 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
           _selectedInvestigationType?['charge']?.toString() ?? '0';
 
       if (_tpId == null || _wardId == null || testTypeId == 0) {
-        setState(() {
-          _amountController.text = fallbackCharge;
-          _isLoadingAmount = false;
-        });
+        if (mounted) {
+          setState(() {
+            _amountController.text = fallbackCharge;
+            _isLoadingAmount = false;
+          });
+        }
         return;
       }
 
@@ -544,22 +1112,26 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         name: testTypeName,
       );
 
-      setState(() {
-        dynamic amount = chargeResponse['data'] ??
-            chargeResponse['charge'] ??
-            chargeResponse['amount'] ??
-            chargeResponse['rate'];
-        if (amount == null || amount.toString() == '0') amount = fallbackCharge;
-        _amountController.text = amount.toString();
-        _isLoadingAmount = false;
-      });
+      if (mounted) {
+        setState(() {
+          dynamic amount = chargeResponse['data'] ??
+              chargeResponse['charge'] ??
+              chargeResponse['amount'] ??
+              chargeResponse['rate'];
+          if (amount == null || amount.toString() == '0') amount = fallbackCharge;
+          _amountController.text = amount.toString();
+          _isLoadingAmount = false;
+        });
+      }
     } catch (e) {
       debugPrint('Error fetching charge: $e');
-      setState(() {
-        final fallbackCharge = _selectedInvestigationType?['charge']?.toString() ?? '0';
-        _amountController.text = fallbackCharge;
-        _isLoadingAmount = false;
-      });
+      if (mounted) {
+        setState(() {
+          final fallbackCharge = _selectedInvestigationType?['charge']?.toString() ?? '0';
+          _amountController.text = fallbackCharge;
+          _isLoadingAmount = false;
+        });
+      }
     }
   }
 
@@ -573,7 +1145,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
 
   void _addItem() {
     if (_selectedInvestigationType == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please select an Investigation Type.'), backgroundColor: Colors.red));
+      _showSnackBar('Please select an Investigation Type.', Colors.red, duration: 2);
       return;
     }
 
@@ -599,7 +1171,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       _updateTotal();
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Item added successfully!'), backgroundColor: Colors.green, duration: Duration(milliseconds: 800)));
+    _showSnackBar('Item added successfully!', Colors.green, duration: 2);
   }
 
   void _clearForm() {
@@ -624,13 +1196,6 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     _totalController.text = total.toStringAsFixed(2);
   }
 
-  void _handleTemplateSelection(String template) {
-    setState(() {
-      _templateController.text = template;
-      _suggestJobTitleFromTemplate(template);
-    });
-  }
-
   void _suggestJobTitleFromTemplate(String template) {
     final lowerTemplate = template.toLowerCase();
     String? suggestedJobTitle;
@@ -650,30 +1215,18 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       
       _loadInvestigationTypesForJobTitle(suggestedJobTitle);
       
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Suggested Job Title: $suggestedJobTitle'),
-          backgroundColor: Colors.teal,
-          duration: const Duration(seconds: 2)
-        )
-      );
+      _showSnackBar('Suggested Job Title: $suggestedJobTitle', Colors.teal, duration: 2);
     }
   }
 
   Future<void> _submitInvestigationRequest() async {
     if (_investigationItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please add at least one investigation item.'),
-        backgroundColor: Colors.red
-      ));
+      _showSnackBar('Please add at least one investigation item.', Colors.red, duration: 2);
       return;
     }
 
     if (_selectedJobTitle == null || _selectedJobTitle!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Please select a Job Title.'),
-        backgroundColor: Colors.red
-      ));
+      _showSnackBar('Please select a Job Title.', Colors.red, duration: 2);
       return;
     }
 
@@ -709,13 +1262,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         if (successMessage.endsWith('.')) {
           successMessage = successMessage.substring(0, successMessage.length - 1);
         }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('$successMessage. Notifications will refresh automatically.'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 3)
-          )
-        );
+        _showSnackBar('$successMessage. Notifications will refresh automatically.', Colors.green, duration: 2);
         await Future.delayed(const Duration(milliseconds: 1500));
         
         if (mounted) {
@@ -734,13 +1281,11 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
             lowerMessage.contains('investigation request saved')) {
           debugPrint('✅ Investigation saved despite 400 status');
           
-          
           final prefs = await SharedPreferences.getInstance();
           await prefs.setString('last_investigation_save_time', DateTime.now().toIso8601String());
           await prefs.setBool('shouldRefreshNotifications', true);
           await NotificationRefreshService().markInvestigationSaved();
           
-         
           String successMessage = responseMessage.isNotEmpty 
               ? responseMessage 
               : 'Investigation Request Submitted Successfully!';
@@ -748,14 +1293,6 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
           if (successMessage.endsWith('.')) {
             successMessage = successMessage.substring(0, successMessage.length - 1);
           }
-          
-          // ScaffoldMessenger.of(context).showSnackBar(
-          //   SnackBar(
-          //     content: Text('$successMessage. Notifications will refresh automatically.'),
-          //     backgroundColor: Colors.green,
-          //     duration: const Duration(seconds: 3)
-          //   )
-          // );
           
           await Future.delayed(const Duration(milliseconds: 1500));
           
@@ -765,24 +1302,12 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
             Navigator.pop(context, true);
           }
         } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(errorMessage),
-              backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 4)
-            )
-          );
+          _showSnackBar(errorMessage, Colors.orange, duration: 2);
         }
       }
     } catch (e) {
       debugPrint('Error submitting investigation: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Network error occurred while submitting'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 4)
-        )
-      );
+      _showSnackBar('Network error occurred while submitting', Colors.red, duration: 2);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -1164,6 +1689,18 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     );
   }
 
+  void _showSnackBar(String message, Color backgroundColor, {int duration = 2}) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: backgroundColor,
+          duration: Duration(seconds: duration),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     const Color darkBlue = Color(0xFF1A237E);
@@ -1446,39 +1983,27 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                                     height: 16,
                                     child: CircularProgressIndicator(strokeWidth: 2)
                                   ),
+                                if (_isProcessingMultipleTests)
+                                  const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2)
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 3),
                             GestureDetector(
                               onTap: _selectedJobTitle == null
                                   ? () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                          content: Text('Please select a Job Title first'),
-                                          backgroundColor: Colors.red,
-                                          duration: Duration(seconds: 2)
-                                        )
-                                      );
+                                      _showSnackBar('Please select a Job Title first', Colors.red, duration: 2);
                                     }
                                   : () {
                                       if (investigationTypes.isNotEmpty && !_isLoadingInvestigationTypes) {
                                         _showInvestigationTypeSheet(investigationTypes);
                                       } else if (_isLoadingInvestigationTypes) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('Loading investigation types...'),
-                                            backgroundColor: Colors.blue,
-                                            duration: const Duration(seconds: 1)
-                                          )
-                                        );
+                                        _showSnackBar('Loading investigation types...', Colors.blue, duration: 2);
                                       } else {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(
-                                            content: Text('No investigation types available for this category'),
-                                            backgroundColor: Colors.orange,
-                                            duration: const Duration(seconds: 2)
-                                          )
-                                        );
+                                        _showSnackBar('No investigation types available for this category', Colors.orange, duration: 2);
                                       }
                                     },
                               child: Container(
@@ -1549,7 +2074,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
-                                      'Listening... Speak investigation type name',
+                                      'Listening... Say "CBC, KFT, Urine"',
                                       style: GoogleFonts.poppins(
                                         fontSize: 10,
                                         color: Colors.blue[700],
@@ -1975,6 +2500,10 @@ class _SearchableSheetContentState extends State<_SearchableSheetContent> {
     
     setState(() => _isListening = true);
     
+    final options = stt.SpeechListenOptions(
+      partialResults: true,
+    );
+    
     await widget.speech.listen(
       onResult: (result) {
         setState(() {
@@ -1985,8 +2514,8 @@ class _SearchableSheetContentState extends State<_SearchableSheetContent> {
       },
       listenFor: const Duration(seconds: 10),
       pauseFor: const Duration(seconds: 3),
-      partialResults: true,
       localeId: 'en_US',
+      listenOptions: options,
     );
   }
 

@@ -12,6 +12,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:staff_mate/pages/notification_details.dart';
 import 'package:staff_mate/services/user_information_service.dart'; 
 import 'package:staff_mate/pages/vitals_page.dart';
+import 'package:staff_mate/pages/day_to_day_notes.dart';
+import 'package:staff_mate/pages/upload_doc.dart';
 
 class IpdDashboardPage extends StatefulWidget {
   const IpdDashboardPage({super.key});
@@ -628,6 +630,14 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
                   _actionBtn(Icons.notifications_none, "Notifications", Colors.purple, () { 
                     Navigator.pop(context); 
                     Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationDetailsPage(patientName: patient.patientname, patientId: patient.ipdNo,admissionId: patient.admissionId,)));
+                  }),
+                  _actionBtn(Icons.note_add, "Day-to-day Notes", Colors.brown, () { 
+                    Navigator.pop(context); 
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage()));
+                  }),
+                  _actionBtn(Icons.upload_file, "Upload Doc", Colors.green, () { 
+                    Navigator.pop(context); 
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => UploadDocScreen(patient: patient,)));
                   }),
                 ],
               ),

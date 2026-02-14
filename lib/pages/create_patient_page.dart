@@ -129,6 +129,7 @@ class _CreatePatientPageState extends State<CreatePatientPage> {
         practitionerid: practitionerId,
         clientId: patientId, 
          patientBalanceDouble: 0.0,
+          admissionDate: now.toIso8601String(),
       );
 
       // Save to SharedPreferences

@@ -50,7 +50,7 @@ class AuthOptionsPage extends StatelessWidget {
               height: size.width * 0.8,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.05),
+                color: Colors.white.withOpacity(0.05), // FIXED: Changed withValues to withOpacity
               ),
             ),
           ),
@@ -76,10 +76,10 @@ class AuthOptionsPage extends StatelessWidget {
                               padding: EdgeInsets.all(size.width * 0.06),
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                color: Colors.white.withValues(alpha: 0.1),
+                                color: Colors.white.withOpacity(0.1), // FIXED: Changed withValues to withOpacity
                                 boxShadow: [
                                   BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.1),
+                                    color: Colors.black.withOpacity(0.1), // FIXED: Changed withValues to withOpacity
                                     blurRadius: 20,
                                     spreadRadius: 5,
                                   ),
@@ -172,13 +172,6 @@ class AuthOptionsPage extends StatelessWidget {
                                 
                                 // Spacer
                                 const SizedBox(height: 16),
-
-                                // --- REGISTER BUTTON (COMMENTED OUT AS REQUESTED) ---
-                                /*
-                                _buildRegisterButton(context, AppColors.primaryDarkBlue, AppColors.primaryDarkBlue),
-                                const SizedBox(height: 20),
-                                */
-                                // ----------------------------------------------------
                               ],
                             ),
                           ),
@@ -201,13 +194,18 @@ class AuthOptionsPage extends StatelessWidget {
       height: 58,
       child: ElevatedButton(
         onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const LoginPage()));
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const LoginPage(),
+            ),
+          );
         },
         style: ElevatedButton.styleFrom(
           backgroundColor: buttonColor,
           foregroundColor: textColor,
           elevation: 8,
-          shadowColor: buttonColor.withValues(alpha: 0.4),
+          shadowColor: buttonColor.withOpacity(0.4), // FIXED: Changed withValues to withOpacity
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
           ),
@@ -231,32 +229,4 @@ class AuthOptionsPage extends StatelessWidget {
       ),
     );
   }
-
-  // --- REGISTER BUTTON HELPER (COMMENTED OUT BUT PRESERVED) ---
-  /*
-  Widget _buildRegisterButton(BuildContext context, Color outlineColor, Color textColor) {
-    return SizedBox(
-      width: double.infinity,
-      height: 58,
-      child: OutlinedButton(
-        onPressed: () {
-          Navigator.push(context, MaterialPageRoute(builder: (context) => const RegisterPage()));
-        },
-        style: OutlinedButton.styleFrom(
-          side: BorderSide(color: outlineColor.withOpacity(0.5), width: 1.5),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          foregroundColor: outlineColor,
-        ),
-        child: Text(
-          'Register',
-          style: GoogleFonts.poppins(
-            fontSize: 18, 
-            fontWeight: FontWeight.w600, 
-            color: textColor
-          ),
-        ),
-      ),
-    );
-  }
-  */
 }
