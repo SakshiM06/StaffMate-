@@ -250,25 +250,27 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
           setState(() {
             _recognizedText = result.recognizedWords;
           });
-          
+
           _speechTimeoutTimer?.cancel();
-          _speechTimeoutTimer = Timer(const Duration(seconds: 60), () {
+          _speechTimeoutTimer = Timer(const Duration(milliseconds: 1500), () {
             if (_isListeningForInvestigationType && _recognizedText.isNotEmpty) {
               _processMultipleInvestigationTypesVoiceCommand(_recognizedText);
             }
           });
 
+      
           if (result.finalResult) {
+            _speechTimeoutTimer?.cancel();
             _processMultipleInvestigationTypesVoiceCommand(_recognizedText);
           }
         },
         listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 3),
+        pauseFor: const Duration(seconds: 2),
         localeId: 'en_IN',
         listenOptions: options,
       );
 
-      _showSnackBar('Listening for multiple tests... Say "CBC, KFT, Urine"', Colors.blue, duration: 1);
+      _showSnackBar('Listening for multiple tests... Say test names like "CBC, KFT, Urine"', Colors.blue, duration: 2);
     } catch (e) {
       debugPrint('Error starting speech listening: $e');
       if (mounted) {
@@ -339,75 +341,111 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     
     setState(() => _isProcessingMultipleTests = true);
 
-    String cleanText = text.toLowerCase();
-    
+    debugPrint('Original recognized text: "$text"');
+
+    String cleanText = text.trim();
     cleanText = cleanText
-        .replaceAll('select', '')
-        .replaceAll('choose', '')
-        .replaceAll('investigation', '')
-        .replaceAll('test', '')
-        .replaceAll('tests', '')
-        .replaceAll('type', '')
-        .replaceAll('add', '')
-        .replaceAll('please', '')
-        .replaceAll('that\'s it', '')
-        .replaceAll('done', '')
-        .replaceAll('and', ',')
-        .replaceAll('plus', ',')
-        .replaceAll('with', ',')
-        .replaceAll('also', ',')
+        .replaceAll(RegExp(r'^(select|choose|add|please)\s+', caseSensitive: false), '')
+        .replaceAll(RegExp(r"\s+(that'?s it|done|thank you|thanks)$", caseSensitive: false), '')
+        .replaceAll(RegExp(r'\s+and\s+', caseSensitive: false), ', ')
+        .replaceAll(RegExp(r'\s+plus\s+', caseSensitive: false), ', ')
+        .replaceAll(RegExp(r'\s+with\s+', caseSensitive: false), ', ')
+        .replaceAll(RegExp(r'\s+&\s+', caseSensitive: false), ', ')
+        .replaceAll(RegExp(r'[^\w\s,]', caseSensitive: false), ' ') 
+        .replaceAll(RegExp(r'\s+'), ' ') 
         .trim();
 
-    if (cleanText.isEmpty) {
-      setState(() => _isProcessingMultipleTests = false);
-      _showSnackBar('Could not recognize investigation types. Please try again.', Colors.orange, duration: 1);
-      return;
+    debugPrint('Cleaned text: "$cleanText"');
+
+
+    List<String> spokenTests = [];
+    
+    if (cleanText.contains(',')) {
+      spokenTests = cleanText
+          .split(',')
+          .map((e) => e.trim())
+          .where((e) => e.isNotEmpty && e.length > 1)
+          .toList();
+    } else {
+      List<String> words = cleanText.split(' ').where((w) => w.length > 1).toList();
+      if (words.length >= 2) {
+        List<String> combinedTests = [];
+        int i = 0;
+        while (i < words.length) {
+          if (i < words.length - 1) {
+            String twoWord = '${words[i]} ${words[i+1]}';
+            bool foundTwoWord = investigationTypes.any((type) {
+              final typeName = (type['name'] ?? '').toString().toLowerCase();
+              return typeName.contains(twoWord) || twoWord.contains(typeName.replaceAll(' ', ''));
+            });
+            
+            if (foundTwoWord) {
+              combinedTests.add(twoWord);
+              i += 2;
+              continue;
+            }
+          }
+          combinedTests.add(words[i]);
+          i++;
+        }
+        spokenTests = combinedTests;
+      } else {
+        spokenTests = words;
+      }
     }
 
-    List<String> spokenTests = cleanText
-        .split(RegExp(r',|\s+and\s+|\s+plus\s+|\s+&\s+|\s+'))
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty && e.length > 1)
-        .toList();
+    spokenTests = spokenTests.toSet().where((test) => test.isNotEmpty).toList();
 
-    debugPrint('Recognized tests: $spokenTests');
+    debugPrint('Processed test names: $spokenTests');
     debugPrint('Available investigation types: ${investigationTypes.length}');
+
+    if (spokenTests.isEmpty) {
+      setState(() => _isProcessingMultipleTests = false);
+      _showSnackBar('Could not recognize test names. Please try again or type manually.', Colors.orange, duration: 2);
+      return;
+    }
 
     List<Map<String, dynamic>> matchedTests = [];
     List<String> unmatchedTests = [];
 
     for (String spokenTest in spokenTests) {
+      String normalizedSpoken = spokenTest.toLowerCase().trim();
       bool found = false;
       
       for (var type in investigationTypes) {
-        final typeName = (type['name'] ?? '').toString().toLowerCase();
-      
-        if (typeName.contains(spokenTest) || spokenTest.contains(typeName)) {
+        final typeName = (type['name'] ?? '').toString().toLowerCase().trim();
+        
+   
+        if (typeName == normalizedSpoken || 
+            typeName.contains(normalizedSpoken) || 
+            normalizedSpoken.contains(typeName)) {
           if (!matchedTests.any((t) => t['id'] == type['id'])) {
             matchedTests.add(type);
             found = true;
-            break;
-          }
-        }
-        else if (_isCommonAbbreviation(spokenTest, typeName)) {
-          if (!matchedTests.any((t) => t['id'] == type['id'])) {
-            matchedTests.add(type);
-            found = true;
-            break;
-          }
-        }
-        else if (spokenTest.split(' ').any((word) => 
-            typeName.contains(word) && word.length > 2)) {
-          if (!matchedTests.any((t) => t['id'] == type['id'])) {
-            matchedTests.add(type);
-            found = true;
+            debugPrint('✅ Matched "$spokenTest" to "${type['name']}"');
             break;
           }
         }
       }
       
       if (!found) {
-        unmatchedTests.add(spokenTest);
+        bool foundInSecondPass = false;
+        for (var type in investigationTypes) {
+          final typeName = (type['name'] ?? '').toString().toLowerCase();
+          if (_isCommonAbbreviation(normalizedSpoken, typeName)) {
+            if (!matchedTests.any((t) => t['id'] == type['id'])) {
+              matchedTests.add(type);
+              foundInSecondPass = true;
+              debugPrint('✅ Matched via abbreviation "$spokenTest" to "${type['name']}"');
+              break;
+            }
+          }
+        }
+        
+        if (!foundInSecondPass) {
+          unmatchedTests.add(spokenTest);
+          debugPrint('❌ Unmatched test: "$spokenTest"');
+        }
       }
     }
 
@@ -421,47 +459,51 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     });
 
     if (matchedTests.isEmpty) {
-      _showSnackBar('No matching tests found for: ${spokenTests.join(", ")}', Colors.orange, duration: 1);
+      _showSnackBar('No matching tests found for: ${spokenTests.join(", ")}', Colors.orange, duration: 3);
       return;
     }
+    
     _showMultiTestConfirmationDialog(matchedTests, unmatchedTests);
   }
 
   bool _isCommonAbbreviation(String spoken, String fullName) {
     Map<String, List<String>> commonAbbreviations = {
-      'cbc': ['complete blood count', 'blood count', 'cbc test'],
-      'kft': ['kidney function test', 'renal function', 'kidney test'],
-      'lft': ['liver function test', 'hepatic function', 'liver test'],
-      'rft': ['renal function test', 'kidney function'],
-      'tft': ['thyroid function test', 'thyroid test'],
-      'ecg': ['electrocardiogram', 'ekg', 'heart test'],
-      'xray': ['x-ray', 'radiograph', 'x ray'],
-      'ct': ['computed tomography', 'cat scan', 'ct scan'],
-      'mri': ['magnetic resonance imaging', 'mri scan'],
-      'urine': ['urine analysis', 'urinalysis', 'urine test', 'urine r/e'],
-      'stool': ['stool test', 'stool analysis', 'stool r/e'],
-      'blood': ['blood test', 'blood analysis'],
-      'sugar': ['blood sugar', 'glucose test'],
-      'lipid': ['lipid profile', 'cholesterol test'],
+      'cbc': ['complete blood count', 'blood count'],
+      'kft': ['kidney function test', 'renal function'],
+      'lft': ['liver function test', 'hepatic function'],
+      'rft': ['renal function test'],
+      'tft': ['thyroid function test'],
+      'ecg': ['electrocardiogram', 'ekg'],
+      'ekg': ['electrocardiogram', 'ecg'],
+      'xray': ['x-ray', 'radiograph'],
+      'x ray': ['x-ray', 'radiograph'],
+      'ct': ['computed tomography', 'cat scan'],
+      'ct scan': ['computed tomography'],
+      'mri': ['magnetic resonance imaging'],
+      'urine': ['urinalysis', 'urine analysis', 'urine r/e'],
+      'ua': ['urinalysis', 'urine analysis'],
+      'stool': ['stool analysis', 'stool r/e'],
+      'blood': ['blood test'],
+      'sugar': ['blood sugar', 'glucose'],
+      'lipid': ['lipid profile'],
     };
 
     String normalizedSpoken = spoken.replaceAll(' ', '').toLowerCase();
     String normalizedFull = fullName.replaceAll(' ', '').toLowerCase();
 
+    if (normalizedFull.contains(normalizedSpoken) && normalizedSpoken.length > 2) {
+      return true;
+    }
+
     for (var entry in commonAbbreviations.entries) {
-      if (normalizedSpoken.contains(entry.key)) {
+      if (normalizedSpoken.contains(entry.key) || entry.key.contains(normalizedSpoken)) {
         for (var fullForm in entry.value) {
           String normalizedForm = fullForm.replaceAll(' ', '').toLowerCase();
-          if (normalizedFull.contains(normalizedForm) || 
-              normalizedForm.contains(normalizedSpoken)) {
+          if (normalizedFull.contains(normalizedForm)) {
             return true;
           }
         }
       }
-    }
-    
-    if (normalizedFull.contains(normalizedSpoken) && normalizedSpoken.length > 2) {
-      return true;
     }
     
     return false;
@@ -2073,12 +2115,14 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                                       ),
                                     ),
                                     const SizedBox(width: 6),
-                                    Text(
-                                      'Listening... Say "CBC, KFT, Urine"',
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 10,
-                                        color: Colors.blue[700],
-                                        fontWeight: FontWeight.w500,
+                                    Expanded(
+                                      child: Text(
+                                        'Listening... Say test names like "CBC, KFT, Urine"',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 10,
+                                          color: Colors.blue[700],
+                                          fontWeight: FontWeight.w500,
+                                        ),
                                       ),
                                     ),
                                   ],

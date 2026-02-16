@@ -16,6 +16,8 @@ class IpdService {
       "https://test.smartcarehis.com:8443/smartcaremain/clinic/specializationlist";
   static const String _wardListUrl =
       "https://test.smartcarehis.com:8443/smartcaremain/clinic/branchwisewardlist/";
+  static const String _availableBedsUrl =
+       "https://test.smartcarehis.com:8443/smartcaremain/clinic/availablebedinward/";
   static const String _vitalsMasterUrl =
       "https://test.smartcarehis.com:8443/ipd/common/get/vitals";
   static const String _saveVitalsUrl =
@@ -26,8 +28,14 @@ class IpdService {
       "https://test.smartcarehis.com:8443/ipd/patient/getNotification/investigation/";
   static const String _dayToDayNotesUrl =
       "https://test.smartcarehis.com:8443/ipd/patient/daytodaynotes/fetch";
+  static const String _saveDayToDayNotesUrl =
+      "https://test.smartcarehis.com:8443/ipd/patient/daytodaynotes/save";
   static const String _uploadDocumentUrl =
       "https://test.smartcarehis.com:8443/smartcaremain/patient/uploadDocuments";
+  static const String _shiftBedUrl =
+      "https://test.smartcarehis.com:8443/ipd/common/shiftbed";
+  static const String _addStdChargesUrl =
+      "https://test.smartcarehis.com:8443/ipd/patient/addstdcharges"; 
 
   Future<Map<String, dynamic>> fetchPrescriptionNotifications(String admissionId) async {
     debugPrint('Fetching prescription notifications for admission ID: $admissionId');
@@ -531,6 +539,407 @@ class IpdService {
     }
 
     return [];
+  }
+
+  /// Fetch available beds in a specific ward
+  /// [wardId] - Ward ID (required)
+  Future<List<dynamic>> fetchAvailableBedsInWard({
+    required String wardId,
+  }) async {
+    debugPrint('Fetching available beds for ward: $wardId');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      final url = '$_availableBedsUrl$wardId';
+      debugPrint('Available beds URL: $url');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('--AVAILABLE BEDS API-- Headers: $headers');
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: headers,
+      );
+
+      debugPrint('Available Beds API Status Code: ${response.statusCode}');
+      debugPrint('Available Beds API Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        debugPrint('Available Beds API Response Type: ${decoded.runtimeType}');
+        debugPrint('Available Beds API Response: $decoded');
+
+        // Handle response format: {"bedlist": [{bedid: 1, bedname: "01"}, ...]}
+        if (decoded is Map<String, dynamic>) {
+          if (decoded.containsKey('bedlist')) {
+            final bedList = decoded['bedlist'];
+            if (bedList is List) {
+              debugPrint('Successfully fetched ${bedList.length} beds (from bedlist key)');
+              return bedList;
+            }
+          } else if (decoded.containsKey('beds')) {
+            final bedList = decoded['beds'];
+            if (bedList is List) {
+              debugPrint('Successfully fetched ${bedList.length} beds (from beds key)');
+              return bedList;
+            }
+          } else if (decoded.containsKey('data')) {
+            final data = decoded['data'];
+            if (data is List) {
+              debugPrint('Successfully fetched ${data.length} beds (from data key)');
+              return data;
+            }
+          } else {
+            // Check if any value in the map is a list
+            for (final entry in decoded.entries) {
+              if (entry.value is List) {
+                debugPrint('Successfully fetched ${(entry.value as List).length} beds (from ${entry.key} key)');
+                return entry.value as List;
+              }
+            }
+
+            debugPrint('No list found in response, returning empty list');
+            return [];
+          }
+        } else if (decoded is List) {
+          debugPrint('Successfully fetched ${decoded.length} beds (direct list format)');
+          return decoded;
+        } else {
+          debugPrint('Unexpected response format: ${decoded.runtimeType}');
+          return [];
+        }
+      } else {
+        throw Exception(
+          'Failed to load available beds data (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching available beds: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+
+    return [];
+  }
+
+  /// Shift patient bed
+  /// Shifts a patient to a different bed/ward
+  Future<Map<String, dynamic>> shiftPatientBed({
+    required String patientId,
+    required String admissionId,
+    required String wardId,
+    required String wardName,
+    required String bedId,
+    required String bedName,
+    required String shiftingTime,
+    required String branchId,
+    required String patientName,
+    bool smsOnBedChange = false,
+    bool whatsappOnBedChange = false,
+  }) async {
+    debugPrint('Shifting patient bed...');
+    debugPrint('Patient ID: $patientId, Admission ID: $admissionId');
+    debugPrint('From: Current Bed, To: Ward: $wardName ($wardId), Bed: $bedName ($bedId)');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final defaultBranchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Missing session values. Please login again.',
+        };
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId.isNotEmpty ? branchId : defaultBranchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Shift Bed Headers: $headers');
+
+      // Parse integers where needed
+      int admissionIdInt;
+      try {
+        admissionIdInt = int.parse(admissionId);
+      } catch (e) {
+        admissionIdInt = 0;
+        debugPrint('⚠️ Error parsing admissionId: $e, using 0');
+      }
+
+      int wardIdInt;
+      try {
+        wardIdInt = int.parse(wardId);
+      } catch (e) {
+        wardIdInt = 0;
+        debugPrint('⚠️ Error parsing wardId: $e, using 0');
+      }
+
+      int bedIdInt;
+      try {
+        bedIdInt = int.parse(bedId);
+      } catch (e) {
+        bedIdInt = 0;
+        debugPrint('⚠️ Error parsing bedId: $e, using 0');
+      }
+
+      final requestBody = {
+        "patientid": patientId,
+        "addmissionid": admissionIdInt,
+        "wardid": wardIdInt,
+        "wardname": wardName,
+        "bedid": bedIdInt,
+        "bedname": bedName,
+        "branch_id": branchId.isNotEmpty ? branchId : defaultBranchId,
+        "patientname": patientName,
+        "shiftingTime": shiftingTime,
+        "sms_on_bedchange": smsOnBedChange,
+        "whatsapp_on_bedchange": whatsappOnBedChange,
+        "userid": userId,
+      };
+
+      debugPrint('Shift Bed Request Body: ${jsonEncode(requestBody)}');
+
+      final response = await http.post(
+        Uri.parse(_shiftBedUrl),
+        headers: headers,
+        body: jsonEncode(requestBody),
+      );
+
+      debugPrint('Shift Bed API Status Code: ${response.statusCode}');
+      debugPrint('Shift Bed API Response: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is Map<String, dynamic>) {
+          debugPrint('Patient bed shifted successfully');
+          
+          return {
+            'success': true,
+            'data': decoded['data'] ?? decoded,
+            'message': decoded['message'] ?? 'Patient shifted successfully',
+            'response': decoded,
+          };
+        } else {
+          return {
+            'success': true,
+            'message': 'Patient shifted successfully',
+            'data': decoded,
+          };
+        }
+      } else {
+        String errorMessage = 'Failed with status ${response.statusCode}';
+        try {
+          final errorBody = jsonDecode(response.body);
+          if (errorBody is Map<String, dynamic>) {
+            errorMessage = errorBody['message'] ?? 
+                          errorBody['error'] ?? 
+                          errorMessage;
+          }
+        } catch (e) {
+          errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
+        }
+
+        debugPrint('Shift Bed API Error: $errorMessage');
+
+        return {
+          'success': false,
+          'message': 'Failed to shift patient: $errorMessage',
+          'statusCode': response.statusCode,
+          'error': response.body,
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Exception shifting patient bed: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Exception: $e',
+      };
+    }
+  }
+
+  /// Add Standard Charges
+  /// Adds standard charges for a patient in a new ward
+  Future<Map<String, dynamic>> addStandardCharges({
+    required String patientId,
+    required String admissionId,
+    required String wardId,
+    required String branchId,
+    required String patientName,
+    required String practitionerId,
+    required String practitionerName,
+    int thirdpartyId = 0,
+    bool appliedNewStandardCharges = false,
+    String whopay = "Client",
+  }) async {
+    debugPrint('Adding standard charges...');
+    debugPrint('Patient ID: $patientId, Admission ID: $admissionId, Ward ID: $wardId');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final defaultBranchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        return {
+          'success': false,
+          'message': 'Missing session values. Please login again.',
+        };
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId.isNotEmpty ? branchId : defaultBranchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Add Standard Charges Headers: $headers');
+
+      // Parse integers where needed
+      int admissionIdInt;
+      try {
+        admissionIdInt = int.parse(admissionId);
+      } catch (e) {
+        admissionIdInt = 0;
+        debugPrint('⚠️ Error parsing admissionId: $e, using 0');
+      }
+
+      int wardIdInt;
+      try {
+        wardIdInt = int.parse(wardId);
+      } catch (e) {
+        wardIdInt = 0;
+        debugPrint('⚠️ Error parsing wardId: $e, using 0');
+      }
+
+      final requestBody = {
+        "admission_id": admissionIdInt,
+        "appliedNewStandardCharges": appliedNewStandardCharges,
+        "branch_id": branchId.isNotEmpty ? branchId : defaultBranchId,
+        "patientid": patientId,
+        "patientname": patientName,
+        "practitionerid": practitionerId,
+        "practitionername": practitionerName,
+        "thirdparty_id": thirdpartyId,
+        "wardid": wardIdInt,
+        "whopay": whopay,
+      };
+
+      debugPrint('Add Standard Charges Request Body: ${jsonEncode(requestBody)}');
+
+      final response = await http.post(
+        Uri.parse(_addStdChargesUrl),
+        headers: headers,
+        body: jsonEncode(requestBody),
+      );
+
+      debugPrint('Add Standard Charges API Status Code: ${response.statusCode}');
+      debugPrint('Add Standard Charges API Response: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is Map<String, dynamic>) {
+          debugPrint('Standard charges added successfully');
+          
+          return {
+            'success': true,
+            'data': decoded['data'] ?? decoded,
+            'message': decoded['message'] ?? 'Standard charges added successfully',
+            'response': decoded,
+          };
+        } else {
+          return {
+            'success': true,
+            'message': 'Standard charges added successfully',
+            'data': decoded,
+          };
+        }
+      } else {
+        String errorMessage = 'Failed with status ${response.statusCode}';
+        try {
+          final errorBody = jsonDecode(response.body);
+          if (errorBody is Map<String, dynamic>) {
+            errorMessage = errorBody['message'] ?? 
+                          errorBody['error'] ?? 
+                          errorMessage;
+          }
+        } catch (e) {
+          errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
+        }
+
+        debugPrint('Add Standard Charges API Error: $errorMessage');
+
+        return {
+          'success': false,
+          'message': 'Failed to add standard charges: $errorMessage',
+          'statusCode': response.statusCode,
+          'error': response.body,
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Exception adding standard charges: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Exception: $e',
+      };
+    }
   }
 
   Future<Map<String, dynamic>> fetchVitalsMasterData() async {
@@ -1403,13 +1812,12 @@ Future<Map<String, dynamic>> uploadDocument({
         'Access-Control-Allow-Origin': '*',
       };
 
-      // POST body matches the API contract exactly.
       final body = {
         'admissiondate': admissiondate,
         'ipdid': int.tryParse(ipdid) ?? ipdid,
       };
 
-      debugPrint('--DAY TO DAY NOTES API--');
+      debugPrint('--DAY TO DAY NOTES FETCH API--');
       debugPrint('URL     : $_dayToDayNotesUrl');
       debugPrint('Headers : $headers');
       debugPrint('Body    : ${jsonEncode(body)}');
@@ -1488,6 +1896,141 @@ Future<Map<String, dynamic>> uploadDocument({
         'success': false,
         'message': 'Exception fetching day-to-day notes: $e',
         'data': [],
+      };
+    }
+  }
+
+  /// Saves a day-to-day note for an admitted IPD patient.
+  ///
+  /// [ipdid]         - The IPD record ID (e.g. 12129).
+  /// [admissiondate] - The admission date-time string in the format
+  ///                   "dd-MM-yyyy HH:mm:ss" (e.g. "07-01-2026 10:27:59").
+  /// [notes]         - The note content to save.
+  /// [day]           - The day number for the note.
+  /// [id]            - The note ID (use 0 for new notes).
+  /// [createdByUserId] - The user ID of the person creating the note.
+  ///
+  /// Returns a [Map] with:
+  ///   - `success`  (bool)   – whether the call succeeded.
+  ///   - `data`     (dynamic) – response data from the API.
+  ///   - `message`  (String) – human-readable status.
+  ///   - `error`    (String) – error detail when `success` is false.
+  Future<Map<String, dynamic>> saveDayToDayNote({
+    required String ipdid,
+    required String admissiondate,
+    required String notes,
+    required int day,
+    required int id,
+    required String createdByUserId,
+  }) async {
+    debugPrint('Saving day-to-day note for ipdid: $ipdid, day: $day');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId').isNotEmpty
+          ? getPrefAsString('branchId')
+          : '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        return {
+          'success': false,
+          'message': '⚠️ Missing session values. Please login again.',
+          'data': null,
+        };
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      // Parse ipdid to integer
+      int ipdidInt;
+      try {
+        ipdidInt = int.parse(ipdid);
+      } catch (e) {
+        ipdidInt = 0;
+        debugPrint('⚠️ Error parsing ipdid: $e, using 0');
+      }
+
+      final body = {
+        'admissiondate': admissiondate,
+        'ipdid': ipdidInt,
+        'notes': notes,
+        'day': day,
+        'id': id,
+        'createdByUserId': createdByUserId,
+      };
+
+      debugPrint('--DAY TO DAY NOTES SAVE API--');
+      debugPrint('URL     : $_saveDayToDayNotesUrl');
+      debugPrint('Headers : $headers');
+      debugPrint('Body    : ${jsonEncode(body)}');
+
+      final response = await http.post(
+        Uri.parse(_saveDayToDayNotesUrl),
+        headers: headers,
+        body: jsonEncode(body),
+      );
+
+      debugPrint('Save Day-to-Day Notes API Status Code : ${response.statusCode}');
+      debugPrint('Save Day-to-Day Notes API Response    : ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+
+        return {
+          'success': true,
+          'message': 'Day-to-day note saved successfully',
+          'data': decoded,
+        };
+      } else {
+        String errorMessage = 'Failed with status ${response.statusCode}';
+        try {
+          final errorBody = jsonDecode(response.body);
+          if (errorBody is Map<String, dynamic>) {
+            errorMessage = errorBody['message'] ??
+                errorBody['error'] ??
+                errorMessage;
+          }
+        } catch (_) {
+          errorMessage = response.body.isNotEmpty
+              ? response.body
+              : errorMessage;
+        }
+
+        debugPrint('Save Day-to-Day Notes API Error: $errorMessage');
+
+        return {
+          'success': false,
+          'message': 'Failed to save day-to-day note: $errorMessage',
+          'statusCode': response.statusCode,
+          'data': null,
+          'error': response.body,
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Exception saving day-to-day note: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Exception saving day-to-day note: $e',
+        'data': null,
       };
     }
   }

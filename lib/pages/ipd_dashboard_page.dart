@@ -6,6 +6,7 @@ import 'package:staff_mate/models/dashboard_data.dart';
 import 'package:staff_mate/models/patient.dart';
 import 'package:staff_mate/pages/req_pres.dart';
 import 'package:staff_mate/pages/req_inve.dart';
+import 'package:staff_mate/pages/shift_patient.dart';
 import 'package:staff_mate/services/clinic_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart'; 
@@ -633,11 +634,15 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
                   }),
                   _actionBtn(Icons.note_add, "Day-to-day Notes", Colors.brown, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage()));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage(ipdId: patient.ipdNo, admissionDate: patient.admissionDate, patientName: patient.patientname, admissionId: patient.admissionId, patientId: '',)));
                   }),
                   _actionBtn(Icons.upload_file, "Upload Doc", Colors.green, () { 
                     Navigator.pop(context); 
                     Navigator.push(context, MaterialPageRoute(builder: (_) => UploadDocScreen(patient: patient,)));
+                  }),
+                  _actionBtn(Icons.local_hospital, "Shift Patient", Colors.deepPurple, () { 
+                    Navigator.pop(context); 
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ShiftPatientPage(patient: patient)));
                   }),
                 ],
               ),

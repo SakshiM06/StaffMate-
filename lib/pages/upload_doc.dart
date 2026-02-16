@@ -17,13 +17,13 @@ class UploadDocScreen extends StatefulWidget {
 }
 
 class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProviderStateMixin {
-  // Color constants
+  // Color constants - Updated to follow the specified scheme
   static const Color primaryDarkBlue = Color(0xFF1A237E);
   static const Color midDarkBlue = Color(0xFF1B263B);
   static const Color accentBlue = Color(0xFF0289A1);
   static const Color lightBlue = Color(0xFF87CEEB);
   static const Color whiteColor = Colors.white;
-  static const Color textDark = Color(0xFF0D1B2A);
+  static const Color textDark = Color(0xFF1A237E);
   static const Color textBodyColor = Color(0xFF4A5568);
   static const Color lightGreyColor = Color(0xFFF5F7FA);
   static const Color tableHeaderColor = Color(0xFFF8F9FA);
@@ -505,16 +505,18 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
     );
   }
 
+  // NEW MODERN DROPDOWN
   Widget _buildModernDropdown() {
     return Container(
       decoration: BoxDecoration(
         color: whiteColor,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: tableBorderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: primaryDarkBlue.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
@@ -525,114 +527,48 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: accentBlue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.description_outlined,
-                    color: accentBlue,
-                    size: 18,
-                  ),
-                ),
+                Icon(Icons.description_outlined, color: primaryDarkBlue, size: 20),
                 const SizedBox(width: 12),
                 Text(
-                  'Select Document Type',
+                  'Choose document type',
                   style: TextStyle(
                     fontSize: 15,
-                    color: textBodyColor.withOpacity(0.8),
-                    fontWeight: FontWeight.w400,
+                    color: textBodyColor.withOpacity(0.7),
                   ),
                 ),
               ],
             ),
           ),
-          selectedItemBuilder: (BuildContext context) {
-            return _documentTypes.map((String value) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: accentBlue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        _getDocumentTypeIcon(value),
-                        color: accentBlue,
-                        size: 18,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        value,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          color: textDark,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }).toList();
-          },
           items: _documentTypes.map((String value) {
             return DropdownMenuItem<String>(
               value: value,
               child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: _selectedType == value
-                            ? accentBlue.withOpacity(0.15)
-                            : Colors.grey.withOpacity(0.05),
-                        borderRadius: BorderRadius.circular(10),
+                        color: _selectedType == value 
+                            ? primaryDarkBlue.withOpacity(0.1)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
                         _getDocumentTypeIcon(value),
-                        color: _selectedType == value ? accentBlue : textBodyColor,
+                        color: _selectedType == value ? primaryDarkBlue : textBodyColor,
                         size: 18,
                       ),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            value,
-                            style: TextStyle(
-                              fontSize: 15,
-                              color: _selectedType == value ? accentBlue : textDark,
-                              fontWeight: _selectedType == value ? FontWeight.w600 : FontWeight.w400,
-                            ),
-                          ),
-                        ],
+                    Text(
+                      value,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: _selectedType == value ? primaryDarkBlue : textBodyColor,
+                        fontWeight: _selectedType == value ? FontWeight.w600 : FontWeight.w400,
                       ),
                     ),
-                    if (_selectedType == value)
-                      Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(
-                          color: accentBlue,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.check,
-                          color: Colors.white,
-                          size: 12,
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -646,130 +582,95 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
           isExpanded: true,
           icon: Padding(
             padding: const EdgeInsets.only(right: 16),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: lightGreyColor,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(
-                Icons.keyboard_arrow_down_rounded,
-                color: accentBlue,
-                size: 20,
-              ),
+            child: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: primaryDarkBlue,
+              size: 24,
             ),
           ),
           dropdownColor: whiteColor,
           borderRadius: BorderRadius.circular(16),
-          elevation: 0,
-          style: const TextStyle(color: textDark, fontSize: 15),
+          elevation: 2,
         ),
       ),
     );
   }
 
+  // UPDATED FILE UPLOAD AREA
   Widget _buildFileUploadArea() {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      child: GestureDetector(
-        onTap: _pickFile,
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: _selectedFile == null ? whiteColor : successGreen.withOpacity(0.05),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: _selectedFile == null 
-                  ? tableBorderColor
-                  : successGreen.withOpacity(0.3),
-              width: _selectedFile == null ? 1.5 : 2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 12,
-                offset: const Offset(0, 6),
-              ),
-            ],
+    return GestureDetector(
+      onTap: _pickFile,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: _selectedFile == null ? whiteColor : successGreen.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: _selectedFile == null 
+                ? tableBorderColor
+                : successGreen,
+            width: 1.5,
           ),
-          child: Column(
-            children: [
-              Container(
-                width: 70,
-                height: 70,
-                decoration: BoxDecoration(
-                  color: _selectedFile == null
-                      ? accentBlue.withOpacity(0.1)
-                      : successGreen.withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _selectedFile == null
-                      ? Icons.cloud_upload_outlined
-                      : Icons.check_circle_outline_rounded,
-                  size: 32,
-                  color: _selectedFile == null ? accentBlue : successGreen,
-                ),
+          boxShadow: [
+            BoxShadow(
+              color: primaryDarkBlue.withOpacity(0.03),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Icon(
+              _selectedFile == null
+                  ? Icons.cloud_upload_outlined
+                  : Icons.check_circle_outline_rounded,
+              size: 40,
+              color: _selectedFile == null ? primaryDarkBlue : successGreen,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _selectedFile == null
+                  ? 'Tap to select file'
+                  : _fileName!,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: _selectedFile == null ? textDark : successGreen,
               ),
-              const SizedBox(height: 16),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (_selectedFile != null) ...[
+              const SizedBox(height: 4),
               Text(
-                _selectedFile == null
-                    ? 'Upload Document'
-                    : 'File Ready to Upload',
+                _formatFileSize(_fileSize),
                 style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: _selectedFile == null ? textDark : successGreen,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _selectedFile == null
-                    ? 'Tap to browse or drag and drop'
-                    : 'Tap to change file',
-                style: TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   color: textBodyColor.withOpacity(0.7),
                 ),
               ),
-              const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_selectedFile != null) ...[
-                      Icon(
-                        Icons.check_circle,
-                        size: 14,
-                        color: successGreen,
-                      ),
-                      const SizedBox(width: 6),
-                    ],
-                    Flexible(
-                      child: Text(
-                        _selectedFile == null
-                            ? 'Supported: PNG, JPG, PDF (Max 2MB)'
-                            : '✓ $_fileName (${_formatFileSize(_fileSize)})',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: _selectedFile == null ? textBodyColor : successGreen,
-                          fontWeight: FontWeight.w500,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                      ),
-                    ),
-                  ],
+            ],
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: primaryDarkBlue.withOpacity(0.05),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _selectedFile == null
+                    ? 'PNG, JPG, PDF (Max 2MB)'
+                    : '✓ Ready to upload',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _selectedFile == null ? textBodyColor : successGreen,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -806,51 +707,38 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
     }
   }
 
+  // UPDATED PATIENT INFO CARD
   Widget _buildPatientInfoCard() {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            whiteColor,
-            lightGreyColor.withOpacity(0.5),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
+        color: whiteColor,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: tableBorderColor),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: primaryDarkBlue.withOpacity(0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            width: 60,
-            height: 60,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  accentBlue.withOpacity(0.2),
-                  lightBlue.withOpacity(0.1),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(18),
+              color: primaryDarkBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
               Icons.person_outline_rounded,
-              color: accentBlue,
-              size: 28,
+              color: primaryDarkBlue,
+              size: 24,
             ),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -858,46 +746,49 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
                 Text(
                   widget.patient.patientname,
                   style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: textDark,
-                    letterSpacing: 0.5,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: primaryDarkBlue,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: accentBlue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'MRN: ${widget.patient.patientId} • Admission: ${widget.patient.admissionId}',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: accentBlue,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                if (widget.patient.practitionerid != null && 
-                    widget.patient.practitionerid!.isNotEmpty)
-                  Container(
-                    margin: const EdgeInsets.only(top: 4),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: successGreen.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Practitioner: ${widget.patient.practitionername ?? widget.patient.practitionerid}',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: successGreen,
-                        fontWeight: FontWeight.w500,
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: primaryDarkBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'ID: ${widget.patient.patientId}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: primaryDarkBlue,
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: accentBlue.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'AdmissionID: ${widget.patient.admissionId}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: accentBlue,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
@@ -908,6 +799,9 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final horizontalPadding = screenWidth * 0.04;
+    
     return Scaffold(
       backgroundColor: lightGreyColor,
       appBar: AppBar(
@@ -915,41 +809,24 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
           'Upload Document',
           style: TextStyle(
             fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: textDark,
-            letterSpacing: 0.5,
+            fontWeight: FontWeight.w600,
+            color: whiteColor,
           ),
         ),
-        backgroundColor: whiteColor,
+        backgroundColor: primaryDarkBlue,
         elevation: 0,
-        iconTheme: const IconThemeData(color: textDark),
+        iconTheme: const IconThemeData(color: whiteColor),
         centerTitle: false,
         automaticallyImplyLeading: true,
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: tableBorderColor,
-          ),
-        ),
       ),
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                lightGreyColor,
-                whiteColor,
-              ],
-            ),
-          ),
+          color: lightGreyColor,
           child: SafeArea(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.all(20),
+              padding: EdgeInsets.all(horizontalPadding),
               child: FadeTransition(
                 opacity: _fadeAnimation,
                 child: SlideTransition(
@@ -958,97 +835,69 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildPatientInfoCard(),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
                       
                       // Document Type Selection
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                        child: const Text(
-                          'Document Type',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: textDark,
-                            letterSpacing: 0.3,
-                          ),
+                      const Text(
+                        'Document Type',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: textBodyColor,
                         ),
                       ),
-                      _buildModernDropdown(),
                       const SizedBox(height: 8),
+                      _buildModernDropdown(),
+                      const SizedBox(height: 4),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: Text(
-                          'Optional - Defaults to "Other" if not selected',
+                          'Optional - defaults to "Other"',
                           style: TextStyle(
-                            fontSize: 12,
-                            color: textBodyColor.withOpacity(0.7),
+                            fontSize: 11,
+                            color: textBodyColor.withOpacity(0.6),
                             fontStyle: FontStyle.italic,
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
 
                       // Document Note
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                        child: const Text(
-                          'Document Note',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: textDark,
-                            letterSpacing: 0.3,
-                          ),
+                      const Text(
+                        'Document Note',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: textBodyColor,
                         ),
                       ),
+                      const SizedBox(height: 8),
                       Container(
                         decoration: BoxDecoration(
                           color: whiteColor,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.03),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: tableBorderColor),
                         ),
                         child: TextFormField(
                           controller: _docNoteController,
-                          maxLines: 4,
+                          maxLines: 3,
                           style: const TextStyle(
-                            fontSize: 15,
+                            fontSize: 14,
                             color: textDark,
                           ),
                           decoration: InputDecoration(
-                            hintText: 'Enter description or notes (optional)...',
+                            hintText: 'Add notes or description...',
                             hintStyle: TextStyle(
-                              fontSize: 15,
+                              fontSize: 14,
                               color: textBodyColor.withOpacity(0.5),
                             ),
-                            filled: true,
-                            fillColor: whiteColor,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
-                            enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
-                            focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide(
-                                color: accentBlue.withOpacity(0.3),
-                                width: 1.5,
-                              ),
-                            ),
-                            contentPadding: const EdgeInsets.all(16),
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.all(12),
                             suffixIcon: _docNoteController.text.isNotEmpty
                                 ? IconButton(
                                     icon: Icon(
                                       Icons.clear_rounded,
-                                      size: 20,
+                                      size: 18,
                                       color: textBodyColor.withOpacity(0.7),
                                     ),
                                     onPressed: () {
@@ -1058,103 +907,68 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
                                   )
                                 : null,
                           ),
-                          onChanged: (value) => setState(() {}),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 4),
                       Align(
                         alignment: Alignment.centerRight,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: lightGreyColor,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            '${_docNoteController.text.length}/500',
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: textBodyColor.withOpacity(0.7),
-                              fontWeight: FontWeight.w500,
-                            ),
+                        child: Text(
+                          '${_docNoteController.text.length}/500',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: textBodyColor.withOpacity(0.5),
                           ),
                         ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 20),
 
                       // File Upload
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-                        child: const Text(
-                          'Attach File',
-                          style: TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: textDark,
-                            letterSpacing: 0.3,
-                          ),
+                      const Text(
+                        'Attach File',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: textBodyColor,
                         ),
                       ),
-                      _buildFileUploadArea(),
                       const SizedBox(height: 8),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: Text(
-                          'Supported formats: PNG, JPG, JPEG, PDF (Max 2MB)',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: textBodyColor.withOpacity(0.7),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
+                      _buildFileUploadArea(),
+                      const SizedBox(height: 24),
 
-                      // Upload Button
-                      Container(
+                      // Upload Button - Now using primaryDarkBlue
+                      SizedBox(
                         width: double.infinity,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: accentBlue.withOpacity(0.2),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
+                        height: 50,
                         child: ElevatedButton(
                           onPressed: _isUploading || _loadingPractitioners ? null : _uploadDocument,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: accentBlue,
+                            backgroundColor: primaryDarkBlue,
                             foregroundColor: whiteColor,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
                             elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            disabledBackgroundColor: primaryDarkBlue.withOpacity(0.5),
                           ),
                           child: _isUploading
                               ? Row(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     SizedBox(
-                                      height: 20,
-                                      width: 20,
+                                      height: 18,
+                                      width: 18,
                                       child: CircularProgressIndicator(
                                         strokeWidth: 2,
                                         valueColor: AlwaysStoppedAnimation<Color>(whiteColor),
                                       ),
                                     ),
-                                    const SizedBox(width: 12),
+                                    const SizedBox(width: 8),
                                     const Text(
                                       'Uploading...',
                                       style: TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
                                         color: whiteColor,
-                                        letterSpacing: 0.5,
                                       ),
                                     ),
                                   ],
@@ -1164,59 +978,48 @@ class _UploadDocScreenState extends State<UploadDocScreen> with SingleTickerProv
                                   children: [
                                     Icon(
                                       Icons.cloud_upload_rounded,
-                                      size: 22,
+                                      size: 18,
                                       color: whiteColor,
                                     ),
                                     const SizedBox(width: 8),
                                     Text(
                                       _loadingPractitioners 
-                                          ? 'Loading Practitioner...' 
+                                          ? 'Loading...' 
                                           : 'Upload Document',
                                       style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.w600,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w500,
                                         color: whiteColor,
-                                        letterSpacing: 0.5,
                                       ),
                                     ),
                                   ],
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       
-                      // Info Banner
+                      // Info Banner - Simplified
                       Container(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: accentBlue.withOpacity(0.05),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: accentBlue.withOpacity(0.1),
-                          ),
+                          color: primaryDarkBlue.withOpacity(0.03),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: primaryDarkBlue.withOpacity(0.1)),
                         ),
                         child: Row(
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: accentBlue.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.info_outline_rounded,
-                                color: accentBlue,
-                                size: 18,
-                              ),
+                            Icon(
+                              Icons.info_outline_rounded,
+                              color: primaryDarkBlue,
+                              size: 16,
                             ),
-                            const SizedBox(width: 12),
-                            const Expanded(
+                            const SizedBox(width: 8),
+                            Expanded(
                               child: Text(
-                                'File must be ≤ 2MB. Supported formats: PNG, JPG, JPEG, PDF.',
+                                'Maximum file size: 2MB. Supported: PNG, JPG, PDF',
                                 style: TextStyle(
-                                  fontSize: 12,
-                                  color: textBodyColor,
-                                  height: 1.4,
+                                  fontSize: 11,
+                                  color: textBodyColor.withOpacity(0.8),
                                 ),
                               ),
                             ),
