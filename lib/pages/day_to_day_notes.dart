@@ -438,9 +438,10 @@ class _DayToDayNotesPageState extends State<DayToDayNotesPage> with SingleTicker
                 Expanded(
                   flex: 2,
                   child: Container(
-                    height: 42,
+                    height: 70,
                     decoration: BoxDecoration(
                       color: AppColors.lightGreyColor,
+                      
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(color: Colors.grey.shade200, width: 1),
                     ),
@@ -468,7 +469,7 @@ class _DayToDayNotesPageState extends State<DayToDayNotesPage> with SingleTicker
                 Expanded(
                   flex: 5,
                   child: Container(
-                    height: 42,
+                    height: 120,
                     decoration: BoxDecoration(
                       color: AppColors.lightGreyColor,
                       borderRadius: BorderRadius.circular(10),

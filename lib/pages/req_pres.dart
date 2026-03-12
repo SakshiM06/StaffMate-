@@ -79,9 +79,17 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
   bool _speechAvailable = false;
   String _recognizedText = '';
   Timer? _speechTimeoutTimer;
-
+  Timer? _speechSilenceTimer;
+  String _lastProcessedText = '';
+  bool _isProcessing = false;
 
   bool _voiceCommandApplied = false;
+  bool _isSearchingMedicine = false;
+  
+  // Voice input state
+  bool _showVoiceInput = false;
+  String _voiceInputStatus = '';
+  List<String> _recognizedWords = [];
 
   @override
   void initState() {
@@ -113,6 +121,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
   @override
   void dispose() {
     _speechTimeoutTimer?.cancel();
+    _speechSilenceTimer?.cancel();
     _typeAheadController.dispose();
     _typeAheadFocusNode.dispose();
     _dosageFocusNode.dispose();
@@ -126,7 +135,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     try {
       _speechAvailable = await _speech.initialize(
         onStatus: (status) {
-          if (status == 'done') {
+          debugPrint('Speech status: $status');
+          if (status == 'done' || status == 'notListening') {
             _stopListening();
           }
         },
@@ -152,14 +162,14 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
           const SnackBar(
             content: Text('Speech recognition is not available on this device'),
             backgroundColor: Colors.orange,
-             duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
-          margin: EdgeInsets.only(
-            bottom: 20,
-            left: 20,
-            right: 20,
+            duration: Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+            margin: EdgeInsets.only(
+              bottom: 20,
+              left: 20,
+              right: 20,
+            ),
           ),
-        ),
         );
         return;
       }
@@ -172,14 +182,14 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
             const SnackBar(
               content: Text('Microphone permission is required for voice input'),
               backgroundColor: Colors.orange,
-              duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
-          margin: EdgeInsets.only(
-            bottom: 20,
-            left: 20,
-            right: 20,
+              duration: Duration(seconds: 2),
+              behavior: SnackBarBehavior.floating,
+              margin: EdgeInsets.only(
+                bottom: 20,
+                left: 20,
+                right: 20,
+              ),
             ),
-          ),
           );
           return;
         }
@@ -187,33 +197,66 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
 
       setState(() {
         _isListening = true;
+        _showVoiceInput = true;
         _recognizedText = '';
         _voiceCommandApplied = false;
+        _lastProcessedText = '';
+        _isProcessing = false;
+        _recognizedWords = [];
+        _voiceInputStatus = 'Listening... Speak now';
+      });
+
+      // Cancel any existing timers
+      _speechTimeoutTimer?.cancel();
+      _speechSilenceTimer?.cancel();
+
+      // Set a timeout for the entire listening session (15 seconds)
+      _speechTimeoutTimer = Timer(const Duration(seconds: 15), () {
+        if (_isListening) {
+          if (_recognizedWords.isNotEmpty) {
+            _processVoiceCommand(_recognizedWords.join(' '));
+          } else {
+            _stopListening();
+            setState(() {
+              _showVoiceInput = false;
+            });
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No speech detected. Please try again.'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+                margin: EdgeInsets.only(
+                  bottom: 20,
+                  left: 20,
+                  right: 20,
+                ),
+              ),
+            );
+          }
+        }
       });
 
       await _speech.listen(
         onResult: (result) {
           setState(() {
             _recognizedText = result.recognizedWords;
+            // Split into words for better processing
+            _recognizedWords = result.recognizedWords.split(' ').where((w) => w.isNotEmpty).toList();
+            _voiceInputStatus = 'Heard: $_recognizedText';
           });
 
-          _speechTimeoutTimer?.cancel();
-          _speechTimeoutTimer = Timer(const Duration(seconds: 60), () {
-            if (_isListening) {
-              _processVoiceCommand(_recognizedText);
+          // Reset silence timer on each new result
+          _speechSilenceTimer?.cancel();
+          _speechSilenceTimer = Timer(const Duration(seconds: 2), () {
+            // If we have text and user has stopped speaking for 2 seconds, process it
+            if (_isListening && _recognizedWords.isNotEmpty && !_isProcessing) {
+              _processVoiceCommand(_recognizedWords.join(' '));
             }
           });
-
-          
-          if (_recognizedText.toLowerCase().contains('prescribe') ||
-              _recognizedText.toLowerCase().contains('add') ||
-              _recognizedText.toLowerCase().contains('that\'s it') ||
-              _recognizedText.toLowerCase().contains('done')) {
-            _processVoiceCommand(_recognizedText);
-          }
         },
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 5),
+        listenFor: const Duration(seconds: 15),
+        pauseFor: const Duration(seconds: 2),
         partialResults: true,
         localeId: 'en_US',
         listenMode: stt.ListenMode.confirmation,
@@ -225,40 +268,270 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     if (_isListening) {
       _speech.stop();
       _speechTimeoutTimer?.cancel();
+      _speechSilenceTimer?.cancel();
       setState(() {
         _isListening = false;
       });
     }
   }
 
-  void _processVoiceCommand(String text) {
-    if (text.isEmpty) return;
+  void _cancelVoiceInput() {
+    _stopListening();
+    setState(() {
+      _showVoiceInput = false;
+      _recognizedText = '';
+      _recognizedWords = [];
+    });
+  }
+
+  Future<void> _processVoiceCommand(String text) async {
+    if (text.isEmpty || _isProcessing) return;
+
+    // Avoid processing the same text multiple times
+    if (text == _lastProcessedText) return;
+    
+    setState(() {
+      _isProcessing = true;
+      _lastProcessedText = text;
+      _voiceInputStatus = 'Processing...';
+    });
 
     _stopListening();
 
     debugPrint('Processing voice command: $text');
 
-    final parsedData = _parseVoiceCommand(text);
-    _applyParsedDataToForm(parsedData);
+    // First, extract medicine name from the voice command
+    String medicineName = _extractMedicineName(text);
+    
+    if (medicineName.isEmpty) {
+      _showVoiceErrorDialog(
+        'Medicine Not Detected',
+        'Could not detect a medicine name. Please speak clearly with the medicine name first.\n\nExample: "Dolo 650, 5 days, morning and night"',
+      );
+      setState(() {
+        _isProcessing = false;
+        _showVoiceInput = false;
+      });
+      return;
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Voice command processed: ${text.substring(0, text.length > 50 ? 50 : text.length)}...'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
-          margin: EdgeInsets.only(
+    // Check if medicine exists in database
+    bool medicineExists = await _checkMedicineExists(medicineName);
+    
+    if (!medicineExists && mounted) {
+      // Show medicine not available popup
+      _showMedicineNotAvailableDialog(medicineName);
+      setState(() {
+        _isProcessing = false;
+        _showVoiceInput = false;
+      });
+      return;
+    }
+    
+    // If medicine exists, parse the rest of the command
+    final parsedData = _parseVoiceCommand(text, medicineName);
+    
+    // Apply the parsed data to form
+    await _applyParsedDataToForm(parsedData);
+
+    if (mounted) {
+      setState(() {
+        _showVoiceInput = false;
+      });
+      
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✓ Voice command processed successfully'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(
             bottom: 20,
             left: 20,
             right: 20,
           ),
+        ),
+      );
+    }
+    
+    setState(() {
+      _isProcessing = false;
+    });
+  }
+
+  String _extractMedicineName(String text) {
+    String cleanText = text.toLowerCase().trim();
+    
+    // Remove common filler words
+    cleanText = cleanText.replaceAll(RegExp(r'\b(please|can you|i want|give|prescribe|add|the|a|an|for|to|with|and|then|after|before|morning|night|evening|afternoon|day|days|daily|once|twice|thrice|times|tablet|capsule|syrup|injection)\b'), ' ');
+    
+    // Extract medicine name (usually the first word that's not a number)
+    List<String> words = cleanText.split(' ').where((w) => w.isNotEmpty).toList();
+    
+    if (words.isEmpty) return '';
+    
+    // Look for patterns like "dolo 650" or "paracetamol"
+    String medicineName = '';
+    
+    for (int i = 0; i < words.length; i++) {
+      String word = words[i];
+      
+      // Skip if it's just a number (might be strength)
+      if (RegExp(r'^\d+$').hasMatch(word)) continue;
+      
+      // This could be the medicine name
+      medicineName = word;
+      
+      // Check if next word is a number (strength)
+      if (i + 1 < words.length && RegExp(r'^\d+$').hasMatch(words[i + 1])) {
+        medicineName = '$medicineName ${words[i + 1]}';
+        break;
+      }
+      break;
+    }
+    
+    // Capitalize first letter
+    if (medicineName.isNotEmpty) {
+      List<String> nameParts = medicineName.split(' ');
+      nameParts[0] = nameParts[0].substring(0, 1).toUpperCase() + nameParts[0].substring(1);
+      medicineName = nameParts.join(' ');
+    }
+    
+    return medicineName;
+  }
+
+  Future<bool> _checkMedicineExists(String medicineName) async {
+    try {
+      // Extract base medicine name without strength
+      String baseName = medicineName.split(' ')[0];
+      
+      final suggestions = await MedicineService.fetchMedicines(query: baseName);
+      if (suggestions.isNotEmpty) {
+        // Check if any suggestion matches closely
+        for (var suggestion in suggestions) {
+          if (suggestion.toLowerCase().contains(baseName.toLowerCase()) ||
+              baseName.toLowerCase().contains(suggestion.toLowerCase())) {
+            return true;
+          }
+        }
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error checking medicine: $e');
+      // If API fails, assume it exists to not block the flow
+      return true;
+    }
+  }
+
+  void _showMedicineNotAvailableDialog(String medicineName) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange[700]),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Medicine Not Found', 
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600)
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '"$medicineName" is not available in the database.',
+              style: GoogleFonts.poppins(fontSize: 14),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Please check the spelling or try a different medicine name.',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Suggested: Speak clearly with medicine name first',
+              style: GoogleFonts.poppins(fontSize: 12, color: Colors.blue[600]),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('OK', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _startListening(); // Try again
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A237E),
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Try Again', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+        ],
       ),
     );
   }
 
-  Map<String, dynamic> _parseVoiceCommand(String text) {
+  void _showVoiceErrorDialog(String title, String message) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: Colors.red[700]),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(title, 
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w600)
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              message,
+              style: GoogleFonts.poppins(fontSize: 14),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: GoogleFonts.poppins()),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _startListening(); // Try again
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A237E),
+              foregroundColor: Colors.white,
+            ),
+            child: Text('Try Again', style: GoogleFonts.poppins(fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, dynamic> _parseVoiceCommand(String text, String medicineName) {
     final result = {
-      'medicine': '',
+      'medicine': medicineName,
       'strength': '',
       'dosage': '',
       'unit': '',
@@ -267,274 +540,224 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       'instruction': '',
     };
 
-    text = text.toLowerCase();
-
-    // 1. Extract medicine name and strength
-    final medicinePattern = RegExp(r'([a-zA-Z]+)\s*(\d+)\s*(mg|gram|g|ml|tablet|capsule)?', caseSensitive: false);
-    final medicineMatches = medicinePattern.allMatches(text).toList();
+    String cleanText = text.toLowerCase().trim();
     
-    if (medicineMatches.isNotEmpty) {
-      final match = medicineMatches[0];
-      result['medicine'] = '${match.group(1)!.toUpperCase()} ${match.group(2)!}';
-      result['strength'] = match.group(2) ?? '';
-      
-      if (match.group(3) != null) {
-        result['unit'] = match.group(3)!.toUpperCase();
+    // Extract strength (numbers after medicine name)
+    if (medicineName.contains(' ')) {
+      String lastPart = medicineName.split(' ').last;
+      if (RegExp(r'^\d+$').hasMatch(lastPart)) {
+        result['strength'] = lastPart;
       }
     }
 
-    // 2. Extract duration
-    final durationPattern = RegExp(r'(\d+)\s*(day|days|week|weeks|month|months)', caseSensitive: false);
-    final durationMatch = durationPattern.firstMatch(text);
+    // Extract duration
+    final durationPattern = RegExp(r'(\d+)\s*(day|days|d)', caseSensitive: false);
+    final durationMatch = durationPattern.firstMatch(cleanText);
     if (durationMatch != null) {
       result['duration'] = durationMatch.group(1)!;
-    } else {
-      final numberPattern = RegExp(r'\b([1-9]|[12][0-9]|30)\b');
-      final numbers = numberPattern.allMatches(text).toList();
-      if (numbers.isNotEmpty) {
-        for (var match in numbers) {
-          final num = match.group(1)!;
-          if (!result['medicine']!.contains(num)) {
-            result['duration'] = num;
-            break;
-          }
-        }
-      }
     }
 
-    String frequency = '';
+    // Extract frequency
+    bool hasMorning = cleanText.contains('morning') || cleanText.contains('morn');
+    bool hasAfternoon = cleanText.contains('afternoon') || cleanText.contains('noon');
+    bool hasNight = cleanText.contains('night') || cleanText.contains('evening');
     
-    bool hasMorning = text.contains('morning');
-    bool hasAfternoon = text.contains('afternoon') || text.contains('noon') || text.contains('lunch');
-    bool hasNight = text.contains('night') || text.contains('evening') || text.contains('dinner') || text.contains('bedtime');
-    bool hasOnce = text.contains('once') || text.contains('one time') || text.contains('daily');
-    bool hasTwice = text.contains('twice') || text.contains('two times') || text.contains('two times a day') || text.contains('twice a day');
-    bool hasThrice = text.contains('thrice') || text.contains('three times') || text.contains('three times a day')|| text.contains('thrice a day');
-    
-    
-    if (hasOnce) {
-      frequency = '0-0-1';
-    } else if (hasTwice) {
-      frequency = '1-0-1';
-    } else if (hasThrice) {
-      frequency = '1-1-1';
-    } else {
-      if (hasMorning && hasNight && !hasAfternoon) {
-        frequency = '1-0-1';
-      } else if (hasMorning && hasAfternoon && hasNight) {
-        frequency = '1-1-1';
-      } else if (hasMorning && !hasAfternoon && !hasNight) {
-        frequency = '1-0-0';
-      } else if (!hasMorning && !hasAfternoon && hasNight) {
-        frequency = '0-0-1';
-      } else if (!hasMorning && hasAfternoon && !hasNight) {
-        frequency = '0-1-0';
-      } else if (hasMorning && hasAfternoon && !hasNight) {
-        frequency = '1-1-0';
-      } else if (!hasMorning && hasAfternoon && hasNight) {
-        frequency = '0-1-1';
-      }
+    if (hasMorning && hasNight && hasAfternoon) {
+      result['frequency'] = '1-1-1';
+    } else if (hasMorning && hasNight) {
+      result['frequency'] = '1-0-1';
+    } else if (hasMorning) {
+      result['frequency'] = '1-0-0';
+    } else if (hasNight) {
+      result['frequency'] = '0-0-1';
+    } else if (hasAfternoon) {
+      result['frequency'] = '0-1-0';
     }
-    
-    result['frequency'] = frequency;
 
-  
-    String instruction = '';
-    
-    if (text.contains('before food') || text.contains('before meal') || text.contains('before lunch') || text.contains('before dinner')) {
-      instruction = 'Before Food';
-    } else if (text.contains('after food') || text.contains('after meal') || text.contains('after lunch') || text.contains('after dinner')) {
-      instruction = 'After Food';
-    } else if (text.contains('empty stomach')) {
-      instruction = 'Empty Stomach';
-    } else if (text.contains('with milk')) {
-      instruction = 'With Milk';
-    } else if (text.contains('with water')) {
-      instruction = 'With Water';
+    // Extract instruction
+    if (cleanText.contains('before food') || cleanText.contains('before meal')) {
+      result['instruction'] = 'Before Food';
+    } else if (cleanText.contains('after food') || cleanText.contains('after meal')) {
+      result['instruction'] = 'After Food';
     }
-    
-    result['instruction'] = instruction;
 
+    debugPrint('Parsed voice data: $result');
     return result;
   }
 
-  void _applyParsedDataToForm(Map<String, dynamic> parsedData) {
+  Future<void> _applyParsedDataToForm(Map<String, dynamic> parsedData) async {
     setState(() {
       _voiceCommandApplied = true;
-      
-      if (parsedData['medicine'].isNotEmpty) {
-        medicineController.text = parsedData['medicine'];
-        _typeAheadController.text = parsedData['medicine'];
-        _fetchMedicineDetailsWithVoiceData(parsedData['medicine'].split(' ')[0], parsedData);
-      }
-
-      if (parsedData['strength'].isNotEmpty) {
-        strengthController.text = parsedData['strength'];
-      }
-
-      if (parsedData['unit'].isNotEmpty) {
-        selectedUnit = parsedData['unit'];
-        for (var unit in units) {
-          if (unit.toLowerCase().contains(parsedData['unit'].toLowerCase()) ||
-              parsedData['unit'].toLowerCase().contains(unit.toLowerCase())) {
-            selectedUnit = unit;
-            break;
-          }
-        }
-      }
-
-     
-      if (parsedData['duration'].isNotEmpty) {
-        durationController.text = parsedData['duration'];
-        _calculateQuantity(); 
-      }
-
-      if (parsedData['frequency'].isNotEmpty) {
-        selectedFrequency = parsedData['frequency'];
-        _calculateQuantity(); 
-      }
-
-      if (parsedData['instruction'].isNotEmpty) {
-        selectedInstruction = parsedData['instruction'];
-        selectedDosageTime = parsedData['instruction'];
-        
-        for (var time in dosageTimes) {
-          if (time.toLowerCase().contains(parsedData['instruction'].toLowerCase()) ||
-              parsedData['instruction'].toLowerCase().contains(time.toLowerCase())) {
-            selectedDosageTime = time;
-            selectedInstruction = time;
-            break;
-          }
-        }
-      }
-      if (doseController.text.isEmpty) {
-        doseController.text = '1';
-      }
     });
-  }
-
-  Future<void> _fetchMedicineDetailsWithVoiceData(String medicineName, Map<String, dynamic> voiceData) async {
-    try {
-      final details = await MedicineService.fetchMedicineDetails(medicineName);
-      if (details != null) {
-        medicineDetails = details;
-        if (mounted) {
-          setState(() {
-            
-            // 1. Basic Fields - only if voice didn't provide
-            if (!_voiceCommandApplied || dosageController.text.isEmpty) {
-              if (details['weight'] != null) dosageController.text = details['weight']?.toString() ?? '';
-            }
-            
-            if (!_voiceCommandApplied || strengthController.text.isEmpty) {
-              if (details['strength'] != null) strengthController.text = details['strength']?.toString() ?? '';
-            }
-            
-            if (doseController.text.isEmpty) {
-              if (details['dose'] != null) doseController.text = details['dose']?.toString() ?? '1';
-            }
-
-            // 2. Unit - only if voice didn't provide
-            if ((!voiceData.containsKey('unit') || voiceData['unit']!.isEmpty) && details['unit'] != null) {
-              selectedUnit = details['unit']?.toString();
-              selectedUnitId = details['unitid'] is int ? details['unitid'] : int.tryParse('${details['unitid']}');
-            }
-
-            // 3. Frequency - only if voice didn't provide
-            if (voiceData['frequency']!.isEmpty && details['dosefreq'] != null && details['dosefreq'].toString().isNotEmpty) {
-              selectedFrequency = details['dosefreq']?.toString();
-            }
-
-            // 4. Route - always from API since voice doesn't specify route
-            if (details['route'] != null && details['route'].toString().isNotEmpty) {
-              selectedRoute = details['route']?.toString();
-            } else if (selectedRoute == null && routes.isNotEmpty) {
-              selectedRoute = 'ORAL'; 
-            }
-            if (voiceData['instruction']!.isEmpty) {
-              if (details['dosageTime'] != null) {
-                selectedDosageTime = details['dosageTime']?.toString();
-                selectedInstruction = details['dosageTime']?.toString();
-              } else if (details['instruction'] != null) {
-                selectedDosageTime = details['instruction']?.toString();
-                selectedInstruction = details['instruction']?.toString();
-              } else if (dosageTimes.isNotEmpty) {
-                selectedDosageTime = dosageTimes.first;
-                selectedInstruction = dosageTimes.first;
-              }
-            }
-            if (voiceData['duration']!.isEmpty) {
-              if (details['days'] != null) {
-                durationController.text = details['days']?.toString() ?? '';
-              }
-            }
-            _calculateQuantity();
-          });
-          Future.microtask(() => _calculateQuantity());
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching medicine details: $e");
+    
+    // Apply medicine first if present
+    if (parsedData['medicine'].isNotEmpty) {
+      medicineController.text = parsedData['medicine'];
+      _typeAheadController.text = parsedData['medicine'];
+      
+      // Fetch medicine details with a slight delay
+      await Future.delayed(const Duration(milliseconds: 300));
+      await _fetchMedicineDetailsWithVoiceData(parsedData['medicine'].split(' ')[0], parsedData);
     }
   }
 
-  Future<void> _fetchMedicineDetails(String medicineName) async {
+  Future<void> _fetchMedicineDetailsWithVoiceData(String medicineName, Map<String, dynamic> voiceData) async {
+    setState(() {
+      _isSearchingMedicine = true;
+    });
+    
     try {
       final details = await MedicineService.fetchMedicineDetails(medicineName);
-      if (details != null) {
-        medicineDetails = details;
-        if (mounted) {
-          setState(() {
-            _voiceCommandApplied = false; 
-            
-            // 1. Basic Fields
-            if (details['weight'] != null) dosageController.text = details['weight']?.toString() ?? '';
-            if (details['strength'] != null) strengthController.text = details['strength']?.toString() ?? '';
-            if (details['dose'] != null) doseController.text = details['dose']?.toString() ?? '1';
+      if (details != null && mounted) {
+        setState(() {
+          medicineDetails = details;
+          _isSearchingMedicine = false;
+          
+          // Fill in fields from API, but prioritize voice data
+          if (voiceData['strength'].isNotEmpty) {
+            strengthController.text = voiceData['strength'];
+          } else if (details['strength'] != null) {
+            strengthController.text = details['strength']?.toString() ?? '';
+          }
+          
+          if (dosageController.text.isEmpty && details['weight'] != null) {
+            dosageController.text = details['weight']?.toString() ?? '';
+          }
+          
+          if (doseController.text.isEmpty) {
+            doseController.text = details['dose']?.toString() ?? '1';
+          }
 
-            // 2. Unit
-            if (details['unit'] != null) {
-              selectedUnit = details['unit']?.toString();
-              selectedUnitId = details['unitid'] is int ? details['unitid'] : int.tryParse('${details['unitid']}');
-            }
+          if (voiceData['unit'].isEmpty && details['unit'] != null) {
+            selectedUnit = details['unit']?.toString();
+            selectedUnitId = details['unitid'] is int ? details['unitid'] : int.tryParse('${details['unitid']}');
+          }
 
-            // 3. Frequency
-            if (details['dosefreq'] != null && details['dosefreq'].toString().isNotEmpty) {
-              selectedFrequency = details['dosefreq']?.toString();
-            }
+          if (voiceData['frequency'].isEmpty && details['dosefreq'] != null) {
+            selectedFrequency = details['dosefreq']?.toString();
+          }
 
-            // 4. Route
-            if (details['route'] != null && details['route'].toString().isNotEmpty) {
-              selectedRoute = details['route']?.toString();
-            } else if (selectedRoute == null && routes.isNotEmpty) {
-              selectedRoute = 'ORAL'; 
-            }
-
-            // 5. Instruction
+          if (details['route'] != null && details['route'].toString().isNotEmpty) {
+            selectedRoute = details['route']?.toString();
+          } else if (selectedRoute == null && routes.isNotEmpty) {
+            selectedRoute = 'ORAL';
+          }
+          
+          if (voiceData['instruction'].isEmpty) {
             if (details['dosageTime'] != null) {
               selectedDosageTime = details['dosageTime']?.toString();
               selectedInstruction = details['dosageTime']?.toString();
             } else if (details['instruction'] != null) {
               selectedDosageTime = details['instruction']?.toString();
               selectedInstruction = details['instruction']?.toString();
-            } else if (dosageTimes.isNotEmpty) {
-              selectedDosageTime = dosageTimes.first;
-              selectedInstruction = dosageTimes.first;
             }
-
-            // 6. Duration
-            if (details['days'] != null) {
-              durationController.text = details['days']?.toString() ?? '';
-            }
-
-            // 7. Quantity
-            _calculateQuantity();
-          });
-          Future.microtask(() => _calculateQuantity());
-        }
+          } else {
+            selectedDosageTime = voiceData['instruction'];
+            selectedInstruction = voiceData['instruction'];
+          }
+          
+          if (voiceData['duration'].isEmpty && details['days'] != null) {
+            durationController.text = details['days']?.toString() ?? '';
+          } else if (voiceData['duration'].isNotEmpty) {
+            durationController.text = voiceData['duration'];
+          }
+        });
+        
+        Future.microtask(() => _calculateQuantity());
+      } else if (mounted) {
+        setState(() {
+          _isSearchingMedicine = false;
+        });
+        
+        // Apply voice data even if API fails
+        setState(() {
+          if (voiceData['duration'].isNotEmpty) durationController.text = voiceData['duration'];
+          if (voiceData['frequency'].isNotEmpty) selectedFrequency = voiceData['frequency'];
+          if (voiceData['instruction'].isNotEmpty) {
+            selectedDosageTime = voiceData['instruction'];
+            selectedInstruction = voiceData['instruction'];
+          }
+        });
+        Future.microtask(() => _calculateQuantity());
       }
     } catch (e) {
       debugPrint("Error fetching medicine details: $e");
+      if (mounted) {
+        setState(() {
+          _isSearchingMedicine = false;
+          
+          // Apply voice data even if API fails
+          if (voiceData['duration'].isNotEmpty) durationController.text = voiceData['duration'];
+          if (voiceData['frequency'].isNotEmpty) selectedFrequency = voiceData['frequency'];
+          if (voiceData['instruction'].isNotEmpty) {
+            selectedDosageTime = voiceData['instruction'];
+            selectedInstruction = voiceData['instruction'];
+          }
+        });
+        Future.microtask(() => _calculateQuantity());
+      }
+    }
+  }
+
+  Future<void> _fetchMedicineDetails(String medicineName) async {
+    setState(() {
+      _isSearchingMedicine = true;
+    });
+    
+    try {
+      final details = await MedicineService.fetchMedicineDetails(medicineName);
+      if (details != null && mounted) {
+        medicineDetails = details;
+        setState(() {
+          _isSearchingMedicine = false;
+          
+          if (details['weight'] != null) dosageController.text = details['weight']?.toString() ?? '';
+          if (details['strength'] != null) strengthController.text = details['strength']?.toString() ?? '';
+          if (details['dose'] != null) doseController.text = details['dose']?.toString() ?? '1';
+
+          if (details['unit'] != null) {
+            selectedUnit = details['unit']?.toString();
+            selectedUnitId = details['unitid'] is int ? details['unitid'] : int.tryParse('${details['unitid']}');
+          }
+
+          if (details['dosefreq'] != null && details['dosefreq'].toString().isNotEmpty) {
+            selectedFrequency = details['dosefreq']?.toString();
+          }
+
+          if (details['route'] != null && details['route'].toString().isNotEmpty) {
+            selectedRoute = details['route']?.toString();
+          } else if (selectedRoute == null && routes.isNotEmpty) {
+            selectedRoute = 'ORAL'; 
+          }
+
+          if (details['dosageTime'] != null) {
+            selectedDosageTime = details['dosageTime']?.toString();
+            selectedInstruction = details['dosageTime']?.toString();
+          } else if (details['instruction'] != null) {
+            selectedDosageTime = details['instruction']?.toString();
+            selectedInstruction = details['instruction']?.toString();
+          } else if (dosageTimes.isNotEmpty) {
+            selectedDosageTime = dosageTimes.first;
+            selectedInstruction = dosageTimes.first;
+          }
+
+          if (details['days'] != null) {
+            durationController.text = details['days']?.toString() ?? '';
+          }
+        });
+        Future.microtask(() => _calculateQuantity());
+      } else if (mounted) {
+        setState(() {
+          _isSearchingMedicine = false;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching medicine details: $e");
+      if (mounted) {
+        setState(() {
+          _isSearchingMedicine = false;
+        });
+      }
     }
   }
 
@@ -593,14 +816,6 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
         _locationId = int.tryParse(prefs.getString('locationId') ?? '');
         _wardId = int.tryParse(prefs.getString('wardId') ?? '');
         _bedId = _patient.bedid; 
-        
-        // debugPrint('=== LOADED PATIENT DATA FOR PRESCRIPTION ===');
-        // debugPrint('Patient ID: $_patientId');
-        // debugPrint('Client ID: $_clientId');
-        // debugPrint('Admission ID: $_admissionId');
-        // debugPrint('Practitioner ID: $_practitionerId');
-        // debugPrint('Bed ID: $_bedId');
-        // debugPrint('============================================');
       });
     } catch (e) {
       debugPrint('Error loading dynamic data: $e');
@@ -664,8 +879,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
   void _addPrescriptionItem() async {
     if (_prescriptionItems.length >= _maxMedicineLimit) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Limit Reached"), backgroundColor: Colors.red,
-       duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+       duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -676,7 +891,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     }
     if (medicineController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a medicine"),
-       duration: const Duration(seconds: 1),
+       duration: Duration(seconds: 1),
           behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
@@ -746,8 +961,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     } catch (e) {
       if (mounted) Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"),
-       duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+       duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -760,8 +975,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
   void _savePrescription() async {
     if (_prescriptionItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please add medicine"), backgroundColor: Colors.orange,
-       duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+       duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -777,8 +992,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Patient admission data is missing. Please select a patient from IPD dashboard."),
         backgroundColor: Colors.red,
-         duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+         duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -796,8 +1011,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text("Practitioner data is missing. Please select a patient from IPD dashboard."),
         backgroundColor: Colors.red,
-         duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+         duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -854,21 +1069,13 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
         "request_from": 0, "surgeonList": [0], "clientId": _clientId ?? _patientId,
       };
 
-      // debugPrint('=== PRESCRIPTION SAVE BODY ===');
-      // debugPrint('admission_id: ${prescriptionBody['admission_id']}');
-      // debugPrint('patientid: ${prescriptionBody['patientid']}');
-      // debugPrint('clientId: ${prescriptionBody['clientId']}');
-      // debugPrint('practitionerid: ${prescriptionBody['practitionerid']}');
-      // debugPrint('bedId: ${prescriptionBody['bedId']}');
-      // debugPrint('============================');
-
       await SavePrescriptionService.savePrescription(prescriptionBody);
 
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop(); 
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Saved!"), backgroundColor: Colors.green,
-       duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+       duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -884,8 +1091,8 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e"), backgroundColor: Colors.red,
-       duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating, // Required for margin
+       duration: Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
           margin: EdgeInsets.only(
             bottom: 20,
             left: 20,
@@ -982,6 +1189,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       selectedDosageTime = null;
       medicineDetails = {};
       _voiceCommandApplied = false;
+      _showVoiceInput = false;
     });
   }
 
@@ -1206,19 +1414,29 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
                   focusNode: focusNode,
                   style: GoogleFonts.poppins(fontSize: 14),
                   decoration: InputDecoration(
-                    hintText: "Search Medicine or use voice...",
+                    hintText: "Search Medicine...",
                     hintStyle: GoogleFonts.poppins(color: Colors.grey[400]),
                     prefixIcon: const Icon(Icons.search, color: Color(0xFF1A237E)),
-                    suffixIcon: controller.text.isNotEmpty
-                      ? IconButton(
-                          icon: const Icon(Icons.close, color: Colors.grey, size: 18),
-                          onPressed: () {
-                            controller.clear();
-                            medicineController.clear();
-                            _clearForm();
-                          }
-                        )
-                      : null,
+                    suffixIcon: _isSearchingMedicine
+                        ? Container(
+                            width: 20,
+                            height: 20,
+                            margin: const EdgeInsets.all(12),
+                            child: const CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF1A237E)),
+                            ),
+                          )
+                        : (controller.text.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close, color: Colors.grey, size: 18),
+                                onPressed: () {
+                                  controller.clear();
+                                  medicineController.clear();
+                                  _clearForm();
+                                }
+                              )
+                            : null),
                     border: InputBorder.none,
                     contentPadding: const EdgeInsets.symmetric(vertical: 14),
                   ),
@@ -1266,45 +1484,99 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     );
   }
 
-  Widget _buildVoiceCommandIndicator() {
-    if (!_isListening && _recognizedText.isEmpty) return const SizedBox();
+  Widget _buildVoiceInputPanel() {
+    if (!_showVoiceInput) return const SizedBox();
 
     return Container(
-      margin: const EdgeInsets.only(top: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(top: 20),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _isListening ? Colors.blue[50] : Colors.green[50],
-        borderRadius: BorderRadius.circular(12),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.blue.withOpacity(0.2),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
+          ),
+        ],
         border: Border.all(
-          color: _isListening ? Colors.blue[100]! : Colors.green[100]!,
+          color: _isListening ? Colors.blue : Colors.green,
+          width: 2,
         ),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Icon(
-            _isListening ? Icons.mic : Icons.check_circle,
-            color: _isListening ? Colors.blue : Colors.green,
-            size: 16,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _isListening ? 'Listening: $_recognizedText' : 'Voice command processed',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: _isListening ? Colors.blue[800] : Colors.green[800],
-              ),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+          // Animated microphone icon
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _isListening ? Colors.blue.withOpacity(0.1) : Colors.green.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _isListening ? Icons.mic : Icons.check_circle,
+              size: 50,
+              color: _isListening ? Colors.blue : Colors.green,
             ),
           ),
+          const SizedBox(height: 15),
+          
+          // Status text
+          Text(
+            _voiceInputStatus,
+            style: GoogleFonts.poppins(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: _isListening ? Colors.blue : Colors.green,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          
+          const SizedBox(height: 10),
+          
+          // Recognized words
+          if (_recognizedWords.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _recognizedWords.join(' '),
+                style: GoogleFonts.poppins(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          
+          const SizedBox(height: 20),
+          
+          // Instructions
+          Text(
+            _isListening 
+                ? 'Speak clearly...\nExample: "Dolo 650, 5 days, morning and night"'
+                : 'Processing your voice command...',
+            style: GoogleFonts.poppins(
+              fontSize: 13,
+              color: Colors.grey[600],
+            ),
+            textAlign: TextAlign.center,
+          ),
+          
+          const SizedBox(height: 15),
+          
+          // Cancel button
           if (_isListening)
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[800]!),
+            TextButton.icon(
+              onPressed: _cancelVoiceInput,
+              icon: const Icon(Icons.close, color: Colors.red),
+              label: Text(
+                'Cancel',
+                style: GoogleFonts.poppins(color: Colors.red),
               ),
             ),
         ],
@@ -1318,6 +1590,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      isScrollControlled: true,
       builder: (context) {
         return Container(
           padding: const EdgeInsets.all(20),
@@ -1347,23 +1620,23 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
               const SizedBox(height: 15),
               _buildVoiceExample(
                 'Basic Medicine:',
-                'Dolo 650, 5 days, morning and night',
+                '"Dolo 650, 5 days, morning and night"',
               ),
               _buildVoiceExample(
                 'With Instructions:',
-                'Paracetamol 500 mg, 3 days, after food, twice daily',
+                '"Paracetamol 500 mg, 3 days, after food, twice daily"',
               ),
               _buildVoiceExample(
                 'Multiple Times:',
-                'Azithromycin, once daily, 3 days, before food',
+                '"Azithromycin 250 mg, once daily, 3 days, before food"',
               ),
               _buildVoiceExample(
                 'Complete Prescription:',
-                'Amoxicillin 250 mg, 7 days, morning afternoon night after lunch',
+                '"Amoxicillin 250 mg, 7 days, morning afternoon night, after lunch"',
               ),
               const SizedBox(height: 20),
               Text(
-                'Tips:',
+                'Tips for best results:',
                 style: GoogleFonts.poppins(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
@@ -1375,12 +1648,11 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildTip('Speak clearly and naturally'),
-                    _buildTip('Include medicine name and strength if known'),
-                    _buildTip('Specify duration in days (e.g., 5 days)'),
-                    _buildTip('Mention frequency (morning, afternoon, night, lunch, dinner)'),
-                    _buildTip('Add instructions like "after food", "empty stomach"'),
-                    _buildTip('Say "prescribe" or "add" to complete'),
+                    _buildTip('Speak clearly and at a normal pace'),
+                    _buildTip('Start with medicine name (e.g., "Dolo 650")'),
+                    _buildTip('Specify duration in days (e.g., "5 days")'),
+                    _buildTip('Mention frequency (morning, afternoon, night)'),
+                    _buildTip('Add instructions like "after food" or "before food"'),
                   ],
                 ),
               ),
@@ -1459,6 +1731,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: Colors.black87,
+                fontStyle: FontStyle.italic,
               ),
             ),
           ),
@@ -1473,7 +1746,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.circle, size: 6, color: Colors.grey),
+          const Icon(Icons.check_circle, size: 14, color: Colors.green),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
@@ -1542,7 +1815,7 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
                 const SizedBox(height: 12),
               
                 _buildSearchBarWithVoice(),
-                _buildVoiceCommandIndicator(),
+                
                 if (medicineDetails['genericname'] != null && medicineDetails['genericname'].toString().isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8, left: 4),
@@ -1564,7 +1837,10 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
               padding: const EdgeInsets.all(20),
               child: Column(
                 children: [
-                 if (medicineController.text.isEmpty) ...[
+                  // Voice Input Panel (shown when listening)
+                  _buildVoiceInputPanel(),
+                  
+                  if (medicineController.text.isEmpty && !_showVoiceInput) ...[
                     GestureDetector(
                       onTap: _showVoiceTutorial,
                       child: Container(

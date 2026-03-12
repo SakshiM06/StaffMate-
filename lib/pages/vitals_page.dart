@@ -108,7 +108,7 @@ class _VitalsPageState extends State<VitalsPage> with SingleTickerProviderStateM
                 ),
                 tabs: const [
                   Tab(text: 'VITAL SIGNS'),
-                  Tab(text: 'INTAKE ASSESSMENT'),
+                  Tab(text: 'INTAKE OUTPUT'),
                 ],
                 labelPadding: EdgeInsets.zero,
                 indicatorSize: TabBarIndicatorSize.tab,

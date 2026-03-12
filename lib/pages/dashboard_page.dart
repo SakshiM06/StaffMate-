@@ -36,7 +36,7 @@ class _DashboardPageState extends State<DashboardPage> {
     IpdDashboardPage(key: PageStorageKey('Page4')),
     MyHRScreen(key: PageStorageKey('Page5')),
     MyTasksPage(key: PageStorageKey('Page6')),
-    ApprovalQueuePage(key: PageStorageKey('Page7')),
+    // ApprovalQueuePage(key: PageStorageKey('Page7')),
 
   ];
 
@@ -66,7 +66,7 @@ class _DashboardPageState extends State<DashboardPage> {
   Widget build(BuildContext context) {
     // Calculate available width for each tab
     final screenWidth = MediaQuery.of(context).size.width;
-    final tabWidth = screenWidth / 5;
+    final tabWidth = screenWidth / 4;
 
     return PopScope(
       canPop: false,
@@ -95,7 +95,7 @@ class _DashboardPageState extends State<DashboardPage> {
               _buildNavigator(1),
               _buildNavigator(2),
               _buildNavigator(3),
-              _buildNavigator(4),
+              // _buildNavigator(4),
           
             ],
           ),
@@ -143,13 +143,13 @@ class _DashboardPageState extends State<DashboardPage> {
                 label: 'Tasks',
                 width: tabWidth,
               ),
-              _buildBottomNavItem(
-                index: 4,
-                icon: Icons.approval_outlined,
-                activeIcon: Icons.approval,
-                label: 'Approvals',
-                width: tabWidth,
-              ),
+              // _buildBottomNavItem(
+              //   index: 4,
+              //   icon: Icons.approval_outlined,
+              //   activeIcon: Icons.approval,
+              //   label: 'Approvals',
+              //   width: tabWidth,
+              // ),
       
             ],
           ),

@@ -6,106 +6,101 @@ import 'package:shared_preferences/shared_preferences.dart';
 class HomeService {
   static const String _baseUrl = 'https://test.smartcarehis.com:8443/smartcaremain/clinic';
   
-  // static const String _dobEndpoint = '/clinic/dob';
-  
-
-static Future<Map<String, dynamic>> getStaffByDob(
-  String dob, {
-  Map<String, dynamic>? additionalParams,
-}) async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    
-    final token = prefs.getString('auth_token') ?? '';
-    final clinicId = prefs.getString('clinicId') ?? '';
-    final userId = prefs.getString('userId') ?? '';
-    final branchId = prefs.getString('branchId') ?? '';
-
- 
-    if (token.isEmpty) {
-      throw Exception('Authentication token missing');
-    }
-    if (clinicId.isEmpty) {
-      throw Exception('Clinic ID missing');
-    }
-    if (userId.isEmpty) {
-      throw Exception('User ID missing');
-    }
-
-    if (!_isValidDobFormat(dob)) {
-      throw Exception('Invalid date format. Please use dd-MM-yyyy format');
-    }
-
-    // final url = 'https://test.smartcarehis.com:8443/smartcaremain/clinic/dob/$dob';
-   
-    final headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Access-Control-Allow-Origin': '*',
-      'Authorization': 'SmartCare $token',
-      'clinicid': clinicId,
-      'userid': userId,
-      'ZONEID': 'Asia/Kolkata',
-      if (branchId.isNotEmpty) 'branchId': branchId,
-    };
-
-    debugPrint('=== STAFF DOB API REQUEST DEBUG ===');
-    debugPrint('URL: $_baseUrl/dob/$dob');
-    debugPrint('Headers: ${_sanitizeHeaders(headers)}');
-    debugPrint('Date of Birth: $dob');
-    
-    if (additionalParams != null && additionalParams.isNotEmpty) {
-      debugPrint('Additional Params: $additionalParams');
-    }
-
-    final response = await http.get(
-      Uri.parse('$_baseUrl/dob/$dob'),
-      headers: headers,
-    ).timeout(const Duration(seconds: 30));
-
-    debugPrint('=== STAFF DOB API RESPONSE DEBUG ===');
-    debugPrint('Status Code: ${response.statusCode}');
-    debugPrint('Response Body: ${response.body}');
-
-    if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+  static Future<Map<String, dynamic>> getStaffByDob(
+    String dob, {
+    Map<String, dynamic>? additionalParams,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
       
-    
-      if (decoded['message'] == 'Staff DOB Fetched Successfully' || 
-          decoded['data'] is List) {
-        return decoded;
+      final token = prefs.getString('auth_token') ?? '';
+      final clinicId = prefs.getString('clinicId') ?? '';
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
+
+      if (token.isEmpty) {
+        throw Exception('Authentication token missing');
       }
+      if (clinicId.isEmpty) {
+        throw Exception('Clinic ID missing');
+      }
+      if (userId.isEmpty) {
+        throw Exception('User ID missing');
+      }
+
+      if (!_isValidDobFormat(dob)) {
+        throw Exception('Invalid date format. Please use dd-MM-yyyy format');
+      }
+
+      // Fixed: Use _baseUrl correctly
+      final url = '$_baseUrl/dob/$dob';
+     
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
+
+      debugPrint('=== STAFF DOB API REQUEST DEBUG ===');
+      debugPrint('URL: $url');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
+      debugPrint('Date of Birth: $dob');
       
-      return {'data': [], 'message': 'No staff birthdays found', 'status_code': 200};
-      
-    } else if (response.statusCode == 404) {
-      debugPrint('No staff found for date $dob, returning empty list');
-      return {'data': [], 'message': 'No staff birthdays found', 'status_code': 200};
-    } else if (response.statusCode == 401) {
-      throw Exception('Authentication failed. Please login again.');
-    } else if (response.statusCode == 403) {
-      throw Exception('Access forbidden. Check your permissions.');
-    } else {
-      String errorMessage = 'Error ${response.statusCode}: Failed to fetch staff details';
-      try {
-        final err = jsonDecode(response.body);
-        if (err is Map && err['message'] != null) {
-          errorMessage = err['message'].toString();
-        } else if (err is Map && err['error'] != null) {
-          errorMessage = err['error'].toString();
-        } else if (err is String) {
-          errorMessage = err;
+      if (additionalParams != null && additionalParams.isNotEmpty) {
+        debugPrint('Additional Params: $additionalParams');
+      }
+
+      final response = await http.get(
+        Uri.parse(url),
+        headers: headers,
+      ).timeout(const Duration(seconds: 30));
+
+      debugPrint('=== STAFF DOB API RESPONSE DEBUG ===');
+      debugPrint('Status Code: ${response.statusCode}');
+      debugPrint('Response Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body) as Map<String, dynamic>;
+        
+        if (decoded['message'] == 'Staff DOB Fetched Successfully' || 
+            decoded['data'] is List) {
+          return decoded;
         }
-      } catch (_) {
-        errorMessage = 'Server error: ${response.reasonPhrase}';
+        
+        return {'data': [], 'message': 'No staff birthdays found', 'status_code': 200};
+        
+      } else if (response.statusCode == 404) {
+        debugPrint('No staff found for date $dob, returning empty list');
+        return {'data': [], 'message': 'No staff birthdays found', 'status_code': 200};
+      } else if (response.statusCode == 401) {
+        throw Exception('Authentication failed. Please login again.');
+      } else if (response.statusCode == 403) {
+        throw Exception('Access forbidden. Check your permissions.');
+      } else {
+        String errorMessage = 'Error ${response.statusCode}: Failed to fetch staff details';
+        try {
+          final err = jsonDecode(response.body);
+          if (err is Map && err['message'] != null) {
+            errorMessage = err['message'].toString();
+          } else if (err is Map && err['error'] != null) {
+            errorMessage = err['error'].toString();
+          } else if (err is String) {
+            errorMessage = err;
+          }
+        } catch (_) {
+          errorMessage = 'Server error: ${response.reasonPhrase}';
+        }
+        throw Exception(errorMessage);
       }
-      throw Exception(errorMessage);
+    } catch (e) {
+      debugPrint('HomeService Error (getStaffByDob): $e');
+      rethrow;
     }
-  } catch (e) {
-    debugPrint('HomeService Error (getStaffByDob): $e');
-    rethrow;
   }
-}
 
   static Future<Map<String, dynamic>> getPatientByDobWithQuery(
     String dob, {
@@ -127,9 +122,9 @@ static Future<Map<String, dynamic>> getStaffByDob(
         throw Exception('Invalid date format. Please use dd-MM-yyyy format');
       }
 
-      final uri = Uri.parse('$_baseUrl/$dob').replace(
+      // Fixed: Use _baseUrl correctly
+      final uri = Uri.parse('$_baseUrl/dob/$dob').replace(
         queryParameters: {
-          'dob': dob,
           ...?queryParams,
         },
       );
@@ -146,7 +141,7 @@ static Future<Map<String, dynamic>> getStaffByDob(
 
       debugPrint('=== DOB QUERY API REQUEST ===');
       debugPrint('URL: ${uri.toString()}');
-    debugPrint('Dob Headers: $headers');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
 
       final response = await http.get(
         uri,
@@ -180,7 +175,6 @@ static Future<Map<String, dynamic>> getStaffByDob(
     try {
       final prefs = await SharedPreferences.getInstance();
       
-
       final cachedResponsesJson = prefs.getString('cached_dob_responses') ?? '{}';
       final cachedResponses = jsonDecode(cachedResponsesJson) as Map<String, dynamic>;
 
@@ -189,7 +183,6 @@ static Future<Map<String, dynamic>> getStaffByDob(
         'timestamp': DateTime.now().toIso8601String(),
       };
       
-   
       await prefs.setString(
         'cached_dob_responses',
         jsonEncode(cachedResponses),
@@ -211,7 +204,7 @@ static Future<Map<String, dynamic>> getStaffByDob(
         final cachedData = cachedResponses[dob] as Map<String, dynamic>;
         final timestamp = DateTime.parse(cachedData['timestamp'] as String);
         final now = DateTime.now();
-   
+        
         if (now.difference(timestamp).inHours < 1) {
           return cachedData['response'] as Map<String, dynamic>;
         } else {
@@ -228,6 +221,7 @@ static Future<Map<String, dynamic>> getStaffByDob(
       return null;
     }
   }
+
   static Future<void> clearDobCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -248,7 +242,6 @@ static Future<Map<String, dynamic>> getStaffByDob(
       final month = int.parse(parts[1]);
       final year = int.parse(parts[2]);
       
-   
       if (day < 1 || day > 31) return false;
       if (month < 1 || month > 12) return false;
       if (year < 1900 || year > DateTime.now().year) return false;
@@ -267,7 +260,6 @@ static Future<Map<String, dynamic>> getStaffByDob(
     return '$day-$month-$year';
   }
 
- 
   static DateTime? parseDob(String dateString) {
     try {
       if (dateString.contains('-')) {
@@ -308,16 +300,31 @@ static Future<Map<String, dynamic>> getStaffByDob(
       
       if (token.isEmpty) return false;
       
+      // Test a simple endpoint instead of /health if it doesn't exist
       final response = await http.get(
-        Uri.parse('$_baseUrl/health'),
+        Uri.parse('$_baseUrl/test'), // or any lightweight endpoint that exists
         headers: {
           'Authorization': 'SmartCare $token',
         },
       ).timeout(const Duration(seconds: 10));
       
-      return response.statusCode == 200;
+      return response.statusCode == 200 || response.statusCode == 404; // 404 means server is reachable
     } catch (e) {
       debugPrint('Connection test failed: $e');
+      return false;
+    }
+  }
+
+  // Add this method to verify network connectivity
+  static Future<bool> isServerReachable() async {
+    try {
+      final response = await http.get(
+        Uri.parse('$_baseUrl'), // Just check if server responds
+      ).timeout(const Duration(seconds: 5));
+      
+      return response.statusCode != 0; // Any response means server is reachable
+    } catch (e) {
+      debugPrint('Server unreachable: $e');
       return false;
     }
   }

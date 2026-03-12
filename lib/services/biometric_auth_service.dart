@@ -69,4 +69,21 @@ class BiometricAuthService {
       return false;
     }
   }
+
+  static Future<String> getBiometricLabel() async {
+    try {
+      final biometrics = await _auth.getAvailableBiometrics();
+      if (biometrics.contains(BiometricType.face)) {
+        return 'Face ID';
+      } else if (biometrics.contains(BiometricType.fingerprint)) {
+        return 'Fingerprint';
+      }
+      return 'Biometric';
+    } on PlatformException catch (e) {
+      debugPrint("Get biometric label error: $e");
+      return 'Biometric';
+    }
+  }
+
+  static Future<void> enableBiometric() async {}
 }

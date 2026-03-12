@@ -17,9 +17,10 @@ class MyTasksService {
     }
   }
   
-  static const String _physicalDeviceUrl = 'http://192.168.1.14:8089';
+  static const String _physicalDeviceUrl = 'https://test.smartcarehis.com:8443';
   
   static const String _masterCategoryEndpoint = '/master/category/master/getAll';
+  static const String _saveMasterCategoryEndpoint = '/master/category/master/save';
   static const String _saveTaskEndpoint = '/master/task/master/save';
   static const String _fetchTasksEndpoint = '/master/task/master/fetch';
   static const String _updateTaskEndpoint = '/master/task/master/update';
@@ -198,6 +199,156 @@ class MyTasksService {
     }
   }
 
+  // NEW: Save Master Category API
+  static Future<Map<String, dynamic>> saveMasterCategory({
+    required String name,
+    String? description,
+    String? code,
+    bool isActive = true,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final token = prefs.getString('auth_token') ?? '';
+      final clinicId = prefs.getString('clinicId') ?? '';
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
+
+      if (token.isEmpty) throw Exception('Authentication token missing');
+      if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+      if (userId.isEmpty) throw Exception('User ID missing');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
+
+      final url = '$_physicalDeviceUrl$_saveMasterCategoryEndpoint';
+      
+      final Map<String, dynamic> requestBody = {
+        'name': name,
+        'description': description ?? '',
+        'code': code ?? name.toUpperCase().replaceAll(' ', '_'),
+        'isActive': isActive,
+      };
+
+      debugPrint('=== SAVE MASTER CATEGORY API REQUEST DEBUG ===');
+      debugPrint('URL: $url');
+      debugPrint('Platform: ${Platform.operatingSystem}');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
+      debugPrint('Request Body: ${jsonEncode(requestBody)}');
+
+      final client = http.Client();
+      
+      try {
+        final response = await client
+            .post(
+              Uri.parse(url),
+              headers: headers,
+              body: jsonEncode(requestBody),
+            )
+            .timeout(
+              const Duration(seconds: 45),
+              onTimeout: () {
+                client.close();
+                throw Exception('Connection timeout. Please check if server is accessible');
+              },
+            );
+
+        stopwatch.stop();
+        debugPrint('=== SAVE MASTER CATEGORY API RESPONSE DEBUG ===');
+        debugPrint('Status Code: ${response.statusCode}');
+        debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint('Response Body: ${response.body}');
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          try {
+            final decoded = jsonDecode(response.body);
+            String? categoryId;
+            
+            if (decoded is Map<String, dynamic>) {
+              if (decoded.containsKey('data') && decoded['data'] is Map) {
+                final data = decoded['data'] as Map;
+                if (data.containsKey('id')) {
+                  categoryId = data['id'].toString();
+                }
+              } else if (decoded.containsKey('id')) {
+                categoryId = decoded['id'].toString();
+              } else if (decoded.containsKey('categoryId')) {
+                categoryId = decoded['categoryId'].toString();
+              }
+              
+              debugPrint('✅ Category saved with ID: $categoryId');
+              
+              // Clear cache to refresh categories
+              await clearMasterCategoriesCache();
+              
+              return {
+                'success': true,
+                'message': 'Category saved successfully',
+                'status_code': response.statusCode,
+                'data': decoded,
+                'categoryId': categoryId,
+              };
+            } else {
+              return {
+                'success': true,
+                'message': 'Category saved successfully',
+                'status_code': response.statusCode,
+                'data': decoded,
+                'categoryId': null,
+              };
+            }
+          } catch (e) {
+            return {
+              'success': true,
+              'message': 'Category saved successfully',
+              'status_code': response.statusCode,
+              'categoryId': null,
+            };
+          }
+        } else if (response.statusCode == 400) {
+          try {
+            final errorResponse = jsonDecode(response.body);
+            String errorMessage = 'Failed to save category: ';
+            if (errorResponse is Map) {
+              if (errorResponse['message'] != null) {
+                errorMessage = errorResponse['message'];
+              } else if (errorResponse['error'] != null) {
+                final error = errorResponse['error'];
+                if (error is Map && error['cause'] != null) {
+                  errorMessage = error['cause'].toString();
+                }
+              }
+            }
+            throw Exception(errorMessage);
+          } catch (e) {
+            throw Exception('Failed to save category. Database error occurred.');
+          }
+        } else if (response.statusCode == 401) {
+          throw Exception('Authentication failed. Please login again.');
+        } else if (response.statusCode == 403) {
+          throw Exception('Access forbidden. Check your permissions.');
+        } else {
+          throw Exception('Server returned status code: ${response.statusCode}');
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('MyTasksService Error (saveMasterCategory): $e');
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> saveTask({
     required String roleGroupName,
     required int taskCategoryId,
@@ -205,6 +356,11 @@ class MyTasksService {
     required String description,
     required String status,
     required String priority,
+    String? reminderDatetime,     
+    String? repeatType,            
+    int? repeatInterval,             
+    String? repeatUnit,             
+    String? repeatEndDate,        
   }) async {
     final stopwatch = Stopwatch()..start();
     
@@ -243,6 +399,26 @@ class MyTasksService {
         'priority': priority.toUpperCase(),
       };
 
+      if (reminderDatetime != null && reminderDatetime.isNotEmpty) {
+        requestBody['reminderDatetime'] = reminderDatetime;
+      }
+      
+      if (repeatType != null && repeatType.isNotEmpty) {
+        requestBody['repeatType'] = repeatType.toUpperCase();
+      }
+      
+      if (repeatInterval != null) {
+        requestBody['repeatInterval'] = repeatInterval;
+      }
+      
+      if (repeatUnit != null && repeatUnit.isNotEmpty) {
+        requestBody['repeatUnit'] = repeatUnit.toUpperCase();
+      }
+      
+      if (repeatEndDate != null && repeatEndDate.isNotEmpty) {
+        requestBody['repeatEndDate'] = repeatEndDate;
+      }
+
       debugPrint('=== SAVE TASK API REQUEST DEBUG ===');
       debugPrint('URL: $url');
       debugPrint('Platform: ${Platform.operatingSystem}');
@@ -271,6 +447,7 @@ class MyTasksService {
         debugPrint('Status Code: ${response.statusCode}');
         debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
         debugPrint('Response Body: ${response.body}');
+        
         if (response.statusCode == 500) {
           throw Exception('Internal Server Error: Database may be missing required columns');
         }
@@ -304,8 +481,9 @@ class MyTasksService {
           try {
             final decoded = jsonDecode(response.body);
             int? taskId;
+            
             if (decoded is Map<String, dynamic>) {
-                            if (decoded.containsKey('data') && decoded['data'] is Map) {
+              if (decoded.containsKey('data') && decoded['data'] is Map) {
                 final data = decoded['data'] as Map;
                 if (data.containsKey('id')) {
                   taskId = int.tryParse(data['id'].toString());
@@ -317,6 +495,11 @@ class MyTasksService {
               }
               
               debugPrint('✅ Task saved with ID: $taskId');
+              
+              // Clear cache to refresh task lists
+              await clearTasksCache('TODAY');
+              await clearTasksCache('UPCOMING');
+              await clearTasksCache('COMPLETED');
               
               return {
                 'success': true,
@@ -364,6 +547,7 @@ class MyTasksService {
       rethrow;
     }
   }
+  
   static Future<Map<String, dynamic>> updateTaskStatus({
     required int taskId,
     required String status,
@@ -489,12 +673,14 @@ class MyTasksService {
       status: 'COMPLETED',
     );
   }
+  
   static Future<Map<String, dynamic>> markTaskAsPending(int taskId) async {
     return updateTaskStatus(
       taskId: taskId,
       status: 'UPCOMING',
     );
   }
+  
   static Future<Map<String, dynamic>> getTaskSchema() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -524,13 +710,19 @@ class MyTasksService {
     }
   }
 
+  // UPDATED: Convenience method for saving task with default role
   static Future<Map<String, dynamic>> saveTaskWithDefaultRole({
     required int taskCategoryId,
     required String taskName,
     required String description,
     required String status,
     required String priority,
-    String roleGroupName = 'Admin', 
+    String roleGroupName = 'Admin',
+    String? reminderDatetime,
+    String? repeatType,
+    int? repeatInterval,
+    String? repeatUnit,
+    String? repeatEndDate,
   }) async {
     return saveTask(
       roleGroupName: roleGroupName,
@@ -539,8 +731,14 @@ class MyTasksService {
       description: description,
       status: status,
       priority: priority,
+      reminderDatetime: reminderDatetime,
+      repeatType: repeatType,
+      repeatInterval: repeatInterval,
+      repeatUnit: repeatUnit,
+      repeatEndDate: repeatEndDate,
     );
   }
+  
   static Future<Map<String, dynamic>> fetchTasksByStatus(String status) async {
     final stopwatch = Stopwatch()..start();
     
@@ -677,15 +875,19 @@ class MyTasksService {
       rethrow;
     }
   }
+  
   static Future<Map<String, dynamic>> fetchUpcomingTasks() async {
     return fetchTasksByStatus('UPCOMING');
   }
+  
   static Future<Map<String, dynamic>> fetchCompletedTasks() async {
     return fetchTasksByStatus('COMPLETED');
   }
+  
   static Future<Map<String, dynamic>> fetchTodayTasks() async {
     return fetchTasksByStatus('TODAY');
   }
+  
   static Future<void> _cacheTasksResponse(Map<String, dynamic> response, String status) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -724,6 +926,7 @@ class MyTasksService {
       return null;
     }
   }
+  
   static Future<void> clearTasksCache([String? status]) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -742,6 +945,7 @@ class MyTasksService {
       debugPrint('Error clearing tasks cache: $e');
     }
   }
+  
   static Future<void> _cacheMasterCategoriesResponse(Map<String, dynamic> response) async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -757,6 +961,7 @@ class MyTasksService {
       debugPrint('Error caching master categories response: $e');
     }
   }
+  
   static Future<Map<String, dynamic>?> getCachedMasterCategories() async {
     try {
       final prefs = await SharedPreferences.getInstance();

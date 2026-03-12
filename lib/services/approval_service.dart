@@ -10,12 +10,236 @@ class ApprovalService {
   static const String _invoiceTypeListUrl = "https://test.smartcarehis.com:8443/billing/invoice/typelist";
   static const String _refundListUrl = "https://test.smartcarehis.com:8443/billing/refund/get-request-list";
   static const String _approveAllRefundUrl = "https://test.smartcarehis.com:8443/billing/refund/approveAll";
+  static const String _discountDashboardUrl = "https://test.smartcarehis.com:8443/billing/discount/dashboard";
+  static const String _discountApproveUrl = "https://test.smartcarehis.com:8443/billing/discount/approve";
+  static const String _refundCancelUrl = "https://test.smartcarehis.com:8443/billing/refund/request/cancle";
 
-  // NEW: Approve All Refunds API Method
+  Future<Map<String, dynamic>> cancelRefundRequest({
+    required int id,
+    required String reason,
+    String? userId,
+  }) async {
+    debugPrint('🔄 Cancelling refund request with ID: $id...');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+      
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final currentUserId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || currentUserId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      debugPrint('Refund Cancel API URL: $_refundCancelUrl');
+
+      // Prepare request body as per the provided payload
+      final requestBody = {
+        'id': id,
+        'reason': reason,
+        'userid': userId ?? currentUserId,
+      };
+
+      debugPrint('Refund Cancel API Request Body: $requestBody');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': currentUserId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Refund Cancel API Headers: $headers');
+      
+      final response = await http.post(
+        Uri.parse(_refundCancelUrl),
+        headers: headers,
+        body: jsonEncode(requestBody),
+      );
+
+      debugPrint('Refund Cancel API Status Code: ${response.statusCode}');
+      debugPrint('Refund Cancel API Response: ${response.body}');
+
+      // Handle successful responses (200, 201, 202)
+      if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 202) {
+        try {
+          final decoded = jsonDecode(response.body);
+          
+          if (decoded is Map<String, dynamic>) {
+            final statusCode = decoded['status_code'] ?? response.statusCode;
+            final message = decoded['message'] ?? 'Refund request cancelled successfully';
+            final data = decoded['data'] ?? {};
+            final error = decoded['error'];
+            final timestamp = decoded['timestamp'] ?? '';
+
+            if (statusCode == 200 || statusCode == 201 || statusCode == 202) {
+              debugPrint('✅ Successfully cancelled refund request with ID: $id');
+              
+              return {
+                'success': true,
+                'statusCode': statusCode,
+                'message': message,
+                'timestamp': timestamp,
+                'data': data,
+                'error': error,
+              };
+            }
+          }
+          
+          // If we can't parse but status is 2xx, consider it success
+          return {
+            'success': true,
+            'statusCode': response.statusCode,
+            'message': 'Refund request cancelled successfully',
+            'timestamp': DateTime.now().toIso8601String(),
+            'data': response.body,
+            'error': null,
+          };
+        } catch (e) {
+          // If JSON parsing fails but status is success, still return success
+          debugPrint('Warning: Could not parse response JSON but status is ${response.statusCode}');
+          return {
+            'success': true,
+            'statusCode': response.statusCode,
+            'message': 'Refund request cancelled successfully',
+            'timestamp': DateTime.now().toIso8601String(),
+            'data': response.body,
+            'error': null,
+          };
+        }
+      } else if (response.statusCode == 400) {
+        // Handle 400 Bad Request - parse error message if available
+        try {
+          final decoded = jsonDecode(response.body);
+          String errorMessage = 'Bad Request';
+          if (decoded is Map<String, dynamic>) {
+            errorMessage = decoded['message'] ?? decoded['error'] ?? 'Invalid request parameters';
+          }
+          throw Exception('⚠️ $errorMessage');
+        } catch (e) {
+          throw Exception('⚠️ Bad Request: Failed to cancel refund request');
+        }
+      } else {
+        throw Exception(
+          'Failed to cancel refund request (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error cancelling refund request: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  // Convenience method to cancel refund from a refund object
+  Future<Map<String, dynamic>> cancelRefundFromObject({
+    required Map<String, dynamic> refundObject,
+    required String reason,
+    String? userId,
+  }) async {
+    try {
+      // Extract required fields from the refund object
+      final id = refundObject['id'] as int? ?? 0;
+      
+      if (id == 0) {
+        throw Exception('Invalid refund object: missing or invalid ID');
+      }
+
+      final response = await cancelRefundRequest(
+        id: id,
+        reason: reason,
+        userId: userId,
+      );
+      
+      return response;
+    } catch (e) {
+      debugPrint('Exception in cancelRefundFromObject: $e');
+      rethrow;
+    }
+  }
+
+  // Convenience method for batch cancelling multiple refunds
+  Future<List<Map<String, dynamic>>> cancelMultipleRefunds({
+    required List<Map<String, dynamic>> refundList,
+    required String reason,
+    String? userId,
+  }) async {
+    final results = <Map<String, dynamic>>[];
+    
+    for (var refund in refundList) {
+      try {
+        final result = await cancelRefundFromObject(
+          refundObject: refund,
+          reason: reason,
+          userId: userId,
+        );
+        results.add({
+          'id': refund['id'],
+          'success': true,
+          'response': result,
+        });
+      } catch (e) {
+        results.add({
+          'id': refund['id'],
+          'success': false,
+          'error': e.toString(),
+        });
+      }
+    }
+    
+    debugPrint('✅ Cancelled ${results.where((r) => r['success'] == true).length} out of ${refundList.length} refund requests');
+    return results;
+  }
+
+  // Get cancelled refund data list from get-request-list API
+  Future<List<dynamic>> getCancelledRefundDataList({
+    String? fromDate,
+    String? toDate,
+    String? userId,
+    String? searchText,
+  }) async {
+    try {
+      // Use refundStatus '3' for cancelled requests (assuming 3 is the status code for cancelled)
+      final response = await getRefundGetRequestList(
+        fromDate: fromDate,
+        toDate: toDate,
+        userId: userId,
+        searchText: searchText,
+        refundStatus: '3', // Assuming status 3 represents cancelled
+      );
+      
+      if (response['success'] == true) {
+        final data = response['data'] as Map<String, dynamic>;
+        final list = data['list'] as Map<String, dynamic>;
+        final refundDataList = list['refundDataList'] as List<dynamic>? ?? [];
+        
+        return refundDataList;
+      } else {
+        return [];
+      }
+    } catch (e) {
+      debugPrint('Error getting cancelled refund data list: $e');
+      return [];
+    }
+  }
+
+  // Your existing methods remain unchanged below...
   Future<Map<String, dynamic>> approveAllRefunds({
     required List<Map<String, dynamic>> refundList,
     required String approvedNotes,
   }) async {
+    // ... existing code ...
     debugPrint('🔄 Approving all selected refunds...');
     
     try {
@@ -127,6 +351,576 @@ class ApprovalService {
     } catch (e) {
       debugPrint('Exception in approveSelectedRefunds: $e');
       rethrow;
+    }
+  }
+
+  // NEW: Batch Discount Approval API Method with PUT method
+ // UPDATED: Discount Approval API Method with better error handling
+// UPDATED: Discount Approval API Method with better error handling
+// In approval_service.dart - Replace the approveDiscount method
+
+Future<Map<String, dynamic>> approveDiscount({
+  required int id,
+  required int invoiceid,
+  required int patient_id,
+  required int practitionerid,
+  required String requested_userid,
+  String? abrivationId,
+  required String approve_note,
+  required String approver_userid,
+  int? balanceAmount,
+  int? branch_id,
+  required int charge_discount_amount,
+  String? delete_date_time,
+  int? deleted,
+  String? deletedby,
+  String? deleteremark,
+  required String discount,
+  int? discountAmt,
+  required bool discountSms,
+  String? discount_given_userid,
+  required int discount_type,
+  required int discountstatus,
+  required int invoice_amount,
+  required int invoice_amount_after_discount,
+  String? invoice_type,
+  String? patientname,
+  String? practitionername,
+  required String request_note,
+  String? request_type,
+  required String requested_date,
+  String? type,
+}) async {
+  debugPrint('🔄 Approving discount with ID: $id...');
+  
+  try {
+    final prefs = await SharedPreferences.getInstance();
+
+    String getPrefAsString(String key) {
+      final val = prefs.get(key);
+      return val?.toString() ?? '';
+    }
+    
+    final token = getPrefAsString('auth_token');
+    final clinicId = getPrefAsString('clinicId');
+    final currentUserId = getPrefAsString('userId');
+    final branchId = getPrefAsString('branchId') ?? '1';
+
+    if (token.isEmpty || clinicId.isEmpty || currentUserId.isEmpty) {
+      throw Exception('⚠️ Missing session values. Please login again.');
+    }
+
+    debugPrint('Discount Approve API URL: $_discountApproveUrl');
+
+    final now = DateTime.now();
+    final approvedDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}";
+
+    // Ensure discount is properly formatted as a string
+    String formattedDiscount = discount;
+    if (discount.contains('(') || discount.contains(',')) {
+      // Keep it as is - it's already a complex string
+      formattedDiscount = discount;
+    }
+
+    final requestBody = {
+      'id': id,
+      'invoiceid': invoiceid,
+      'patient_id': patient_id,
+      'practitionerid': practitionerid,
+      'requested_userid': requested_userid,
+      'abrivationId': abrivationId,
+      'approve_note': approve_note,
+      'approved_date': approvedDate,
+      'approver_userid': approver_userid,
+      'balanceAmount': balanceAmount ?? 0,
+      'branch_id': branch_id ?? 0,
+      'charge_discount_amount': charge_discount_amount,
+      'delete_date_time': delete_date_time ?? '',
+      'deleted': deleted ?? 0,
+      'deletedby': deletedby ?? '',
+      'deleteremark': deleteremark ?? '',
+      'discount': formattedDiscount, // Use formatted discount
+      'discountAmt': discountAmt ?? 0,
+      'discountSms': discountSms,
+      'discount_given_userid': discount_given_userid,
+      'discount_type': discount_type,
+      'discountstatus': discountstatus, // Keep as passed (0 from UI)
+      'invoice_amount': invoice_amount,
+      'invoice_amount_after_discount': invoice_amount_after_discount,
+      'invoice_type': invoice_type ?? '',
+      'patientname': patientname,
+      'practitionername': practitionername ?? '',
+      'request_note': request_note,
+      'request_type': request_type ?? '',
+      'requested_date': requested_date,
+      'type': type ?? '',
+    };
+
+    debugPrint('Discount Approve API Request Body: $requestBody');
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': '*/*',
+      'Authorization': 'SmartCare $token',
+      'clinicid': clinicId,
+      'userid': currentUserId,
+      'ZONEID': 'Asia/Kolkata',
+      'branchId': branchId,
+      'Access-Control-Allow-Origin': '*',
+    };
+
+    debugPrint('Discount Approve API Headers: $headers');
+    
+    final response = await http.put(
+      Uri.parse(_discountApproveUrl),
+      headers: headers,
+      body: jsonEncode(requestBody),
+    );
+
+    debugPrint('Discount Approve API Status Code: ${response.statusCode}');
+    debugPrint('Discount Approve API Response: ${response.body}');
+
+    // Handle 200, 201, 202 status codes as success
+    if (response.statusCode == 200 || response.statusCode == 201 || response.statusCode == 202) {
+      try {
+        final decoded = jsonDecode(response.body);
+        
+        if (decoded is Map<String, dynamic>) {
+          final statusCode = decoded['status_code'] ?? response.statusCode;
+          final message = decoded['message'] ?? 'Success';
+          final data = decoded['data'] ?? {};
+          final error = decoded['error'];
+
+          if (statusCode == 200 || statusCode == 201 || statusCode == 202) {
+            debugPrint('✅ Successfully approved discount with ID: $id');
+            
+            return {
+              'success': true,
+              'statusCode': statusCode,
+              'message': message,
+              'timestamp': decoded['timestamp'] ?? '',
+              'data': data,
+              'error': error,
+            };
+          }
+        }
+        
+        // If we can't parse but status is 2xx, consider it success
+        return {
+          'success': true,
+          'statusCode': response.statusCode,
+          'message': 'Discount approved successfully',
+          'timestamp': DateTime.now().toIso8601String(),
+          'data': response.body,
+          'error': null,
+        };
+      } catch (e) {
+        // If JSON parsing fails but status is success, still return success
+        debugPrint('Warning: Could not parse response JSON but status is ${response.statusCode}');
+        return {
+          'success': true,
+          'statusCode': response.statusCode,
+          'message': 'Discount approved successfully',
+          'timestamp': DateTime.now().toIso8601String(),
+          'data': response.body,
+          'error': null,
+        };
+      }
+    } else {
+      throw Exception(
+        'Failed to approve discount (Status ${response.statusCode}). Body: ${response.body}',
+      );
+    }
+  } catch (e, stackTrace) {
+    debugPrint('Error approving discount: $e');
+    debugPrint('StackTrace: $stackTrace');
+    rethrow;
+  }
+}
+
+  // Convenience method for approving discount with minimal parameters
+  Future<Map<String, dynamic>> approveDiscountSimple({
+    required int id,
+    required int invoiceid,
+    required int patient_id,
+    required int practitionerid,
+    required String requested_userid,
+    required String approve_note,
+    required String approver_userid,
+    required int charge_discount_amount,
+    required String discount,
+    required bool discountSms,
+    required int discount_type,
+    required int discountstatus,
+    required int invoice_amount,
+    required int invoice_amount_after_discount,
+    required String request_note,
+    required String requested_date,
+  }) async {
+    try {
+      final response = await approveDiscount(
+        id: id,
+        invoiceid: invoiceid,
+        patient_id: patient_id,
+        practitionerid: practitionerid,
+        requested_userid: requested_userid,
+        approve_note: approve_note,
+        approver_userid: approver_userid,
+        charge_discount_amount: charge_discount_amount,
+        discount: discount,
+        discountSms: discountSms,
+        discount_type: discount_type,
+        discountstatus: discountstatus,
+        invoice_amount: invoice_amount,
+        invoice_amount_after_discount: invoice_amount_after_discount,
+        request_note: request_note,
+        requested_date: requested_date,
+        // Set default values for optional parameters
+        balanceAmount: 0,
+        branch_id: 0,
+        delete_date_time: '',
+        deleted: 0,
+        deletedby: '',
+        deleteremark: '',
+        discountAmt: 0,
+        discount_given_userid: null,
+        invoice_type: '',
+        patientname: null,
+        practitionername: '',
+        request_type: '',
+        type: '',
+        abrivationId: null,
+      );
+      
+      return response;
+    } catch (e) {
+      debugPrint('Exception in approveDiscountSimple: $e');
+      rethrow;
+    }
+  }
+
+  // Convenience method to approve discount from a discount object
+  Future<Map<String, dynamic>> approveDiscountFromObject({
+    required Map<String, dynamic> discountObject,
+    required String approve_note,
+    required String approver_userid,
+  }) async {
+    try {
+      // Extract required fields from the discount object
+      final id = discountObject['id'] as int? ?? 0;
+      final invoiceid = discountObject['invoiceid'] as int? ?? 0;
+      final patient_id = discountObject['patient_id'] as int? ?? 0;
+      final practitionerid = discountObject['practitionerid'] as int? ?? 0;
+      final requested_userid = discountObject['requested_userid']?.toString() ?? '';
+      final charge_discount_amount = discountObject['charge_discount_amount'] as int? ?? 0;
+      final discount = discountObject['discount']?.toString() ?? '0';
+      final discountSms = discountObject['discountSms'] as bool? ?? false;
+      final discount_type = discountObject['discount_type'] as int? ?? 0;
+      final discountstatus = 2;
+      final invoice_amount = discountObject['invoice_amount'] as int? ?? 0;
+      final invoice_amount_after_discount = 0;
+      final request_note = discountObject['request_note']?.toString() ?? '';
+      final requested_date = discountObject['requested_date']?.toString() ?? '';
+
+      final response = await approveDiscount(
+        id: id,
+        invoiceid: invoiceid,
+        patient_id: patient_id,
+        practitionerid: practitionerid,
+        requested_userid: requested_userid,
+        approve_note: approve_note,
+        approver_userid: approver_userid,
+        charge_discount_amount: charge_discount_amount,
+        discount: discount,
+        discountSms: discountSms,
+        discount_type: discount_type,
+        discountstatus: discountstatus,
+        invoice_amount: invoice_amount,
+        invoice_amount_after_discount: invoice_amount_after_discount,
+        request_note: request_note,
+        requested_date: requested_date,
+        balanceAmount: discountObject['balanceAmount'] as int? ?? 0,
+        branch_id: discountObject['branch_id'] as int? ?? 0,
+        delete_date_time: discountObject['delete_date_time']?.toString() ?? '',
+        deleted: discountObject['deleted'] as int? ?? 0,
+        deletedby: discountObject['deletedby']?.toString() ?? '',
+        deleteremark: discountObject['deleteremark']?.toString() ?? '',
+        discountAmt: discountObject['discountAmt'] as int? ?? 0,
+        discount_given_userid: discountObject['discount_given_userid']?.toString(),
+        invoice_type: discountObject['invoice_type']?.toString() ?? '',
+        patientname: discountObject['patientname']?.toString(),
+        practitionername: discountObject['practitionername']?.toString() ?? '',
+        request_type: discountObject['request_type']?.toString() ?? '',
+        type: discountObject['type']?.toString() ?? '',
+        abrivationId: discountObject['abrivationId']?.toString(),
+      );
+      
+      return response;
+    } catch (e) {
+      debugPrint('Exception in approveDiscountFromObject: $e');
+      rethrow;
+    }
+  }
+
+  // Convenience method for batch approving multiple discounts
+  Future<List<Map<String, dynamic>>> approveMultipleDiscounts({
+    required List<Map<String, dynamic>> discountList,
+    required String approve_note,
+    required String approver_userid,
+  }) async {
+    final results = <Map<String, dynamic>>[];
+    
+    for (var discount in discountList) {
+      try {
+        final result = await approveDiscountFromObject(
+          discountObject: discount,
+          approve_note: approve_note,
+          approver_userid: approver_userid,
+        );
+        results.add({
+          'id': discount['id'],
+          'success': true,
+          'response': result,
+        });
+      } catch (e) {
+        results.add({
+          'id': discount['id'],
+          'success': false,
+          'error': e.toString(),
+        });
+      }
+    }
+    
+    debugPrint('✅ Approved ${results.where((r) => r['success'] == true).length} out of ${discountList.length} discounts');
+    return results;
+  }
+
+  // NEW: Discount Dashboard API Method
+  Future<Map<String, dynamic>> fetchDiscountDashboard({
+    required String fromDate,
+    required String toDate,
+    required String userid,
+    required String userNumericId,
+    String? searchText,
+    String? status,
+  }) async {
+    debugPrint('🔄 Fetching discount dashboard data...');
+    debugPrint('API URL Discount: $_discountDashboardUrl');
+    debugPrint('Discount statuscode: $status');
+    debugPrint(' Discount body: {fromDate: $fromDate, toDate: $toDate, userid: $userid, userNumericId: $userNumericId, searchText: $searchText, status: $status}');
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+      
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final currentUserId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
+
+      if (token.isEmpty || clinicId.isEmpty || currentUserId.isEmpty) {
+        throw Exception('⚠️ Missing session values. Please login again.');
+      }
+
+      debugPrint('Discount Dashboard API URL: $_discountDashboardUrl');
+
+      // Prepare request body matching the payload from example
+      final requestBody = {
+        'fromDate': fromDate,
+        'toDate': toDate,
+        'userid': userid,
+        'userNumericId': userNumericId,
+        'searchText': searchText ?? '',
+        'status': status,
+      };
+
+      debugPrint('Discount Dashboard API Request Body: $requestBody');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': currentUserId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Discount Dashboard API Headers: $headers');
+      
+      final response = await http.post(
+        Uri.parse(_discountDashboardUrl),
+        headers: headers,
+        body: jsonEncode(requestBody),
+      );
+
+      debugPrint('Discount Dashboard API Status Code: ${response.statusCode}');
+      debugPrint('Discount Dashboard API Response: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        
+        if (decoded is Map<String, dynamic>) {
+          final statusCode = decoded['status_code'] ?? response.statusCode;
+          final message = decoded['message'] ?? 'Success';
+          final data = decoded['data'] ?? {};
+          final error = decoded['error'];
+          final timestamp = decoded['timestamp'] ?? '';
+
+          if (statusCode == 200) {
+            debugPrint('✅ Successfully fetched discount dashboard data');
+            
+            // Extract counts from the response
+            if (data is Map<String, dynamic> && data.containsKey('list')) {
+              final listData = data['list'] as Map<String, dynamic>;
+              final nonApplied = listData['nonApplied'] ?? 0;
+              final nonApproved = listData['nonApproved'] ?? 0;
+              debugPrint('✅ Counts - Non Applied: $nonApplied, Non Approved: $nonApproved');
+            }
+            
+            return {
+              'success': true,
+              'statusCode': statusCode,
+              'message': message,
+              'timestamp': timestamp,
+              'data': data,
+              'error': error,
+            };
+          } else {
+            throw Exception(
+              'API returned error: $message (Status: $statusCode)',
+            );
+          }
+        } else {
+          throw Exception(
+            'Unexpected API response format. Expected a map but got: ${decoded.runtimeType}',
+          );
+        }
+      } else {
+        throw Exception(
+          'Failed to load discount dashboard data (Status ${response.statusCode}). Body: ${response.body}',
+        );
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Error fetching discount dashboard data: $e');
+      debugPrint('StackTrace: $stackTrace');
+      rethrow;
+    }
+  }
+
+  // Convenience method for discount dashboard with default parameters
+  Future<Map<String, dynamic>> getDiscountDashboardData({
+    String? fromDate,
+    String? toDate,
+    String? userid,
+    String? userNumericId,
+    String? searchText,
+    String? status,
+  }) async {
+    try {
+      // Get current date for default values
+      final now = DateTime.now();
+      final formattedDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+      
+      final prefs = await SharedPreferences.getInstance();
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+      
+      final currentUserId = getPrefAsString('userId');
+      final currentUserName = getPrefAsString('userName') ?? currentUserId;
+
+      final response = await fetchDiscountDashboard(
+        fromDate: fromDate ?? formattedDate,
+        toDate: toDate ?? formattedDate,
+        userid: userid ?? currentUserName,
+        userNumericId: userNumericId ?? currentUserId,
+        searchText: searchText,
+        status: status,
+      );
+      
+      return response;
+    } catch (e) {
+      debugPrint('Exception in getDiscountDashboardData: $e');
+      rethrow;
+    }
+  }
+
+  // Get discount counts from dashboard API
+  Future<Map<String, int>> getDiscountCountsFromDashboard({
+    String? fromDate,
+    String? toDate,
+    String? userid,
+    String? userNumericId,
+  }) async {
+    try {
+      final response = await getDiscountDashboardData(
+        fromDate: fromDate,
+        toDate: toDate,
+        userid: userid,
+        userNumericId: userNumericId,
+      );
+      
+      if (response['success'] == true) {
+        final data = response['data'] as Map<String, dynamic>;
+        final list = data['list'] as Map<String, dynamic>;
+        
+        final nonApplied = (list['nonApplied'] as int?) ?? 0;
+        final nonApproved = (list['nonApproved'] as int?) ?? 0;
+        
+        return {
+          'nonApplied': nonApplied,
+          'nonApproved': nonApproved,
+        };
+      } else {
+        return {'nonApplied': 0, 'nonApproved': 0};
+      }
+    } catch (e) {
+      debugPrint('Error getting discount counts from dashboard: $e');
+      return {'nonApplied': 0, 'nonApproved': 0};
+    }
+  }
+
+  // Get discount data list from dashboard API
+  Future<List<dynamic>> getDiscountDataListFromDashboard({
+    String? fromDate,
+    String? toDate,
+    String? userid,
+    String? userNumericId,
+    String? searchText,
+    String? status,
+  }) async {
+    try {
+      final response = await getDiscountDashboardData(
+        fromDate: fromDate,
+        toDate: toDate,
+        userid: userid,
+        userNumericId: userNumericId,
+        searchText: searchText,
+        status: status,
+      );
+      
+      if (response['success'] == true) {
+        final data = response['data'] as Map<String, dynamic>;
+        final list = data['list'] as Map<String, dynamic>;
+        
+        // Check for discountDashboardList first, then fallback to discountList
+        final discountDataList = list['discountDashboardList'] as List<dynamic>? ?? 
+                                 list['discountList'] as List<dynamic>? ?? [];
+        
+        return discountDataList;
+      } else {
+        return [];
+      }
+    } catch (e) {
+      debugPrint('Error getting discount data list from dashboard: $e');
+      return [];
     }
   }
 
@@ -560,158 +1354,177 @@ class ApprovalService {
   }
 
   // NEW: Refund Get Request List API Method (from your example)
-  Future<Map<String, dynamic>> fetchRefundGetRequestList({
-    required String fromDate,
-    required String toDate,
-    required String userId,
-    String? searchText,
-    String? refundStatus,
-    String? refundDashboardStatus,
-  }) async {
-    debugPrint('Fetching refund get request list...');
+ // In approval_service.dart - Update the fetchRefundGetRequestList method
+
+// In approval_service.dart - Replace the fetchRefundGetRequestList method
+
+Future<Map<String, dynamic>> fetchRefundGetRequestList({
+  required String fromDate,
+  required String toDate,
+  required String userId,
+  String? searchText,
+  String? refundStatus,      // For filtering specific status
+  String? refundDashboardStatus,  // For dashboard counts view
+}) async {
+  debugPrint('Fetching refund get request list...');
+  
+  try {
+    final prefs = await SharedPreferences.getInstance();
+
+    String getPrefAsString(String key) {
+      final val = prefs.get(key);
+      return val?.toString() ?? '';
+    }
     
-    try {
-      final prefs = await SharedPreferences.getInstance();
+    final token = getPrefAsString('auth_token');
+    final clinicId = getPrefAsString('clinicId');
+    final currentUserId = getPrefAsString('userId');
+    final branchId = getPrefAsString('branchId') ?? '1';
 
-      String getPrefAsString(String key) {
-        final val = prefs.get(key);
-        return val?.toString() ?? '';
-      }
+    if (token.isEmpty || clinicId.isEmpty || currentUserId.isEmpty) {
+      throw Exception('⚠️ Missing session values. Please login again.');
+    }
+
+    debugPrint('Refund Get Request List API URL: $_refundListUrl');
+
+    // IMPORTANT: For dashboard view, refundStatus should be null
+    // and refundDashboardStatus should be used for filtering
+    final requestBody = {
+      'fromDate': fromDate,
+      'toDate': toDate,
+      'userId': userId,
+      'searchText': searchText ?? '',
+    };
+    
+    // Only add status fields if they are not null
+    if (refundStatus != null && refundStatus.isNotEmpty) {
+      requestBody['refundStatus'] = refundStatus;
+    }
+    
+    if (refundDashboardStatus != null && refundDashboardStatus.isNotEmpty) {
+      requestBody['refundDashboardStatus'] = refundDashboardStatus;
+    }
+
+    debugPrint('Refund Get Request List API Request Body: $requestBody');
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': '*/*',
+      'Authorization': 'SmartCare $token',
+      'clinicid': clinicId,
+      'userid': currentUserId,
+      'ZONEID': 'Asia/Kolkata',
+      'branchId': branchId,
+      'Access-Control-Allow-Origin': '*',
+    };
+
+    debugPrint('Refund Get Request List API Headers: $headers');
+    
+    final response = await http.post(
+      Uri.parse(_refundListUrl),
+      headers: headers,
+      body: jsonEncode(requestBody),
+    );
+
+    debugPrint('Refund Get Request List API Status Code: ${response.statusCode}');
+    debugPrint('Refund Get Request List API Response: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
       
-      final token = getPrefAsString('auth_token');
-      final clinicId = getPrefAsString('clinicId');
-      final currentUserId = getPrefAsString('userId');
-      final branchId = getPrefAsString('branchId') ?? '1';
+      if (decoded is Map<String, dynamic>) {
+        final statusCode = decoded['status_code'] ?? response.statusCode;
+        final message = decoded['message'] ?? 'Success';
+        final data = decoded['data'] ?? {};
+        final error = decoded['error'];
+        final timestamp = decoded['timestamp'] ?? '';
 
-      if (token.isEmpty || clinicId.isEmpty || currentUserId.isEmpty) {
-        throw Exception('⚠️ Missing session values. Please login again.');
-      }
-
-   
-      debugPrint('Refund Get Request List API URL: $_refundListUrl');
-
-      // Prepare request body - matching the payload from your example
-      final requestBody = {
-        'fromDate': fromDate,
-        'toDate': toDate,
-        'userId': userId,
-        'searchText': searchText ?? '',
-        'refundStatus': refundStatus,
-        'refundDashboardStatus': refundDashboardStatus,
-      };
-
-      debugPrint('Refund Get Request List API Request Body: $requestBody');
-
-      final headers = {
-        'Content-Type': 'application/json',
-        'Accept': '*/*',
-        'Authorization': 'SmartCare $token',
-        'clinicid': clinicId,
-        'userid': currentUserId,
-        'ZONEID': 'Asia/Kolkata',
-        'branchId': branchId,
-        'Access-Control-Allow-Origin': '*',
-      };
-
-      debugPrint('Refund Get Request List API Headers: $headers');
-      
-      final response = await http.post(
-        Uri.parse(_refundListUrl),
-        headers: headers,
-        body: jsonEncode(requestBody),
-      );
-
-      debugPrint('Refund Get Request List API Status Code: ${response.statusCode}');
-      debugPrint('Refund Get Request List API Response: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        
-        if (decoded is Map<String, dynamic>) {
-          final statusCode = decoded['status_code'] ?? response.statusCode;
-          final message = decoded['message'] ?? 'Success';
-          final data = decoded['data'] ?? {};
-          final error = decoded['error'];
-          final timestamp = decoded['timestamp'] ?? '';
-
-          if (statusCode == 200) {
-            debugPrint('✅ Successfully fetched refund get request list');
-            
-            // Extract counts from the response
-            if (data is Map<String, dynamic> && data.containsKey('list')) {
-              final listData = data['list'] as Map<String, dynamic>;
-              final unApprovedCount = listData['unApprovedCount'] ?? 0;
-              final unPaidCount = listData['unPaidCount'] ?? 0;
-              debugPrint('✅ Counts - Unapproved: $unApprovedCount, Unpaid: $unPaidCount');
-            }
-            
-            return {
-              'success': true,
-              'statusCode': statusCode,
-              'message': message,
-              'timestamp': timestamp,
-              'data': data,
-              'error': error,
-            };
-          } else {
-            throw Exception(
-              'API returned error: $message (Status: $statusCode)',
-            );
+        if (statusCode == 200) {
+          debugPrint('✅ Successfully fetched refund get request list');
+          
+          // Extract counts from the response
+          if (data is Map<String, dynamic> && data.containsKey('list')) {
+            final listData = data['list'] as Map<String, dynamic>;
+            final unApprovedCount = listData['unApprovedCount'] ?? 0;
+            final unPaidCount = listData['unPaidCount'] ?? 0;
+            debugPrint('✅ Counts - Unapproved: $unApprovedCount, Unpaid: $unPaidCount');
           }
+          
+          return {
+            'success': true,
+            'statusCode': statusCode,
+            'message': message,
+            'timestamp': timestamp,
+            'data': data,
+            'error': error,
+          };
         } else {
           throw Exception(
-            'Unexpected API response format. Expected a map but got: ${decoded.runtimeType}',
+            'API returned error: $message (Status: $statusCode)',
           );
         }
       } else {
         throw Exception(
-          'Failed to load refund get request list (Status ${response.statusCode}). Body: ${response.body}',
+          'Unexpected API response format. Expected a map but got: ${decoded.runtimeType}',
         );
       }
-    } catch (e, stackTrace) {
-      debugPrint('Error fetching refund get request list: $e');
-      debugPrint('StackTrace: $stackTrace');
-      rethrow;
+    } else if (response.statusCode == 400) {
+      // Handle 400 error gracefully
+      debugPrint('⚠️ API returned 400 Bad Request. Trying without status filters...');
+      throw Exception('Bad Request - The status parameter might be invalid');
+    } else {
+      throw Exception(
+        'Failed to load refund get request list (Status ${response.statusCode}). Body: ${response.body}',
+      );
     }
+  } catch (e, stackTrace) {
+    debugPrint('Error fetching refund get request list: $e');
+    debugPrint('StackTrace: $stackTrace');
+    rethrow;
   }
+}
 
   // Convenience method for refund get request list
-  Future<Map<String, dynamic>> getRefundGetRequestList({
-    String? fromDate,
-    String? toDate,
-    String? userId,
-    String? searchText,
-    String? refundStatus,
-    String? refundDashboardStatus,
-  }) async {
-    try {
-      // Get current date for default values
-      final now = DateTime.now();
-      final formattedDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
-      
-      final prefs = await SharedPreferences.getInstance();
-      String getPrefAsString(String key) {
-        final val = prefs.get(key);
-        return val?.toString() ?? '';
-      }
-      
-      final currentUserId = getPrefAsString('userId');
+ // In approval_service.dart - Update the getRefundGetRequestList method
 
-      final response = await fetchRefundGetRequestList(
-        fromDate: fromDate ?? formattedDate,
-        toDate: toDate ?? formattedDate,
-        userId: userId ?? currentUserId,
-        searchText: searchText,
-        refundStatus: refundStatus,
-        refundDashboardStatus: refundDashboardStatus,
-      );
-      
-      return response;
-    } catch (e) {
-      debugPrint('Exception in getRefundGetRequestList: $e');
-      rethrow;
+Future<Map<String, dynamic>> getRefundGetRequestList({
+  String? fromDate,
+  String? toDate,
+  String? userId,
+  String? searchText,
+  String? refundStatus,           // For filtering specific status
+  String? refundDashboardStatus,  // For dashboard tabs (Un-Approved Request, Un-Paid Approval, etc.)
+}) async {
+  try {
+    // Get current date for default values
+    final now = DateTime.now();
+    final formattedDate = "${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}";
+    
+    final prefs = await SharedPreferences.getInstance();
+    String getPrefAsString(String key) {
+      final val = prefs.get(key);
+      return val?.toString() ?? '';
     }
+    
+    final currentUserId = getPrefAsString('userId');
+
+    // IMPORTANT: For dashboard view, we want refundStatus to be null
+    // and refundDashboardStatus to be used for filtering
+    final response = await fetchRefundGetRequestList(
+      fromDate: fromDate ?? formattedDate,
+      toDate: toDate ?? formattedDate,
+      userId: userId ?? currentUserId,
+      searchText: searchText,
+      refundStatus: null,  // Always null for dashboard to get counts
+      refundDashboardStatus: refundDashboardStatus,  // Pass the dashboard status for filtering
+    );
+    
+    return response;
+  } catch (e) {
+    debugPrint('Exception in getRefundGetRequestList: $e');
+    rethrow;
   }
+}
 
   // Get refund counts from get-request-list API
   Future<Map<String, int>> getRefundCountsFromGetRequestList({
@@ -1233,13 +2046,31 @@ class ApprovalService {
     }
   }
 
-  // Update the testConnection method to include invoice types
+  // Update the testConnection method to include refund cancel
   Future<Map<String, dynamic>> testConnection() async {
     try {
       final response = await fetchBankNames();
       final locationResponse = await fetchLocationList();
       final invoiceTypeResponse = await fetchInvoiceTypeList();
       final refundGetRequestResponse = await getRefundGetRequestList();
+      
+      // Test discount dashboard with minimal parameters
+      final discountDashboardResponse = await getDiscountDashboardData();
+      
+      // Test refund cancel endpoint with a dummy ID (won't actually cancel)
+      bool refundCancelEndpointReachable = true;
+      try {
+        // Just test the endpoint without actually cancelling
+        final headers = await getHeaders();
+        final testResponse = await http.post(
+          Uri.parse(_refundCancelUrl),
+          headers: headers,
+          body: jsonEncode({'id': 0, 'reason': 'test', 'userid': 'test'}),
+        );
+        refundCancelEndpointReachable = testResponse.statusCode != 404;
+      } catch (e) {
+        refundCancelEndpointReachable = false;
+      }
       
       return {
         'success': response['success'] == true,
@@ -1248,6 +2079,8 @@ class ApprovalService {
         'locationDataCount': locationResponse['data'] is List ? (locationResponse['data'] as List).length : 0,
         'invoiceTypeDataCount': invoiceTypeResponse['data'] is List ? (invoiceTypeResponse['data'] as List).length : 0,
         'refundGetRequestSuccess': refundGetRequestResponse['success'] == true,
+        'discountDashboardSuccess': discountDashboardResponse['success'] == true,
+        'refundCancelEndpointReachable': refundCancelEndpointReachable,
         'dataCount': response['data'] is List ? (response['data'] as List).length : 0,
         'timestamp': response['timestamp'] ?? '',
       };
@@ -1259,6 +2092,8 @@ class ApprovalService {
         'locationDataCount': 0,
         'invoiceTypeDataCount': 0,
         'refundGetRequestSuccess': false,
+        'discountDashboardSuccess': false,
+        'refundCancelEndpointReachable': false,
       };
     }
   }

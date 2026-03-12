@@ -5,7 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/pages/welcome_page.dart';
 import 'package:staff_mate/pages/profile_page.dart'; 
-import 'package:staff_mate/pages/submit_ticket_page.dart'; 
+// import 'package:staff_mate/pages/submit_ticket_page.dart'; // Commented out - will be handled by chatbot
 import 'package:staff_mate/pages/settings.dart';
 import 'package:staff_mate/services/user_information_service.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +13,13 @@ import 'package:staff_mate/pages/my_hr_screen.dart';
 import 'package:staff_mate/pages/forget_password.dart';
 import 'package:staff_mate/services/home_service.dart'; 
 import 'package:staff_mate/models/staff_dob.dart';
+import 'package:staff_mate/pages/training_page.dart';
+import 'package:staff_mate/pages/rota.dart';
+
+// Import chatbot files
+import 'package:staff_mate/ai/chat_screen.dart';
+import 'package:staff_mate/ai/chat_provider.dart';
+import 'package:provider/provider.dart';
 
 class AppColors {
   static const Color primaryDarkBlue = Color(0xFF1A237E);
@@ -38,6 +45,7 @@ class AppColors {
   static const Color iconGreen = Color(0xFF388E3C);
   static const Color iconOrange = Color(0xFFF57C00);
   static const Color iconPurple = Color(0xFF7B1FA2);
+  static const Color chatbotBlue = Color(0xFF0084FF); // New color for chatbot
 }
 
 class SmartCareHomeScreen extends StatefulWidget {
@@ -669,6 +677,30 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
   );
 }
 
+  void _navigateToTraining(BuildContext context, {int tab = 0}) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TrainingModuleScreen(
+          initialTab: tab,
+        ),
+      ),
+    );
+  }
+
+  // New method to open chatbot
+  void _openChatbot() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChangeNotifierProvider(
+          create: (_) => ChatProvider(),
+          child: const ChatScreen(),
+        ),
+      ),
+    );
+  }
+
   void _showEventDetails(String title) {
     List<Widget> content = [];
     
@@ -681,14 +713,23 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
         color: AppColors.pink,
       )).toList();
     } else if (title == "Trainings") {
-      content = trainings.map((training) => _buildDetailCard(
-        icon: Icons.school,
-        title: training.title,
-        subtitle: training.date,
-        trailing: training.status,
-        color: AppColors.infoBlue,
+      content = trainings.map((training) => GestureDetector(
+        onTap: () => _navigateToTraining(context),
+        child: _buildDetailCard(
+          icon: Icons.school,
+          title: training.title,
+          subtitle: training.date,
+          trailing: training.status,
+          color: AppColors.infoBlue,
+        ),
       )).toList();
     } else if (title == "My Rota") {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => RotaPage(),
+        ),
+      );
       content = rotaShifts.map((rota) => _buildDetailCard(
         icon: Icons.schedule,
         title: rota.shift,
@@ -696,6 +737,7 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
         trailing: rota.date,
         color: AppColors.purple,
       )).toList();
+
     } else if (title == "My Tasks") {
       content = quickTasks.map((task) => _buildDetailCard(
         icon: task.completed ? Icons.check_circle : Icons.assignment,
@@ -919,6 +961,19 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
         location: location,
         onLogout: _handleLogout,
       ),
+      // Add floating action button for chatbot
+      floatingActionButton: FloatingActionButton(
+        onPressed: _openChatbot,
+        backgroundColor: AppColors.chatbotBlue,
+        elevation: 8,
+        child: const Icon(
+          Icons.support_agent,
+          color: Colors.white,
+          size: 28,
+        ),
+        tooltip: 'Support Chatbot',
+      ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: SafeArea(
         child: isLoading 
             ? const Center(child: CircularProgressIndicator(color: AppColors.primaryDarkBlue))
@@ -1092,7 +1147,7 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
                                     icon: Icons.school,
                                     color: AppColors.infoBlue,
                                     context: context,
-                                    onTap: () => _showEventDetails("Trainings"),
+                                    onTap: () => _navigateToTraining(context),
                                   ),
                                   const SizedBox(width: 10),
                                   _buildCompactEventCard(
@@ -1235,17 +1290,20 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
                               title: "Trainings",
                               icon: Icons.school,
                               children: trainings.take(2).map((training) => 
-                                _buildCompactListItem(
-                                  icon: Icons.school,
-                                  title: training.title,
-                                  subtitle: training.date,
-                                  trailing: training.status,
-                                  color: AppColors.infoBlue,
-                                  context: context,
+                                GestureDetector(
+                                  onTap: () => _navigateToTraining(context),
+                                  child: _buildCompactListItem(
+                                    icon: Icons.school,
+                                    title: training.title,
+                                    subtitle: training.date,
+                                    trailing: training.status,
+                                    color: AppColors.infoBlue,
+                                    context: context,
+                                  ),
                                 )
                               ).toList(),
                               context: context,
-                              onSeeAll: () => _showEventDetails("Trainings"),
+                              onSeeAll: () => _navigateToTraining(context),
                             ),
                             
                             const SizedBox(height: 12),
@@ -1265,6 +1323,18 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
                               ).toList(),
                               context: context,
                               onSeeAll: () => _showEventDetails("My Rota"),
+                            ),
+
+                            _buildCompactEventCard(
+                              title: "My Rota", 
+                              count: rotaShifts.length,
+                               icon: Icons.schedule, 
+                               color: AppColors.purple, 
+                               context: context, 
+                               onTap: () => Navigator.push(context,
+                                MaterialPageRoute(builder: (context) => const RotaPage()
+                                ),
+                                ),
                             ),
                             
                             const SizedBox(height: 32),
@@ -1319,14 +1389,14 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  "API returned empty data",
-                  style: GoogleFonts.poppins(
-                    fontSize: 10,
-                    color: AppColors.warningOrange,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
+                // Text(
+                //   "API returned empty data",
+                //   style: GoogleFonts.poppins(
+                //     fontSize: 10,
+                //     color: AppColors.warningOrange,
+                //     fontStyle: FontStyle.italic,
+                //   ),
+                // ),
               ],
             ),
           ),
@@ -2211,10 +2281,37 @@ class UserProfileDrawer extends StatefulWidget {
 class _UserProfileDrawerState extends State<UserProfileDrawer> {
 
   bool _hrExpanded = false;
-  bool _ticketExpanded = false;
+  // bool _ticketExpanded = false; // Commented out - will be handled by chatbot
+  bool _trainingExpanded = false; // Add this for Training section
   
   bool _isLogoutHovering = false;
   final Map<String, bool> _hoverStates = {};
+
+  void _navigateToTraining(BuildContext context, {int tab = 0}) {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => TrainingModuleScreen(
+          initialTab: tab,
+        ),
+      ),
+    );
+  }
+
+  // New method to open chatbot
+  void _openChatbot() {
+    Navigator.pop(context); // Close drawer first
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ChangeNotifierProvider(
+          create: (_) => ChatProvider(),
+          child: const ChatScreen(),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2382,6 +2479,61 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
 
                     const SizedBox(height: 16),
 
+                    // Training Section - New
+                    _buildMenuSection(
+                      title: "Training",
+                      isExpanded: _trainingExpanded,
+                      onTap: () => setState(() => _trainingExpanded = !_trainingExpanded),
+                      icon: Icons.school_outlined,
+                      iconColor: AppColors.purple,
+                      children: [
+                        const SizedBox(height: 8),
+                        _buildSubSection(
+                          title: "My Learning",
+                          children: [
+                            _buildMenuItem(
+                              label: "All Trainings",
+                              onTap: () => _navigateToTraining(context, tab: 0),
+                              icon: Icons.list_alt_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "In Progress",
+                              onTap: () => _navigateToTraining(context, tab: 1),
+                              icon: Icons.pending_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "Completed",
+                              onTap: () => _navigateToTraining(context, tab: 2),
+                              icon: Icons.check_circle_outlined,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _buildSubSection(
+                          title: "Quick Actions",
+                          children: [
+                            _buildMenuItem(
+                              label: "Mandatory Trainings",
+                              onTap: () => _navigateToTraining(context, tab: 0),
+                              icon: Icons.warning_amber_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "My Certificates",
+                              onTap: () => _navigateToTraining(context, tab: 2),
+                              icon: Icons.card_membership_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "Training Calendar",
+                              onTap: () => _navigateToTraining(context, tab: 0),
+                              icon: Icons.calendar_month_outlined,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 16),
+
                     // My HR Section
                     _buildMenuSection(
                       title: "My HR",
@@ -2474,72 +2626,83 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
 
                     const SizedBox(height: 16),
 
+                    // CHATBOT SECTION - REPLACED THE TICKET SECTION
                     _buildMenuSection(
-                      title: "Submit Ticket",
-                      isExpanded: _ticketExpanded,
-                      onTap: () => setState(() => _ticketExpanded = !_ticketExpanded),
+                      title: "Support Chatbot",
+                      isExpanded: false, // Not expandable - just a single item
+                      onTap: _openChatbot, // Open chatbot directly
                       icon: Icons.support_agent_outlined,
-                      iconColor: AppColors.iconOrange,
-                      children: [
-                        _buildSubSection(
-                          title: "Create Ticket",
-                          children: [
-                            _buildMenuItem(
-                              label: "Category",
-                              onTap: () => _navigateToSubmitTicket(context),
-                              icon: Icons.category_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Description",
-                              onTap: () => _navigateToSubmitTicket(context),
-                              icon: Icons.description_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Attachment",
-                              onTap: () => _navigateToSubmitTicket(context),
-                              icon: Icons.attach_file_outlined,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildSubSection(
-                          title: "Ticket List",
-                          children: [
-                            _buildMenuItem(
-                              label: "Open Tickets",
-                              onTap: () => _navigateToSubmitTicket(context, tab: 1),
-                              icon: Icons.folder_open_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Closed Tickets",
-                              onTap: () => _navigateToSubmitTicket(context, tab: 2),
-                              icon: Icons.folder_copy_outlined,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildSubSection(
-                          title: "Ticket Details",
-                          children: [
-                            _buildMenuItem(
-                              label: "Status",
-                              onTap: () => _navigateToSubmitTicket(context, tab: 1),
-                              icon: Icons.info_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Comments",
-                              onTap: () => _navigateToSubmitTicket(context, tab: 1),
-                              icon: Icons.chat_bubble_outline,
-                            ),
-                            _buildMenuItem(
-                              label: "Resolution",
-                              onTap: () => _navigateToSubmitTicket(context, tab: 2),
-                              icon: Icons.check_circle_outline,
-                            ),
-                          ],
-                        ),
-                      ],
+                      iconColor: AppColors.chatbotBlue,
+                      children: [], // No children - just the main item
                     ),
+
+                    // COMMENTED OUT OLD TICKET SECTION
+                    // _buildMenuSection(
+                    //   title: "Submit Ticket",
+                    //   isExpanded: _ticketExpanded,
+                    //   onTap: () => setState(() => _ticketExpanded = !_ticketExpanded),
+                    //   icon: Icons.support_agent_outlined,
+                    //   iconColor: AppColors.iconOrange,
+                    //   children: [
+                    //     _buildSubSection(
+                    //       title: "Create Ticket",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Category",
+                    //           onTap: () => _navigateToSubmitTicket(context),
+                    //           icon: Icons.category_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Description",
+                    //           onTap: () => _navigateToSubmitTicket(context),
+                    //           icon: Icons.description_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Attachment",
+                    //           onTap: () => _navigateToSubmitTicket(context),
+                    //           icon: Icons.attach_file_outlined,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //     const SizedBox(height: 8),
+                    //     _buildSubSection(
+                    //       title: "Ticket List",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Open Tickets",
+                    //           onTap: () => _navigateToSubmitTicket(context, tab: 1),
+                    //           icon: Icons.folder_open_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Closed Tickets",
+                    //           onTap: () => _navigateToSubmitTicket(context, tab: 2),
+                    //           icon: Icons.folder_copy_outlined,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //     const SizedBox(height: 8),
+                    //     _buildSubSection(
+                    //       title: "Ticket Details",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Status",
+                    //           onTap: () => _navigateToSubmitTicket(context, tab: 1),
+                    //           icon: Icons.info_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Comments",
+                    //           onTap: () => _navigateToSubmitTicket(context, tab: 1),
+                    //           icon: Icons.chat_bubble_outline,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Resolution",
+                    //           onTap: () => _navigateToSubmitTicket(context, tab: 2),
+                    //           icon: Icons.check_circle_outline,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //   ],
+                    // ),
 
                     const SizedBox(height: 24),
                     Container(
@@ -2726,13 +2889,15 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
                 color: AppColors.textDark,
               ),
             ),
-            trailing: Icon(
-              isExpanded ? Icons.expand_less : Icons.expand_more,
-              color: AppColors.textBodyColor,
-            ),
+            trailing: children.isNotEmpty 
+                ? Icon(
+                    isExpanded ? Icons.expand_less : Icons.expand_more,
+                    color: AppColors.textBodyColor,
+                  )
+                : const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textBodyColor),
             onTap: onTap,
           ),
-          if (isExpanded)
+          if (isExpanded && children.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
               child: Column(
@@ -2855,13 +3020,14 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
     );
   }
 
-  void _navigateToSubmitTicket(BuildContext context, {int tab = 0}) {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const SubmitTicketPage()),
-    );
-  }
+  // Commented out old navigation method
+  // void _navigateToSubmitTicket(BuildContext context, {int tab = 0}) {
+  //   Navigator.pop(context);
+  //   Navigator.push(
+  //     context,
+  //     MaterialPageRoute(builder: (context) => const SubmitTicketPage()),
+  //   );
+  // }
 
   void _showHelpSupport(BuildContext context) {
     showDialog(

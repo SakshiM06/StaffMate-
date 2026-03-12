@@ -58,20 +58,18 @@ class _MyHRScreenState extends State<MyHRScreen> {
   bool basicInfoExpanded = false;
   bool additionalInfoExpanded = false;
 
-  // For leave management
+ 
   TextEditingController leaveReasonController = TextEditingController();
   DateTime? fromDate;
   DateTime? toDate;
   String? selectedLeaveType;
-  
-  // For OT/OD
+
   TextEditingController otReasonController = TextEditingController();
   TextEditingController odPurposeController = TextEditingController();
   DateTime? otDate;
   DateTime? odDate;
   String? selectedHours;
 
-  // Frequently used leaves
   List<Map<String, dynamic>> frequentlyUsedLeaves = [
     {'type': 'Annual Leave', 'icon': Icons.beach_access, 'color': Colors.blue},
     {'type': 'Sick Leave', 'icon': Icons.medical_services, 'color': Colors.red},
@@ -112,7 +110,6 @@ class _MyHRScreenState extends State<MyHRScreen> {
   void initState() {
     super.initState();
     selectedSection = widget.initialSection;
-    // Open dialog if specified
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.openDialog != null) {
         _openDialog(widget.openDialog!);

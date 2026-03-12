@@ -53,19 +53,31 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
   final List<String> _tabs = ['Refund', 'Discount'];
 
   final ApprovalService _approvalService = ApprovalService();
-
   final IpdService _ipdService = IpdService();
+  
+  // Refund data
   List<dynamic> _refundDataList = [];
   bool _isLoadingRefunds = false;
-  bool _isApprovingRefunds = false;
+  bool _isProcessingAction = false;
   String _refundApiError = '';
-  int _unApprovedCount = 0;
-  int _unPaidCount = 0;
-  int _paidCount = 0;
+  
+  // Summary counts
+  int _allCount = 0;
   int _cancelledCount = 0;
-  int _requestApprovedCount = 0;
-  int _totalCount = 0;
+  int _unPaidCount = 0;
+  int _unApprovedCount = 0;
+  int _paidCount = 0;
 
+  // Discount data
+  List<dynamic> _discountDataList = [];
+  bool _isLoadingDiscounts = false;
+  bool _isApprovingDiscounts = false;
+  String _discountApiError = '';
+  int _discountNonAppliedCount = 0;
+  int _discountNonApprovedCount = 0;
+  int _discountTotalCount = 0;
+
+  // Common data
   List<dynamic> _locationList = [];
   bool _isLoadingLocations = false;
   String _locationApiError = '';
@@ -75,86 +87,179 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
   bool _isLoadingInvoiceTypes = false;
   String _invoiceTypeApiError = '';
   Map<int, String> _invoiceTypeMap = {};
-  List<dynamic> _locationInvoiceTypeList = [];
   List<dynamic> _practitionerList = [];
   bool _isLoadingPractitioners = false;
   String _practitionerApiError = '';
   Map<int, String> _practitionerNameMap = {};
   Map<int, Map<String, dynamic>> _practitionerDetailsMap = {};
   
-  final List<String> _statusOptions = [
-    'All',
-    'Pending',
-    'Approved',
-    'Rejected',
-    'Paid',
-    'Cancelled',
-    'Request Approved',
-    'Un-Paid Approval',
-    'Un-Approved Request'
+  // Filter options for Refund tab
+  final List<Map<String, dynamic>> _refundStatusOptions = [
+    {'label': 'All', 'value': ''},
+    {'label': 'Requested', 'value': '0'},
+    {'label': 'Approved', 'value': '1'},
+    {'label': 'Paid', 'value': '2'},
+    {'label': 'Cancelled', 'value': '4'},
   ];
   
-  String _selectedStatus = 'All';
+  // Discount status options
+  final List<Map<String, dynamic>> _discountStatusOptions = [
+    {'label': 'All', 'value': 'all'},
+    {'label': 'Requested', 'value': '1'},
+    {'label': 'Approved', 'value': '2'},
+    {'label': 'Applied', 'value': '3'},
+  ];
+  
+  String _selectedRefundStatusValue = '';
+  String _selectedDiscountStatusValue = 'all';
+  
+  String _selectedRefundSummary = 'ALL';
+  
   String _selectedLocation = 'All'; 
   String _searchUHID = '';
   String _searchQuery = '';
   
-  Map<int, bool> _selectedRefunds = {};
+  // Refund selection
+  final Map<int, bool> _selectedRefunds = {};
   bool _selectAll = false;
   
-  final List<Map<String, dynamic>> _pendingDiscounts = [
-    {
-      'id': 'DISC-MED-001',
-      'patient': 'Arjun Mehta',
-      'amount': 15000.00,
-      'originalAmount': 30000.00,
-      'discountPercent': 50,
-      'date': '2024-03-15',
-      'reason': 'Senior citizen discount',
-      'status': 'Pending',
-      'requestedBy': 'Dr. Joshi',
-      'approvedBy': 'Admin',
-    },
-    {
-      'id': 'DISC-MED-002',
-      'patient': 'Corporate Health Plan',
-      'amount': 75000.00,
-      'originalAmount': 100000.00,
-      'discountPercent': 25,
-      'date': '2024-03-14',
-      'reason': 'Corporate package',
-      'status': 'Pending',
-      'requestedBy': 'Sales Team',
-      'approvedBy': 'Management',
-    },
-    {
-      'id': 'DISC-MED-003',
-      'patient': 'Ananya Reddy',
-      'amount': 9000.00,
-      'originalAmount': 12000.00,
-      'discountPercent': 25,
-      'date': '2024-03-13',
-      'reason': 'Staff family discount',
-      'status': 'Pending',
-      'requestedBy': 'HR Department',
-      'approvedBy': 'Director',
-    },
-  ];
+  // Discount selection
+  final Map<int, bool> _selectedDiscounts = {};
+  bool _selectAllDiscounts = false;
 
   DateTime _selectedFromDate = DateTime.now();
   DateTime _selectedToDate = DateTime.now();
   List<dynamic> _filteredRefunds = [];
-  List<Map<String, dynamic>> _filteredDiscounts = [];
-
+  List<dynamic> _filteredDiscounts = [];
 
   bool _showFilters = false;
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  // Helper method to get selected discount status label
+  String get _selectedDiscountStatusLabel {
+    final option = _discountStatusOptions.firstWhere(
+      (option) => option['value'] == _selectedDiscountStatusValue,
+      orElse: () => const {'label': 'All', 'value': 'all'},
+    );
+    return option['label'] as String;
+  }
+
+  // Helper method to get selected discount status value for API
+  String? get _selectedDiscountStatusApiValue {
+    if (_selectedDiscountStatusValue == 'all') return null;
+    return _selectedDiscountStatusValue;
+  }
+
+  // Helper method to map discount status code to string
+  String _getDiscountStatusFromCode(int? statusCode) {
+    if (statusCode == null) return 'Pending';
+    
+    switch (statusCode) {
+      case 1:
+        return 'Requested';
+      case 2:
+        return 'Approved';
+      case 3:
+        return 'Applied';
+      default:
+        return 'Pending';
+    }
+  }
+
+  // Helper method to get discount type based on discountTypeFlag
+  String _getDiscountType(int? discountTypeFlag) {
+    if (discountTypeFlag == null) return 'N/A';
+    
+    switch (discountTypeFlag) {
+      case 0:
+        return 'Percentage';
+      case 1:
+        return 'Fixed Amount';
+      case 2:
+        return 'Free Service';
+      default:
+        return 'N/A';
+    }
+  }
+
+  // Helper method to get refund display status
+  String _getRefundDisplayStatus(Map<String, dynamic> refund) {
+    final status = refund['refundStatus']?.toString().toUpperCase() ?? '';
+    final isDeleted = refund['isdeleted'] == 1;
+    
+    if (isDeleted) {
+      return 'Cancelled';
+    }
+    
+    switch (status) {
+      case 'PENDING':
+      case 'REQUESTED':
+        return 'Un-Approved Request';
+      case 'APPROVED':
+        return 'Un-Paid Approval';
+      case 'PAID':
+        return 'Paid';
+      case 'CANCELLED':
+        return 'Cancelled';
+      default:
+        return status;
+    }
+  }
+
+  // Helper method to get raw status
+  String _getRefundRawStatus(Map<String, dynamic> refund) {
+    final status = refund['refundStatus']?.toString().toUpperCase() ?? '';
+    final isDeleted = refund['isdeleted'] == 1;
+    
+    if (isDeleted) return 'CANCELLED';
+    return status;
+  }
+
+  // Helper method to check if refund is actionable
+  bool _isActionable(Map<String, dynamic> refund) {
+    final status = refund['refundStatus']?.toString().toUpperCase() ?? '';
+    final isDeleted = refund['isdeleted'] == 1;
+    
+    return !isDeleted && (status == 'PENDING' || status == 'REQUESTED' || status == 'APPROVED');
+  }
+
+  // Helper method to check if refund matches filter value
+  bool _matchesRefundFilter(Map<String, dynamic> refund, String filterValue) {
+    final status = refund['refundStatus']?.toString().toUpperCase() ?? '';
+    final isDeleted = refund['isdeleted'] == 1;
+    
+    if (filterValue.isEmpty) {
+      return true;
+    }
+    
+    switch (filterValue) {
+      case '0': // Requested
+        return !isDeleted && (status == 'PENDING' || status == 'REQUESTED');
+      case '1': // Approved
+        return !isDeleted && status == 'APPROVED';
+      case '2': // Paid
+        return status == 'PAID';
+      case '4': // Cancelled
+        return isDeleted || status == 'CANCELLED';
+      default:
+        return true;
+    }
+  }
+
+  // Helper method to check if refund matches summary selection
+  bool _matchesSummary(Map<String, dynamic> refund, String summary) {
+    if (summary == 'ALL') return true;
+    
+    final displayStatus = _getRefundDisplayStatus(refund);
+    return displayStatus == summary;
+  }
 
   @override
   void initState() {
     super.initState();
     
     _filteredRefunds = [];
+    _filteredDiscounts = [];
     _selectedFromDate = DateTime(2026, 1, 1);
     _selectedToDate = DateTime.now();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -166,6 +271,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
   void dispose() {
     super.dispose();
   }
+
   Future<void> _fetchAllDataOnPageLoad() async {
     debugPrint('=== DEBUG: _fetchAllDataOnPageLoad() called ===');
     
@@ -180,6 +286,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       });
     }
     _fetchRefundData();
+    _fetchDiscountData();
   }
 
   Future<void> _fetchRefundData() async {
@@ -190,20 +297,18 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       return;
     }
     
+    if (!mounted) return;
+    
     setState(() {
       _isLoadingRefunds = true;
       _refundApiError = '';
     });
 
     try {
-      debugPrint(' === DEBUG: Starting to fetch refund data from get-request-list API ===');
-      
-  
       final isValidSession = await _approvalService.validateSession();
-      debugPrint('Session validation result: $isValidSession');
       
       if (!isValidSession) {
-        debugPrint(' Session invalid - stopping API call');
+        if (!mounted) return;
         setState(() {
           _refundApiError = 'Session expired. Please login again.';
           _isLoadingRefunds = false;
@@ -214,12 +319,11 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       final fromDate = _selectedFromDate.toLocal().toString().split(' ')[0];
       final toDate = _selectedToDate.toLocal().toString().split(' ')[0];
       
-      debugPrint('Fetching refunds from $fromDate to $toDate');
-      
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId') ?? '';
       
       if (userId.isEmpty) {
+        if (!mounted) return;
         setState(() {
           _refundApiError = 'User ID not found. Please login again.';
           _isLoadingRefunds = false;
@@ -227,77 +331,58 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
         return;
       }
       
-      debugPrint(' User ID for API: $userId');
-      
-      debugPrint(' === DEBUG: Calling getRefundGetRequestList API... ===');
       final response = await _approvalService.getRefundGetRequestList(
         fromDate: fromDate,
         toDate: toDate,
         userId: userId,
         searchText: _searchQuery.isNotEmpty ? _searchQuery : null,
-        refundStatus: _selectedStatus != 'All' ? _selectedStatus : null,
+        refundStatus: null,
+        refundDashboardStatus: null,
       );
-      
-      debugPrint(' === DEBUG: Refund API call completed ===');
-      debugPrint('Response success: ${response['success']}');
-      debugPrint('Response message: ${response['message']}');
       
       if (response['success'] == true) {
         final data = response['data'] as Map<String, dynamic>;
         
         if (data.containsKey('list')) {
           final listData = data['list'] as Map<String, dynamic>;
-          final unApprovedCount = (listData['unApprovedCount'] as int?) ?? 0;
-          final unPaidCount = (listData['unPaidCount'] as int?) ?? 0;
 
           List<dynamic> refundDataList = [];
           
           if (listData.containsKey('refundDataList') && listData['refundDataList'] is List) {
             refundDataList = listData['refundDataList'] as List<dynamic>;
-            debugPrint('✅ Found refundDataList with ${refundDataList.length} items');
-          } else if (listData.containsKey('list') && listData['list'] is List) {
-            refundDataList = listData['list'] as List<dynamic>;
-            debugPrint('✅ Found list field with ${refundDataList.length} items');
-          } else {
-            for (var key in listData.keys) {
-              if (listData[key] is List) {
-                refundDataList = listData[key] as List<dynamic>;
-                debugPrint('Found list in key "$key" with ${refundDataList.length} items');
-                break;
-              }
-            }
           }
           
-          debugPrint('Successfully loaded ${refundDataList.length} refund requests');
-          debugPrint('Counts - Unapproved: $unApprovedCount, Unpaid: $unPaidCount');
-          
+          // Calculate counts
           int paidCount = 0;
           int cancelledCount = 0;
-          int requestApprovedCount = 0;
+          int unApprovedRequestCount = 0;
+          int unPaidApprovalCount = 0;
           
           for (var r in refundDataList) {
             if (r is Map<String, dynamic>) {
-              final status = r['refundStatus']?.toString().toLowerCase() ?? '';
-              if (status == 'paid') {
-                paidCount++;
-              } else if (status == 'cancelled') {
+              final rawStatus = r['refundStatus']?.toString().toUpperCase() ?? '';
+              final isDeleted = r['isdeleted'] == 1;
+              
+              if (isDeleted || rawStatus == 'CANCELLED') {
                 cancelledCount++;
-              } else if (status == 'approved') {
-                requestApprovedCount++;
+              } else if (rawStatus == 'PAID') {
+                paidCount++;
+              } else if (rawStatus == 'APPROVED') {
+                unPaidApprovalCount++;
+              } else if (rawStatus == 'PENDING' || rawStatus == 'REQUESTED') {
+                unApprovedRequestCount++;
               }
             }
           }
           
-          debugPrint('Additional Counts - Paid: $paidCount, Cancelled: $cancelledCount, Request Approved: $requestApprovedCount');
-          
+          if (!mounted) return;
           setState(() {
             _refundDataList = refundDataList;
-            _totalCount = refundDataList.length;
-            _unApprovedCount = unApprovedCount;
-            _unPaidCount = unPaidCount;
+            _allCount = refundDataList.length;
+            _unApprovedCount = unApprovedRequestCount;
+            _unPaidCount = unPaidApprovalCount;
             _paidCount = paidCount;
             _cancelledCount = cancelledCount;
-            _requestApprovedCount = requestApprovedCount;
             _refundApiError = '';
             _selectedRefunds.clear();
             for (int i = 0; i < refundDataList.length; i++) {
@@ -305,217 +390,53 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
             }
             _selectAll = false;
             
-            _filterRefunds();
-          });
-        } else {
-          debugPrint(' API response missing "list" field');
-          setState(() {
-            _refundApiError = 'Invalid API response format';
+            // Apply filters
+            _applyFilters();
           });
         }
-      } else {
-        final errorMessage = response['message'] ?? 'Failed to fetch refund data';
-        final statusCode = response['statusCode'] ?? 'No status code';
-        debugPrint(' Refund API error: $errorMessage (Status: $statusCode)');
-        setState(() {
-          _refundApiError = errorMessage;
-        });
       }
-    } catch (e, stackTrace) {
-      debugPrint('=== DEBUG: Exception in _fetchRefundData ===');
-      debugPrint('Error: $e');
-      debugPrint('StackTrace: $stackTrace');
+    } catch (e) {
+      if (!mounted) return;
       setState(() {
         _refundApiError = 'Failed to load refund data: ${e.toString()}';
       });
     } finally {
-      debugPrint('=== DEBUG: Setting _isLoadingRefunds to false ===');
+      if (!mounted) return;
       setState(() {
         _isLoadingRefunds = false;
       });
     }
   }
 
-  // Method to fetch location data from API
-  Future<void> _fetchLocationData() async {
-    debugPrint('=== DEBUG: _fetchLocationData() called ===');
+  // Apply all filters
+  void _applyFilters() {
+    debugPrint('=== APPLYING FILTERS ===');
+    debugPrint('Summary selection: $_selectedRefundSummary');
+    debugPrint('Status filter value: "$_selectedRefundStatusValue"');
     
-    if (_isLoadingLocations) {
-      debugPrint('=== DEBUG: Skipping location fetch - already loading ===');
-      return;
-    }
-    
-    setState(() {
-      _isLoadingLocations = true;
-      _locationApiError = '';
-    });
-
-    try {
-      debugPrint('🔄 === DEBUG: Starting to fetch location data ===');
-      
-      final isValidSession = await _approvalService.validateSession();
-      debugPrint('✅ Session validation result: $isValidSession');
-      
-      if (!isValidSession) {
-        debugPrint('❌ Session invalid - stopping location API call');
-        setState(() {
-          _locationApiError = 'Session expired. Please login again.';
-          _isLoadingLocations = false;
-        });
-        return;
-      }
-      
-      debugPrint('=== DEBUG: Calling getLocationList API... ===');
-      final locationList = await _approvalService.getLocationList();
-      
-      debugPrint(' === DEBUG: Location API call completed ===');
-      debugPrint('Loaded ${locationList.length} locations');
-     
-      final locationNameMap = await _approvalService.getLocationMap();
-      final locationAbbreviationMap = await _approvalService.getLocationAbbreviationMap();
-      
-      setState(() {
-        _locationList = locationList;
-        _locationNameMap = locationNameMap;
-        _locationAbbreviationMap = locationAbbreviationMap;
-        _locationApiError = '';
-      });
-      
-    } catch (e, stackTrace) {
-      debugPrint('Error: $e');
-      debugPrint('StackTrace: $stackTrace');
-      setState(() {
-        _locationApiError = 'Failed to load location data: ${e.toString()}';
-      });
-    } finally {
-      debugPrint('=== DEBUG: Setting _isLoadingLocations to false ===');
-      setState(() {
-        _isLoadingLocations = false;
-      });
-    }
-  }
-
-  Future<void> _fetchInvoiceTypeData() async {    
-    if (_isLoadingInvoiceTypes) {
-
-      return;
-    }
-    
-    setState(() {
-      _isLoadingInvoiceTypes = true;
-      _invoiceTypeApiError = '';
-    });
-
-    try {
-      
-      final isValidSession = await _approvalService.validateSession();
-      debugPrint('Session validation result: $isValidSession');
-      
-      if (!isValidSession) {
-        debugPrint('❌ Session invalid - stopping invoice type API call');
-        setState(() {
-          _invoiceTypeApiError = 'Session expired. Please login again.';
-          _isLoadingInvoiceTypes = false;
-        });
-        return;
-      }
-      debugPrint('📡 === DEBUG: Calling getInvoiceTypeList API... ===');
-      final invoiceTypeList = await _approvalService.getInvoiceTypeList();
-      
-      debugPrint('✅ === DEBUG: Invoice Type API call completed ===');
-      debugPrint('Loaded ${invoiceTypeList.length} invoice types');
-      
-  
-      final invoiceTypeMap = await _approvalService.getInvoiceTypeMap();
-      
-      setState(() {
-        _invoiceTypeList = invoiceTypeList;
-        _invoiceTypeMap = invoiceTypeMap;
-        _invoiceTypeApiError = '';
-      });
-      
-    } catch (e, stackTrace) {
-      debugPrint('❌ === DEBUG: Exception in _fetchInvoiceTypeData ===');
-      debugPrint('Error: $e');
-      debugPrint('StackTrace: $stackTrace');
-      setState(() {
-        _invoiceTypeApiError = 'Failed to load invoice type data: ${e.toString()}';
-      });
-    } finally {
-      debugPrint('=== DEBUG: Setting _isLoadingInvoiceTypes to false ===');
-      setState(() {
-        _isLoadingInvoiceTypes = false;
-      });
-    }
-  }
-  Future<void> _fetchPractitionerData() async {
-    
-    if (_isLoadingPractitioners) {
-
-      return;
-    }
-    
-    setState(() {
-      _isLoadingPractitioners = true;
-      _practitionerApiError = '';
-    });
-
-    try {
-
-      final practitionerList = await _ipdService.fetchPractitionerList();
-      debugPrint('Loaded ${practitionerList.length} practitioners');
-      
-   
-      final practitionerNameMap = <int, String>{};
-      final practitionerDetailsMap = <int, Map<String, dynamic>>{};
-      
-      for (var practitioner in practitionerList) {
-        if (practitioner is Map<String, dynamic>) {
-          final id = practitioner['id'];
-          final name = practitioner['name']?.toString() ?? '';
-          final specialization = practitioner['specialization']?.toString() ?? '';
-          final registrationNo = practitioner['registrationNo']?.toString() ?? '';
-          
-          if (id != null && name.isNotEmpty) {
-            final intId = int.tryParse(id.toString());
-            if (intId != null) {
-              practitionerNameMap[intId] = name;
-              practitionerDetailsMap[intId] = {
-                'name': name,
-                'specialization': specialization,
-                'registrationNo': registrationNo,
-                ...practitioner,
-              };
-            }
-          }
-        }
-      }
-      
-      setState(() {
-        _practitionerList = practitionerList;
-        _practitionerNameMap = practitionerNameMap;
-        _practitionerDetailsMap = practitionerDetailsMap;
-        _practitionerApiError = '';
-      });
-      
-    } catch (e, stackTrace) {
-      debugPrint('❌ === DEBUG: Exception in _fetchPractitionerData ===');
-      debugPrint('Error: $e');
-      debugPrint('StackTrace: $stackTrace');
-      setState(() {
-        _practitionerApiError = 'Failed to load practitioner data: ${e.toString()}';
-      });
-    } finally {
-      debugPrint('=== DEBUG: Setting _isLoadingPractitioners to false ===');
-      setState(() {
-        _isLoadingPractitioners = false;
-      });
-    }
-  }
-
-  void _filterRefunds() {
     List<dynamic> filtered = List.from(_refundDataList);
-     if (_searchUHID.isNotEmpty) {
+    debugPrint('Initial refund count: ${filtered.length}');
+    
+    // Apply summary filter
+    if (_selectedRefundSummary != 'ALL') {
+      filtered = filtered.where((refund) {
+        if (refund is! Map<String, dynamic>) return false;
+        return _matchesSummary(refund, _selectedRefundSummary);
+      }).toList();
+      debugPrint('After summary filter: ${filtered.length} items');
+    }
+    
+    // Apply status filter
+    if (_selectedRefundStatusValue.isNotEmpty) {
+      filtered = filtered.where((refund) {
+        if (refund is! Map<String, dynamic>) return false;
+        return _matchesRefundFilter(refund, _selectedRefundStatusValue);
+      }).toList();
+      debugPrint('After status filter: ${filtered.length} items');
+    }
+    
+    // Apply search filters
+    if (_searchUHID.isNotEmpty) {
       final uhidQuery = _searchUHID.toLowerCase();
       filtered = filtered.where((refund) {
         if (refund is! Map<String, dynamic>) return false;
@@ -534,28 +455,366 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
         
         final patientName = refund['patientName']?.toString().toLowerCase() ?? '';
         final refundRequestId = refund['refundRequestId']?.toString().toLowerCase() ?? '';
-        final patientId = refund['patientId']?.toString().toLowerCase() ?? '';
-        final invoiceId = refund['invoiceId']?.toString().toLowerCase() ?? '';
-        final refundNote = refund['refundNote']?.toString().toLowerCase() ?? '';    
-        final locationId = refund['locationId'];
-        bool locationMatch = false;
-        if (locationId != null && _locationNameMap.isNotEmpty) {
-          final locationName = _locationNameMap[locationId]?.toLowerCase() ?? '';
-          final locationAbbr = _locationAbbreviationMap[locationId]?.toLowerCase() ?? '';
-          locationMatch = locationName.contains(query) || locationAbbr.contains(query);
-        }
         
-        return patientName.contains(query) ||
-               refundRequestId.contains(query) ||
-               patientId.contains(query) ||
-               invoiceId.contains(query) ||
-               refundNote.contains(query) ||
-               locationMatch;
+        return patientName.contains(query) || refundRequestId.contains(query);
       }).toList();
     }
     
+    // Apply location filter - FIXED
+    if (_selectedLocation != 'All' && _locationNameMap.isNotEmpty) {
+      debugPrint('Applying location filter: $_selectedLocation');
+      final previousCount = filtered.length;
+      
+      filtered = filtered.where((refund) {
+        if (refund is! Map<String, dynamic>) return false;
+        
+        // Get branchId from refund data
+        final branchId = refund['branchId'];
+        
+        if (branchId != null) {
+          // Try to get location name from branchId
+          final locationName = _locationNameMap[branchId] ?? '';
+          final locationAbbr = _locationAbbreviationMap[branchId] ?? '';
+          
+          // Check if location matches
+          bool matches = locationName == _selectedLocation || 
+                        locationAbbr == _selectedLocation ||
+                        locationName.contains(_selectedLocation) ||
+                        locationAbbr.contains(_selectedLocation);
+          
+          if (matches) {
+            debugPrint('✅ Location match: ${refund['refundRequestId']} - branchId: $branchId, name: $locationName');
+          }
+          
+          return matches;
+        }
+        
+        // If no branchId, try other location fields
+        final locationName = refund['locationName']?.toString() ?? '';
+        final location = refund['location']?.toString() ?? '';
+        
+        return locationName == _selectedLocation || 
+               location == _selectedLocation ||
+               locationName.contains(_selectedLocation) ||
+               location.contains(_selectedLocation);
+      }).toList();
+      
+      debugPrint('After location filter: ${filtered.length} items (was $previousCount)');
+    } else {
+      debugPrint('Skipping location filter - selectedLocation: $_selectedLocation, locationMap size: ${_locationNameMap.length}');
+    }
+    
+    if (!mounted) return;
     setState(() {
       _filteredRefunds = filtered;
+    });
+    debugPrint('Final filtered refunds: ${_filteredRefunds.length}');
+  }
+
+  Future<void> _fetchDiscountData() async {
+    debugPrint('=== DEBUG: _fetchDiscountData() called ===');
+    
+    if (_isLoadingDiscounts) {
+      debugPrint('=== DEBUG: Skipping fetch - already loading ===');
+      return;
+    }
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingDiscounts = true;
+      _discountApiError = '';
+    });
+
+    try {
+      final isValidSession = await _approvalService.validateSession();
+      
+      if (!isValidSession) {
+        if (!mounted) return;
+        setState(() {
+          _discountApiError = 'Session expired. Please login again.';
+          _isLoadingDiscounts = false;
+        });
+        return;
+      }
+      
+      final fromDate = _selectedFromDate.toLocal().toString().split(' ')[0];
+      final toDate = _selectedToDate.toLocal().toString().split(' ')[0];
+      
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+      final userName = prefs.getString('userName') ?? userId;
+      
+      if (userId.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _discountApiError = 'User ID not found. Please login again.';
+          _isLoadingDiscounts = false;
+        });
+        return;
+      }
+      
+      final statusValue = _selectedDiscountStatusApiValue;
+      
+      final response = await _approvalService.getDiscountDashboardData(
+        fromDate: fromDate,
+        toDate: toDate,
+        userid: userName,
+        userNumericId: userId,
+        searchText: _searchQuery.isNotEmpty ? _searchQuery : null,
+        status: statusValue,
+      );
+      
+      if (response['success'] == true) {
+        final data = response['data'] as Map<String, dynamic>;
+        
+        if (data.containsKey('list')) {
+          final listData = data['list'] as Map<String, dynamic>;
+          final nonApplied = (listData['nonApplied'] as int?) ?? 0;
+          final nonApproved = (listData['nonApproved'] as int?) ?? 0;
+
+          List<dynamic> discountDataList = [];
+          
+          if (listData.containsKey('discountDashboardList') && listData['discountDashboardList'] is List) {
+            discountDataList = listData['discountDashboardList'] as List<dynamic>;
+          }
+          
+          if (!mounted) return;
+          setState(() {
+            _discountDataList = discountDataList;
+            _discountTotalCount = discountDataList.length;
+            _discountNonAppliedCount = nonApplied;
+            _discountNonApprovedCount = nonApproved;
+            _discountApiError = '';
+            _selectedDiscounts.clear();
+            for (int i = 0; i < discountDataList.length; i++) {
+              _selectedDiscounts[i] = false;
+            }
+            _selectAllDiscounts = false;
+            
+            _filterDiscounts();
+          });
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _discountApiError = 'Failed to load discount data: ${e.toString()}';
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingDiscounts = false;
+      });
+    }
+  }
+
+  Future<void> _fetchLocationData() async {
+    debugPrint('=== DEBUG: _fetchLocationData() called ===');
+    
+    if (_isLoadingLocations) {
+      debugPrint('=== DEBUG: Skipping location fetch - already loading ===');
+      return;
+    }
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingLocations = true;
+      _locationApiError = '';
+    });
+
+    try {
+      final isValidSession = await _approvalService.validateSession();
+      
+      if (!isValidSession) {
+        if (!mounted) return;
+        setState(() {
+          _locationApiError = 'Session expired. Please login again.';
+          _isLoadingLocations = false;
+        });
+        return;
+      }
+      
+      final locationList = await _approvalService.getLocationList();
+     
+      final locationNameMap = await _approvalService.getLocationMap();
+      final locationAbbreviationMap = await _approvalService.getLocationAbbreviationMap();
+      
+      debugPrint('Location maps - names: ${locationNameMap.length}, abbreviations: ${locationAbbreviationMap.length}');
+      
+      if (!mounted) return;
+      setState(() {
+        _locationList = locationList;
+        _locationNameMap.clear();
+        _locationNameMap.addAll(locationNameMap);
+        _locationAbbreviationMap.clear();
+        _locationAbbreviationMap.addAll(locationAbbreviationMap);
+        _locationApiError = '';
+      });
+      
+    } catch (e) {
+      debugPrint('Error: $e');
+      if (!mounted) return;
+      setState(() {
+        _locationApiError = 'Failed to load location data: ${e.toString()}';
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingLocations = false;
+      });
+    }
+  }
+
+  Future<void> _fetchInvoiceTypeData() async {    
+    if (_isLoadingInvoiceTypes) {
+      return;
+    }
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingInvoiceTypes = true;
+      _invoiceTypeApiError = '';
+    });
+
+    try {
+      final isValidSession = await _approvalService.validateSession();
+      
+      if (!isValidSession) {
+        if (!mounted) return;
+        setState(() {
+          _invoiceTypeApiError = 'Session expired. Please login again.';
+          _isLoadingInvoiceTypes = false;
+        });
+        return;
+      }
+      
+      final invoiceTypeList = await _approvalService.getInvoiceTypeList();
+      final invoiceTypeMap = await _approvalService.getInvoiceTypeMap();
+      
+      if (!mounted) return;
+      setState(() {
+        _invoiceTypeList = invoiceTypeList;
+        _invoiceTypeMap.clear();
+        _invoiceTypeMap.addAll(invoiceTypeMap);
+        _invoiceTypeApiError = '';
+      });
+      
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _invoiceTypeApiError = 'Failed to load invoice type data: ${e.toString()}';
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingInvoiceTypes = false;
+      });
+    }
+  }
+  
+  Future<void> _fetchPractitionerData() async {
+    
+    if (_isLoadingPractitioners) {
+      return;
+    }
+    
+    if (!mounted) return;
+    
+    setState(() {
+      _isLoadingPractitioners = true;
+      _practitionerApiError = '';
+    });
+
+    try {
+      final practitionerList = await _ipdService.fetchPractitionerList();
+      
+      final practitionerNameMap = <int, String>{};
+      final practitionerDetailsMap = <int, Map<String, dynamic>>{};
+      
+      for (var practitioner in practitionerList) {
+        if (practitioner is Map<String, dynamic>) {
+          final id = practitioner['id'];
+          final name = practitioner['name']?.toString() ?? '';
+          
+          if (id != null && name.isNotEmpty) {
+            final intId = int.tryParse(id.toString());
+            if (intId != null) {
+              practitionerNameMap[intId] = name;
+              practitionerDetailsMap[intId] = {
+                'name': name,
+                ...practitioner,
+              };
+            }
+          }
+        }
+      }
+      
+      if (!mounted) return;
+      setState(() {
+        _practitionerList = practitionerList;
+        _practitionerNameMap.clear();
+        _practitionerNameMap.addAll(practitionerNameMap);
+        _practitionerDetailsMap.clear();
+        _practitionerDetailsMap.addAll(practitionerDetailsMap);
+        _practitionerApiError = '';
+      });
+      
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _practitionerApiError = 'Failed to load practitioner data: ${e.toString()}';
+      });
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingPractitioners = false;
+      });
+    }
+  }
+
+  void _filterDiscounts() {
+    List<dynamic> filtered = List.from(_discountDataList);
+    
+    if (_searchUHID.isNotEmpty) {
+      final uhidQuery = _searchUHID.toLowerCase();
+      filtered = filtered.where((discount) {
+        if (discount is! Map<String, dynamic>) return false;
+        
+        final patientId = discount['patientId']?.toString().toLowerCase() ?? '';
+        final uhid = discount['abrivationId']?.toString().toLowerCase() ?? '';
+        
+        return patientId.contains(uhidQuery) || uhid.contains(uhidQuery);
+      }).toList();
+    }
+    
+    if (_searchQuery.isNotEmpty) {
+      final query = _searchQuery.toLowerCase();
+      filtered = filtered.where((discount) {
+        if (discount is! Map<String, dynamic>) return false;
+        
+        final patientName = discount['patientName']?.toString().toLowerCase() ?? '';
+        final discountId = discount['discountId']?.toString().toLowerCase() ?? '';
+        
+        return patientName.contains(query) || discountId.contains(query);
+      }).toList();
+    }
+    
+    // Filter by status
+    if (_selectedDiscountStatusValue != 'all') {
+      final statusValue = int.tryParse(_selectedDiscountStatusValue) ?? 0;
+      filtered = filtered.where((discount) {
+        if (discount is! Map<String, dynamic>) return false;
+        final statusCode = discount['discountStatus'] as int?;
+        return statusCode == statusValue;
+      }).toList();
+    }
+    
+    if (!mounted) return;
+    setState(() {
+      _filteredDiscounts = filtered;
     });
   }
 
@@ -563,32 +822,42 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
     final statusLower = status?.toLowerCase() ?? '';
     
     switch (statusLower) {
-      case 'approved':
-      case 'request approved':
+      case 'un-paid approval':
         return ApprovalQueueColors.successGreen;
-      case 'rejected':
-        return ApprovalQueueColors.errorRed;
-      case 'pending':
       case 'un-approved request':
         return ApprovalQueueColors.warningOrange;
       case 'paid':
         return ApprovalQueueColors.accentTeal;
       case 'cancelled':
         return ApprovalQueueColors.errorRed;
-      case 'un-paid approval':
-        return ApprovalQueueColors.infoBlue;
+      case 'requested':
+        return ApprovalQueueColors.warningOrange;
+      case 'approved':
+        return ApprovalQueueColors.successGreen;
+      case 'applied':
+        return ApprovalQueueColors.accentTeal;
       default:
         return ApprovalQueueColors.textBodyColor;
     }
   }
+  
   String _formatDate(String? dateString) {
     if (dateString == null || dateString.isEmpty) return 'N/A';
     
     try {
-      final date = DateTime.tryParse(dateString);
-      if (date == null) return dateString;
-      
-      return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+      if (dateString.contains('-') && dateString.contains(':')) {
+        final parts = dateString.split(' ');
+        if (parts.isNotEmpty) {
+          final dateParts = parts[0].split('-');
+          if (dateParts.length == 3) {
+            final day = dateParts[0];
+            final month = dateParts[1];
+            final year = dateParts[2];
+            return '$day/$month/$year';
+          }
+        }
+      }
+      return dateString;
     } catch (e) {
       return dateString;
     }
@@ -598,14 +867,15 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
     if (dateString == null || dateString.isEmpty) return 'N/A';
     
     try {
-      final date = DateTime.tryParse(dateString);
-      if (date == null) return dateString;
-      
-      return '${date.day.toString().padLeft(2, '0')}-${date.month.toString().padLeft(2, '0')}-${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
+      if (dateString.contains('-') && dateString.contains(':')) {
+        return dateString;
+      }
+      return dateString;
     } catch (e) {
       return dateString;
     }
   }
+  
   String _formatIndianCurrency(double? amount) {
     if (amount == null) return '₹0.00';
     
@@ -618,8 +888,8 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
   String _getLocationName(int? locationId) {
     if (locationId == null) return 'N/A';
     
-    if (_locationNameMap.isNotEmpty) {
-      return _locationNameMap[locationId] ?? 'Location $locationId';
+    if (_locationNameMap.containsKey(locationId)) {
+      return _locationNameMap[locationId]!;
     }
     
     return 'Location $locationId';
@@ -628,64 +898,50 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
   String _getLocationAbbreviation(int? locationId) {
     if (locationId == null) return '';
     
-    if (_locationAbbreviationMap.isNotEmpty) {
-      return _locationAbbreviationMap[locationId] ?? '';
+    if (_locationAbbreviationMap.containsKey(locationId)) {
+      return _locationAbbreviationMap[locationId]!;
     }
     
     return '';
   }
 
   String _getInvoiceTypeName(dynamic invoiceTypeData) {
-    if (invoiceTypeData == null) return ' ';
+    if (invoiceTypeData == null) return 'N/A';
     
     if (invoiceTypeData is String) {
-      if (invoiceTypeData.isEmpty) return ' ';
-      
-      if (_invoiceTypeMap.isNotEmpty) {
-        final entry = _invoiceTypeMap.entries.firstWhere(
-          (entry) => entry.value.toLowerCase() == invoiceTypeData.toLowerCase(),
-          orElse: () => const MapEntry(0, ''),
-        );
-        if (entry.value.isNotEmpty) return entry.value;
-      }
-      
-      final intId = int.tryParse(invoiceTypeData);
-      if (intId != null && _invoiceTypeMap.isNotEmpty) {
-        return _invoiceTypeMap[intId] ?? 'Type $intId';
-      }
-      
       return invoiceTypeData;
     }
     
     if (invoiceTypeData is int) {
-      if (_invoiceTypeMap.isNotEmpty) {
-        return _invoiceTypeMap[invoiceTypeData] ?? 'Type $invoiceTypeData';
+      if (_invoiceTypeMap.containsKey(invoiceTypeData)) {
+        return _invoiceTypeMap[invoiceTypeData]!;
       }
       return 'Type $invoiceTypeData';
     }
     
-    if (invoiceTypeData is double || invoiceTypeData is num) {
-      final intId = invoiceTypeData.toInt();
-      if (_invoiceTypeMap.isNotEmpty) {
-        return _invoiceTypeMap[intId] ?? 'Type $intId';
-      }
-      return 'Type $intId';
-    }
-    
-    return ' ';
+    return invoiceTypeData.toString();
   }
 
   String getInvoiceTypeFromRefund(Map<String, dynamic> refund) {
-    final invoiceTypeData = refund['invoice_type_id'] ?? 
-                           refund['invoiceType'] ?? 
+    final invoiceTypeData = refund['invoiceType'] ?? 
+                           refund['invoice_type'] ??
                            refund['invoiceTypeId'] ??
-                           refund['invoiceTypeName'] ??
-                           refund['invoice_type_name'];
+                           refund['invoiceTypeName'];
     
     if (invoiceTypeData == null) return 'N/A';
-    
-    return _getInvoiceTypeName(invoiceTypeData);
+    return invoiceTypeData.toString();
   }
+
+  String getInvoiceTypeFromDiscount(Map<String, dynamic> discount) {
+    final invoiceTypeData = discount['invoiceType'] ?? 
+                           discount['invoice_type'] ??
+                           discount['invoiceTypeId'] ??
+                           discount['invoiceTypeName'];
+    
+    if (invoiceTypeData == null) return 'N/A';
+    return invoiceTypeData.toString();
+  }
+  
   String _getPractitionerName(int? practitionerId) {
     if (practitionerId == null || _practitionerNameMap.isEmpty) return 'N/A';
     
@@ -697,40 +953,77 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       _selectedTab = index;
     });
   }
+  
   void _handleViewClick() {
-    _fetchRefundData();
+    if (_selectedTab == 0) {
+      _fetchRefundData();
+    } else {
+      _fetchDiscountData();
+    }
   }
+  
   void _handleSelectAll(bool? value) {
-    if (value != null) {
+    if (value != null && mounted) {
       setState(() {
-        _selectAll = value;
-        for (int i = 0; i < _filteredRefunds.length; i++) {
-          _selectedRefunds[i] = value;
+        if (_selectedTab == 0) {
+          _selectAll = value;
+          for (int i = 0; i < _filteredRefunds.length; i++) {
+            _selectedRefunds[i] = value;
+          }
+        } else {
+          _selectAllDiscounts = value;
+          for (int i = 0; i < _filteredDiscounts.length; i++) {
+            _selectedDiscounts[i] = value;
+          }
         }
       });
     }
   }
 
   void _handleCheckboxChange(int index, bool? value) {
-    if (value != null) {
+    if (value != null && mounted) {
       setState(() {
-        _selectedRefunds[index] = value;
-        
-        bool allSelected = true;
-        for (int i = 0; i < _filteredRefunds.length; i++) {
-          if (_selectedRefunds[i] != true) {
-            allSelected = false;
-            break;
+        if (_selectedTab == 0) {
+          _selectedRefunds[index] = value;
+          
+          bool allSelected = true;
+          for (int i = 0; i < _filteredRefunds.length; i++) {
+            if (_selectedRefunds[i] != true) {
+              allSelected = false;
+              break;
+            }
           }
+          _selectAll = allSelected;
+        } else {
+          _selectedDiscounts[index] = value;
+          
+          bool allSelected = true;
+          for (int i = 0; i < _filteredDiscounts.length; i++) {
+            if (_selectedDiscounts[i] != true) {
+              allSelected = false;
+              break;
+            }
+          }
+          _selectAllDiscounts = allSelected;
         }
-        _selectAll = allSelected;
       });
     }
   }
+  
   int get _selectedRefundsCount {
     int count = 0;
     for (int i = 0; i < _filteredRefunds.length; i++) {
       if (_selectedRefunds[i] == true) {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  int get _selectedDiscountsCount {
+    int count = 0;
+    for (int i = 0; i < _filteredDiscounts.length; i++) {
+      if (_selectedDiscounts[i] == true) {
         count++;
       }
     }
@@ -746,6 +1039,224 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
     }
     return selectedList;
   }
+
+  List<Map<String, dynamic>> get _selectedDiscountsList {
+    List<Map<String, dynamic>> selectedList = [];
+    for (int i = 0; i < _filteredDiscounts.length; i++) {
+      if (_selectedDiscounts[i] == true) {
+        selectedList.add(_filteredDiscounts[i] as Map<String, dynamic>);
+      }
+    }
+    return selectedList;
+  }
+  
+  // Cancel Refund method
+  Future<void> _cancelRefund(Map<String, dynamic> refund) async {
+    final refundId = refund['refundRequestId'] ?? 0;
+    final patientName = refund['patientName']?.toString() ?? 'Unknown';
+    
+    if (!mounted) return;
+    
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    showDialog(
+      context: context,
+      builder: (context) => CancelRefundDialog(
+        refundId: refundId.toString(),
+        patientName: patientName,
+        onCancel: (reason) async {
+          Navigator.pop(context);
+          
+          if (!mounted) return;
+          
+          setState(() {
+            _isProcessingAction = true;
+          });
+
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final userId = prefs.getString('userId') ?? '';
+            final userName = prefs.getString('userName') ?? userId;
+            
+            final response = await _approvalService.cancelRefundRequest(
+              id: refundId is int ? refundId : int.tryParse(refundId.toString()) ?? 0,
+              reason: reason,
+              userId: userName,
+            );
+            
+            if (response['success'] == true) {
+              if (mounted) {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '✅ Refund cancelled successfully',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: ApprovalQueueColors.successGreen,
+                  ),
+                );
+              }
+              
+              await _fetchRefundData();
+            } else {
+              if (mounted) {
+                final errorMessage = response['message'] ?? 'Failed to cancel refund';
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '❌ $errorMessage',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: ApprovalQueueColors.errorRed,
+                  ),
+                );
+              }
+            }
+          } catch (e) {
+            if (mounted) {
+              scaffoldMessenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '❌ Error: ${e.toString()}',
+                    style: GoogleFonts.poppins(),
+                  ),
+                  backgroundColor: ApprovalQueueColors.errorRed,
+                ),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isProcessingAction = false;
+              });
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  // Approve Refund method
+  Future<void> _approveRefund(Map<String, dynamic> refund) async {
+    final refundId = refund['refundRequestId'] ?? 0;
+    final patientName = refund['patientName']?.toString() ?? 'Unknown';
+    
+    if (!mounted) return;
+    
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    showDialog(
+      context: context,
+      builder: (context) => ApproveNoteDialog(
+        title: 'Approve Refund',
+        itemId: refundId.toString(),
+        patientName: patientName,
+        type: 'Refund',
+        onApprove: (note) async {
+          Navigator.pop(context);
+          
+          if (!mounted) return;
+          
+          setState(() {
+            _isProcessingAction = true;
+          });
+
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final userId = prefs.getString('userId') ?? '';
+            final userName = prefs.getString('userName') ?? userId;
+            
+            final response = await _approvalService.approveDiscount(
+              id: refundId is int ? refundId : int.tryParse(refundId.toString()) ?? 0,
+              invoiceid: refund['invoiceId'] is int ? refund['invoiceId'] :
+                        int.tryParse(refund['invoiceId']?.toString() ?? '0') ?? 0,
+              patient_id: refund['patientId'] is int ? refund['patientId'] :
+                         int.tryParse(refund['patientId']?.toString() ?? '0') ?? 0,
+              practitionerid: 0,
+              requested_userid: refund['requestedUserid']?.toString() ?? '',
+              abrivationId: refund['uhid']?.toString() ?? refund['abrivationId']?.toString(),
+              approve_note: note,
+              approver_userid: userName,
+              balanceAmount: 0,
+              branch_id: refund['branchId'] as int? ?? 0,
+              charge_discount_amount: refund['refundAmount'] is int ? refund['refundAmount'] :
+                                     int.tryParse(refund['refundAmount']?.toString() ?? '0') ?? 0,
+              delete_date_time: "",
+              deleted: 0,
+              deletedby: "",
+              deleteremark: "",
+              discount: refund['refundAmount']?.toString() ?? '0',
+              discountAmt: refund['refundAmount'] is int ? refund['refundAmount'] :
+                          int.tryParse(refund['refundAmount']?.toString() ?? '0') ?? 0,
+              discountSms: false,
+              discount_given_userid: refund['requestedUserid']?.toString(),
+              discount_type: 1,
+              discountstatus: 0,
+              invoice_amount: refund['invoiceAmount'] is int ? refund['invoiceAmount'] :
+                             int.tryParse(refund['invoiceAmount']?.toString() ?? '0') ?? 0,
+              invoice_amount_after_discount: refund['invoiceAmount'] is int ? refund['invoiceAmount'] :
+                                            int.tryParse(refund['invoiceAmount']?.toString() ?? '0') ?? 0,
+              invoice_type: refund['invoiceType']?.toString() ?? '',
+              patientname: refund['patientName']?.toString() ?? '',
+              practitionername: refund['practitionerName']?.toString() ?? '',
+              request_note: refund['refundNote']?.toString() ?? '',
+              request_type: 'Refund',
+              requested_date: refund['requestedDatetime']?.toString() ?? '',
+              type: 'Refund',
+            );
+
+            if (mounted) {
+              if (response['success'] == true) {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '✅ Refund approved successfully',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: ApprovalQueueColors.successGreen,
+                  ),
+                );
+                
+                await _fetchRefundData();
+              } else {
+                final errorMessage = response['message'] ?? 'Failed to approve refund';
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '❌ $errorMessage',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: ApprovalQueueColors.errorRed,
+                  ),
+                );
+              }
+            }
+            
+          } catch (e) {
+            if (mounted) {
+              scaffoldMessenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '❌ Error: ${e.toString()}',
+                    style: GoogleFonts.poppins(),
+                  ),
+                  backgroundColor: ApprovalQueueColors.errorRed,
+                ),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isProcessingAction = false;
+              });
+            }
+          }
+        },
+      ),
+    );
+  }
+
+  // Bulk approve refunds
   void _approveSelectedRefunds() {
     if (_selectedRefundsCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -760,53 +1271,152 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       return;
     }
     
+    final actionableSelectedCount = _selectedRefundsList.where((refund) => 
+      _isActionable(refund)).length;
+    
+    if (actionableSelectedCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Selected refunds are not in "Requested" or "Approved" status',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: ApprovalQueueColors.warningOrange,
+        ),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
-      builder: (context) => ApproveRefundNoteDialog(
-        selectedCount: _selectedRefundsCount,
+      builder: (context) => ApproveNoteDialog(
+        title: 'Approve Refunds',
+        itemId: '${actionableSelectedCount} items',
+        patientName: 'Bulk Approval',
+        type: 'Refund',
         onApprove: (note) {
-          _processApproveSelectedRefunds(note);
+          _processBulkApproveRefunds(note);
         },
       ),
     );
   }
-  Future<void> _processApproveSelectedRefunds(String note) async {
-    if (_selectedRefundsCount == 0) return;
+
+  Future<void> _processBulkApproveRefunds(String note) async {
+    final selectedRefunds = _selectedRefundsList.where((refund) => 
+      _isActionable(refund)).toList();
+      
+    if (selectedRefunds.isEmpty) return;
+    
+    if (!mounted) return;
+    
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
     
     setState(() {
-      _isApprovingRefunds = true;
+      _isProcessingAction = true;
     });
 
     try {
-      final selectedRefunds = _selectedRefundsList;
+      int successCount = 0;
+      List<String> failedRefunds = [];
       
-      final response = await _approvalService.approveAllRefunds(
-        refundList: selectedRefunds,
-        approvedNotes: note,
-      );
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+      final userName = prefs.getString('userName') ?? userId;
+
+      for (var refund in selectedRefunds) {
+        try {
+          final refundId = refund['refundRequestId'] ?? 0;
+          
+          final response = await _approvalService.approveDiscount(
+            id: refundId is int ? refundId : int.tryParse(refundId.toString()) ?? 0,
+            invoiceid: refund['invoiceId'] is int ? refund['invoiceId'] :
+                      int.tryParse(refund['invoiceId']?.toString() ?? '0') ?? 0,
+            patient_id: refund['patientId'] is int ? refund['patientId'] :
+                       int.tryParse(refund['patientId']?.toString() ?? '0') ?? 0,
+            practitionerid: 0,
+            requested_userid: refund['requestedUserid']?.toString() ?? '',
+            abrivationId: refund['uhid']?.toString() ?? refund['abrivationId']?.toString(),
+            approve_note: note,
+            approver_userid: userName,
+            balanceAmount: 0,
+            branch_id: refund['branchId'] as int? ?? 0,
+            charge_discount_amount: refund['refundAmount'] is int ? refund['refundAmount'] :
+                                   int.tryParse(refund['refundAmount']?.toString() ?? '0') ?? 0,
+            delete_date_time: "",
+            deleted: 0,
+            deletedby: "",
+            deleteremark: "",
+            discount: refund['refundAmount']?.toString() ?? '0',
+            discountAmt: refund['refundAmount'] is int ? refund['refundAmount'] :
+                        int.tryParse(refund['refundAmount']?.toString() ?? '0') ?? 0,
+            discountSms: false,
+            discount_given_userid: refund['requestedUserid']?.toString(),
+            discount_type: 1,
+            discountstatus: 0,
+            invoice_amount: refund['invoiceAmount'] is int ? refund['invoiceAmount'] :
+                           int.tryParse(refund['invoiceAmount']?.toString() ?? '0') ?? 0,
+            invoice_amount_after_discount: refund['invoiceAmount'] is int ? refund['invoiceAmount'] :
+                                          int.tryParse(refund['invoiceAmount']?.toString() ?? '0') ?? 0,
+            invoice_type: refund['invoiceType']?.toString() ?? '',
+            patientname: refund['patientName']?.toString() ?? '',
+            practitionername: refund['practitionerName']?.toString() ?? '',
+            request_note: refund['refundNote']?.toString() ?? '',
+            request_type: 'Refund',
+            requested_date: refund['requestedDatetime']?.toString() ?? '',
+            type: 'Refund',
+          );
+
+          if (response['success'] == true) {
+            successCount++;
+          } else {
+            failedRefunds.add(refundId.toString());
+          }
+        } catch (e) {
+          failedRefunds.add(refund['refundRequestId']?.toString() ?? 'Unknown');
+        }
+      }
       
-      if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '✅ Successfully approved ${selectedRefunds.length} refund(s)',
-              style: GoogleFonts.poppins(),
+      if (mounted) {
+        if (successCount > 0) {
+          String successMessage = '✅ Successfully approved $successCount refund(s)';
+          if (failedRefunds.isNotEmpty) {
+            successMessage += ', ${failedRefunds.length} failed';
+          }
+          
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                successMessage,
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: failedRefunds.isEmpty 
+                  ? ApprovalQueueColors.successGreen 
+                  : ApprovalQueueColors.warningOrange,
+              duration: const Duration(seconds: 3),
             ),
-            backgroundColor: ApprovalQueueColors.successGreen,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-        
-        await _fetchRefundData();
-        
-        _showApprovalSuccessDialog(selectedRefunds.length, note);
-        
-      } else {
-        final errorMessage = response['message'] ?? 'Failed to approve refunds';
-        ScaffoldMessenger.of(context).showSnackBar(
+          );
+          
+          await _fetchRefundData();
+        } else {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                '❌ Failed to approve refunds. Please try again.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: ApprovalQueueColors.errorRed,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+      
+    } catch (e) {
+      if (mounted) {
+        scaffoldMessenger.showSnackBar(
           SnackBar(
             content: Text(
-              '❌ $errorMessage',
+              '❌ Error: ${e.toString()}',
               style: GoogleFonts.poppins(),
             ),
             backgroundColor: ApprovalQueueColors.errorRed,
@@ -814,119 +1424,233 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
           ),
         );
       }
-    } catch (e, stackTrace) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '❌ Error: ${e.toString()}',
-            style: GoogleFonts.poppins(),
-          ),
-          backgroundColor: ApprovalQueueColors.errorRed,
-          duration: const Duration(seconds: 3),
-        ),
-      );
     } finally {
-      setState(() {
-        _selectAll = false;
-        for (int i = 0; i < _filteredRefunds.length; i++) {
-          _selectedRefunds[i] = false;
-        }
-        _isApprovingRefunds = false;
-      });
+      if (mounted) {
+        setState(() {
+          _selectAll = false;
+          for (int i = 0; i < _filteredRefunds.length; i++) {
+            _selectedRefunds[i] = false;
+          }
+          _isProcessingAction = false;
+        });
+      }
     }
   }
 
-  void _showApprovalSuccessDialog(int approvedCount, String note) {
+  void _approveSelectedDiscounts() {
+    if (_selectedDiscountsCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Please select discounts to approve',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: ApprovalQueueColors.warningOrange,
+        ),
+      );
+      return;
+    }
+    
+    final requestedSelectedCount = _selectedDiscountsList.where((discount) {
+      final statusCode = discount['discountStatus'] as int?;
+      return statusCode == 1;
+    }).length;
+    
+    if (requestedSelectedCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Selected discounts are not in "Requested" status',
+            style: GoogleFonts.poppins(),
+          ),
+          backgroundColor: ApprovalQueueColors.warningOrange,
+        ),
+      );
+      return;
+    }
+    
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(
-          '✅ Approval Successful',
-          style: GoogleFonts.poppins(
-            color: ApprovalQueueColors.successGreen,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Successfully approved $approvedCount refund(s)',
-              style: GoogleFonts.poppins(),
-            ),
-            const SizedBox(height: 8),
-            if (note.isNotEmpty) ...[
-              Text(
-                'Approval Note:',
-                style: GoogleFonts.poppins(
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                note,
-                style: GoogleFonts.poppins(
-                  fontStyle: FontStyle.italic,
-                  color: ApprovalQueueColors.textBodyColor,
-                ),
-              ),
-            ],
-            const SizedBox(height: 12),
-            Text(
-              'The refund status has been updated to "Approved".',
-              style: GoogleFonts.poppins(
-                fontSize: 12,
-                color: ApprovalQueueColors.textBodyColor,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
-            child: Text(
-              'OK',
-              style: GoogleFonts.poppins(
-                color: ApprovalQueueColors.primaryDarkBlue,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-        ],
+      builder: (context) => ApproveNoteDialog(
+        title: 'Approve Discounts',
+        itemId: '${requestedSelectedCount} items',
+        patientName: 'Bulk Approval',
+        type: 'Discount',
+        onApprove: (note) {
+          _processBulkApproveDiscounts(note);
+        },
       ),
     );
   }
 
+  Future<void> _processBulkApproveDiscounts(String note) async {
+    final selectedDiscounts = _selectedDiscountsList.where((discount) {
+      final statusCode = discount['discountStatus'] as int?;
+      return statusCode == 1;
+    }).toList();
+    
+    if (selectedDiscounts.isEmpty) return;
+    
+    if (!mounted) return;
+    
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    setState(() {
+      _isApprovingDiscounts = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final approverUserId = prefs.getString('userId') ?? '';
+      final approverUserName = prefs.getString('userName') ?? approverUserId;
+      
+      if (approverUserId.isEmpty) {
+        throw Exception('User ID not found. Please login again.');
+      }
+
+      int successCount = 0;
+      List<String> failedDiscounts = [];
+
+      for (var discount in selectedDiscounts) {
+        try {
+          final discountId = discount['discountId'] is int ? discount['discountId'] : 
+                            int.tryParse(discount['discountId']?.toString() ?? '0') ?? 0;
+          
+          final invoiceAmount = discount['invoiceAmount'] is int ? discount['invoiceAmount'] :
+                               int.tryParse(discount['invoiceAmount']?.toString() ?? '0') ?? 0;
+          
+          final afterDiscountAmount = discount['invoiceAmountAfterDiscount'] is int ? discount['invoiceAmountAfterDiscount'] :
+                                     int.tryParse(discount['invoiceAmountAfterDiscount']?.toString() ?? '0') ?? 0;
+          
+          int chargeDiscountAmount = invoiceAmount - afterDiscountAmount;
+
+          final response = await _approvalService.approveDiscount(
+            id: discountId,
+            invoiceid: discount['invoiceId'] is int ? discount['invoiceId'] :
+                      int.tryParse(discount['invoiceId']?.toString() ?? '0') ?? 0,
+            patient_id: discount['patientId'] is int ? discount['patientId'] :
+                       int.tryParse(discount['patientId']?.toString() ?? '0') ?? 0,
+            practitionerid: discount['practitionerId'] is int ? discount['practitionerId'] :
+                           int.tryParse(discount['practitionerId']?.toString() ?? '0') ?? 0,
+            requested_userid: discount['requestedUserid']?.toString() ?? '',
+            abrivationId: discount['abrivationId']?.toString(),
+            approve_note: note,
+            approver_userid: approverUserName,
+            balanceAmount: discount['balanceAmount'] as int? ?? 0,
+            branch_id: discount['branchId'] as int? ?? 0,
+            charge_discount_amount: chargeDiscountAmount,
+            delete_date_time: "",
+            deleted: 0,
+            deletedby: "",
+            deleteremark: "",
+            discount: discount['discount']?.toString() ?? '0',
+            discountAmt: discount['discountAmt'] as int? ?? 0,
+            discountSms: false,
+            discount_given_userid: discount['discountGivenUserid']?.toString(),
+            discount_type: discount['discountTypeFlag'] as int? ?? 0,
+            discountstatus: 0,
+            invoice_amount: invoiceAmount,
+            invoice_amount_after_discount: afterDiscountAmount,
+            invoice_type: discount['invoiceType']?.toString() ?? '',
+            patientname: discount['patientName']?.toString() ?? '',
+            practitionername: discount['practitionerName']?.toString() ?? '',
+            request_note: discount['requestNote']?.toString() ?? '',
+            request_type: discount['requestType']?.toString() ?? '',
+            requested_date: discount['requestedDate']?.toString() ?? '',
+            type: discount['type']?.toString() ?? '',
+          );
+
+          if (response['success'] == true) {
+            successCount++;
+          } else {
+            failedDiscounts.add('$discountId');
+          }
+        } catch (e) {
+          failedDiscounts.add('${discount['discountId']}');
+        }
+      }
+      
+      if (mounted) {
+        if (successCount > 0) {
+          String successMessage = '✅ Successfully approved $successCount discount(s)';
+          if (failedDiscounts.isNotEmpty) {
+            successMessage += ', ${failedDiscounts.length} failed';
+          }
+          
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                successMessage,
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: failedDiscounts.isEmpty 
+                  ? ApprovalQueueColors.successGreen 
+                  : ApprovalQueueColors.warningOrange,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+          
+          await _fetchDiscountData();
+        } else {
+          scaffoldMessenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                '❌ Failed to approve discounts. Please try again.',
+                style: GoogleFonts.poppins(),
+              ),
+              backgroundColor: ApprovalQueueColors.errorRed,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+      
+    } catch (e) {
+      if (mounted) {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '❌ Error: ${e.toString()}',
+              style: GoogleFonts.poppins(),
+            ),
+            backgroundColor: ApprovalQueueColors.errorRed,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _selectAllDiscounts = false;
+          for (int i = 0; i < _filteredDiscounts.length; i++) {
+            _selectedDiscounts[i] = false;
+          }
+          _isApprovingDiscounts = false;
+        });
+      }
+    }
+  }
+
   Widget _buildCompactStatusCard(String title, int count, Color color) {
+    final isSelected = _selectedRefundSummary == title;
+    
     return GestureDetector(
       onTap: () {
         setState(() {
-          if (title == 'ALL') {
-            _selectedStatus = 'All';
-          } else if (title == 'CANCELLED') {
-            _selectedStatus = 'Cancelled';
-          } else if (title == 'UN-APPROVED') {
-            _selectedStatus = 'Un-Approved Request';
-          } else if (title == 'UN-PAID') {
-            _selectedStatus = 'Un-Paid Approval';
-          } else if (title == 'PAID') {
-            _selectedStatus = 'Paid';
-          } else if (title == 'APPROVED') {
-            _selectedStatus = 'Request Approved';
-          }
+          _selectedRefundSummary = title;
         });
-        _fetchRefundData();
+        _applyFilters();
       },
       child: Container(
         constraints: const BoxConstraints(minWidth: 70),
         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: isSelected ? color.withOpacity(0.15) : color.withOpacity(0.08),
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: color.withOpacity(0.15), width: 1),
+          border: Border.all(
+            color: isSelected ? color : color.withOpacity(0.15), 
+            width: isSelected ? 2 : 1,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -955,6 +1679,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       ),
     );
   }
+  
   Widget _buildCompactHeader() {
     return Container(
       width: double.infinity,
@@ -1112,7 +1837,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
               ),
               child: TextField(
                 decoration: InputDecoration(
-                  hintText: 'Search UHID, patient, invoice...',
+                  hintText: 'Search UHID, patient, ${_selectedTab == 0 ? 'refund' : 'discount'} ID...',
                   hintStyle: GoogleFonts.poppins(
                     fontSize: 12,
                     color: ApprovalQueueColors.textBodyColor,
@@ -1132,7 +1857,11 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                   setState(() {
                     _searchQuery = value;
                   });
-                  _filterRefunds();
+                  if (_selectedTab == 0) {
+                    _applyFilters();
+                  } else {
+                    _filterDiscounts();
+                  }
                 },
               ),
             ),
@@ -1219,26 +1948,48 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                         border: Border.all(color: ApprovalQueueColors.tableBorder),
                       ),
                       child: DropdownButton<String>(
-                        value: _selectedStatus,
+                        value: _selectedTab == 0 ? _selectedRefundStatusValue : _selectedDiscountStatusValue,
                         isExpanded: true,
                         underline: const SizedBox(),
                         icon: Icon(Icons.arrow_drop_down, size: 18, color: ApprovalQueueColors.textBodyColor),
-                        items: _statusOptions.map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text(
-                              value,
-                              style: GoogleFonts.poppins(
-                                fontSize: 12,
-                                color: ApprovalQueueColors.textDark,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (String? newValue) {
+                        items: _selectedTab == 0 
+                            ? _refundStatusOptions.map((option) {
+                                return DropdownMenuItem<String>(
+                                  value: option['value'] as String,
+                                  child: Text(
+                                    option['label'] as String,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: ApprovalQueueColors.textDark,
+                                    ),
+                                  ),
+                                );
+                              }).toList()
+                            : _discountStatusOptions.map((option) {
+                                return DropdownMenuItem<String>(
+                                  value: option['value'] as String,
+                                  child: Text(
+                                    option['label'] as String,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 12,
+                                      color: ApprovalQueueColors.textDark,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                        onChanged: (newValue) {
                           setState(() {
-                            _selectedStatus = newValue!;
+                            if (_selectedTab == 0) {
+                              _selectedRefundStatusValue = newValue!;
+                            } else {
+                              _selectedDiscountStatusValue = newValue!;
+                            }
                           });
+                          if (_selectedTab == 0) {
+                            _applyFilters();
+                          } else {
+                            _filterDiscounts();
+                          }
                         },
                       ),
                     ),
@@ -1288,6 +2039,11 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                           setState(() {
                             _selectedLocation = newValue!;
                           });
+                          if (_selectedTab == 0) {
+                            _applyFilters();
+                          } else {
+                            _filterDiscounts();
+                          }
                         },
                       ),
                     ),
@@ -1394,6 +2150,68 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
               ),
             ],
           ),
+          
+          const SizedBox(height: 8),
+          
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    _searchQuery = '';
+                    _searchUHID = '';
+                    _selectedRefundStatusValue = '';
+                    _selectedRefundSummary = 'ALL';
+                    _selectedLocation = 'All';
+                    _selectedFromDate = DateTime(2026, 1, 1);
+                    _selectedToDate = DateTime.now();
+                  });
+                  if (_selectedTab == 0) {
+                    _applyFilters();
+                  } else {
+                    _fetchDiscountData();
+                  }
+                },
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                child: Text(
+                  'Clear Filters',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: ApprovalQueueColors.primaryDarkBlue,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  if (_selectedTab == 0) {
+                    _fetchRefundData();
+                  } else {
+                    _fetchDiscountData();
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ApprovalQueueColors.primaryDarkBlue,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+                child: Text(
+                  'Apply',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -1407,7 +2225,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       lastDate: DateTime(2030),
     );
     
-    if (picked != null) {
+    if (picked != null && mounted) {
       setState(() {
         if (isFromDate) {
           _selectedFromDate = picked;
@@ -1417,104 +2235,165 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       });
     }
   }
+  
   Widget _buildCompactStatusCards() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: ApprovalQueueColors.primaryDarkBlue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(
-                  Icons.bar_chart,
-                  color: ApprovalQueueColors.primaryDarkBlue,
-                  size: 16,
-                ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Summary',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: ApprovalQueueColors.textDark,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '${_filteredRefunds.length} items',
-                style: GoogleFonts.poppins(
-                  fontSize: 11,
-                  color: ApprovalQueueColors.textBodyColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
+    if (_selectedTab == 0) {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                _buildCompactStatusCard('ALL', _totalCount, ApprovalQueueColors.primaryDarkBlue),
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: ApprovalQueueColors.primaryDarkBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    Icons.bar_chart,
+                    color: ApprovalQueueColors.primaryDarkBlue,
+                    size: 16,
+                  ),
+                ),
                 const SizedBox(width: 6),
-                _buildCompactStatusCard('CANCELLED', _cancelledCount, ApprovalQueueColors.errorRed),
-                const SizedBox(width: 6),
-                _buildCompactStatusCard('UN-APPROVED', _unApprovedCount, ApprovalQueueColors.warningOrange),
-                const SizedBox(width: 6),
-                _buildCompactStatusCard('UN-PAID', _unPaidCount, ApprovalQueueColors.infoBlue),
-                const SizedBox(width: 6),
-                _buildCompactStatusCard('PAID', _paidCount, ApprovalQueueColors.accentTeal),
-                const SizedBox(width: 6),
-                _buildCompactStatusCard('APPROVED', _requestApprovedCount, ApprovalQueueColors.successGreen),
+                Text(
+                  'Refund Summary',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: ApprovalQueueColors.textDark,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${_filteredRefunds.length} items',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: ApprovalQueueColors.textBodyColor,
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildCompactStatusCard('ALL', _allCount, ApprovalQueueColors.primaryDarkBlue),
+                  const SizedBox(width: 6),
+                  _buildCompactStatusCard('Un-Approved Request', _unApprovedCount, ApprovalQueueColors.warningOrange),
+                  const SizedBox(width: 6),
+                  _buildCompactStatusCard('Un-Paid Approval', _unPaidCount, ApprovalQueueColors.infoBlue),
+                  const SizedBox(width: 6),
+                  _buildCompactStatusCard('Paid', _paidCount, ApprovalQueueColors.accentTeal),
+                  const SizedBox(width: 6),
+                  _buildCompactStatusCard('Cancelled', _cancelledCount, ApprovalQueueColors.errorRed),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    } else {
+      return Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withOpacity(0.1),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: ApprovalQueueColors.primaryDarkBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    Icons.bar_chart,
+                    color: ApprovalQueueColors.primaryDarkBlue,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Discount Summary',
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: ApprovalQueueColors.textDark,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${_filteredDiscounts.length} items',
+                  style: GoogleFonts.poppins(
+                    fontSize: 11,
+                    color: ApprovalQueueColors.textBodyColor,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _buildCompactStatusCard('ALL', _discountTotalCount, ApprovalQueueColors.primaryDarkBlue),
+                  const SizedBox(width: 6),
+                  _buildCompactStatusCard('NON-APPLIED', _discountNonAppliedCount, ApprovalQueueColors.warningOrange),
+                  const SizedBox(width: 6),
+                  _buildCompactStatusCard('NON-APPROVED', _discountNonApprovedCount, ApprovalQueueColors.infoBlue),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
   }
 
   Widget _buildCompactRefundCard(Map<String, dynamic> refund, int index) {
     final patientName = refund['patientName']?.toString() ?? 'N/A';
     final patientId = refund['patientId']?.toString() ?? 'N/A';
-    final uhid = refund['uhid']?.toString() ?? patientId;
+    final uhid = refund['uhid']?.toString() ?? refund['abrivationId']?.toString() ?? patientId;
     final refundRequestId = refund['refundRequestId']?.toString() ?? 'N/A';
     final refundAmount = double.tryParse(refund['refundAmount']?.toString() ?? '0') ?? 0.0;
     final requestedDatetime = refund['requestedDatetime']?.toString() ?? '';
-    final refundStatus = refund['refundStatus']?.toString() ?? 'Pending';
     final invoiceTypeName = getInvoiceTypeFromRefund(refund);
     
-    int? locationId;
-    String locationName = 'N/A';
-    String locationAbbreviation = '';
+    final displayStatus = _getRefundDisplayStatus(refund);
     
-    if (refund['locationId'] != null) {
-      locationId = int.tryParse(refund['locationId'].toString());
-      locationName = _getLocationName(locationId);
-      locationAbbreviation = _getLocationAbbreviation(locationId);
-    } else if (refund['location'] != null) {
-      locationName = refund['location'].toString();
-    } else if (refund['locationName'] != null) {
-      locationName = refund['locationName'].toString();
-    }
+    final bool isActionable = _isActionable(refund);
+    
+    int? branchId = refund['branchId'];
+    String locationName = _getLocationName(branchId);
+    String locationAbbreviation = _getLocationAbbreviation(branchId);
 
     return AnimationConfiguration.staggeredList(
       position: index,
@@ -1540,7 +2419,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                 Container(
                   padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                   decoration: BoxDecoration(
-                    color: _getStatusColor(refundStatus).withOpacity(0.05),
+                    color: _getStatusColor(displayStatus).withOpacity(0.05),
                     borderRadius: const BorderRadius.only(
                       topLeft: Radius.circular(12),
                       topRight: Radius.circular(12),
@@ -1548,19 +2427,21 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                   ),
                   child: Row(
                     children: [
-                      Checkbox(
-                        value: _selectedRefunds[index] ?? false,
-                        onChanged: _isApprovingRefunds 
-                            ? null 
-                            : (value) => _handleCheckboxChange(index, value),
-                        activeColor: ApprovalQueueColors.checkboxColor,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4),
+                      if (isActionable)
+                        Checkbox(
+                          value: _selectedRefunds[index] ?? false,
+                          onChanged: _isProcessingAction 
+                              ? null 
+                              : (value) => _handleCheckboxChange(index, value),
+                          activeColor: ApprovalQueueColors.checkboxColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         ),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
-                      const SizedBox(width: 4),
+                      if (isActionable)
+                        const SizedBox(width: 4),
                       Expanded(
                         child: Text(
                           refundRequestId,
@@ -1577,18 +2458,18 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: _getStatusColor(refundStatus).withOpacity(0.1),
+                          color: _getStatusColor(displayStatus).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                            color: _getStatusColor(refundStatus).withOpacity(0.2),
+                            color: _getStatusColor(displayStatus).withOpacity(0.2),
                           ),
                         ),
                         child: Text(
-                          refundStatus,
+                          displayStatus,
                           style: GoogleFonts.poppins(
                             fontSize: 10,
                             fontWeight: FontWeight.w600,
-                            color: _getStatusColor(refundStatus),
+                            color: _getStatusColor(displayStatus),
                           ),
                         ),
                       ),
@@ -1686,7 +2567,6 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                                 ),
                                 
                                 const SizedBox(height: 4),
-                    
                                 Row(
                                   children: [
                                     Icon(
@@ -1750,31 +2630,49 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(width: 6),
                                   
-                                  ElevatedButton(
-                                    onPressed: refundStatus.toLowerCase() == 'pending' && !_isApprovingRefunds
-                                        ? () => _processRefund(refund)
-                                        : null,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: refundStatus.toLowerCase() == 'pending' && !_isApprovingRefunds
-                                          ? ApprovalQueueColors.primaryDarkBlue
-                                          : Colors.grey.shade300,
-                                      foregroundColor: Colors.white,
-                                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
+                                  if (isActionable) ...[
+                                    const SizedBox(width: 6),
+                                    ElevatedButton(
+                                      onPressed: _isProcessingAction ? null : () => _approveRefund(refund),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: ApprovalQueueColors.successGreen,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        visualDensity: VisualDensity.compact,
                                       ),
-                                      visualDensity: VisualDensity.compact,
-                                    ),
-                                    child: Text(
-                                      refundStatus.toLowerCase() == 'pending' ? 'Approve' : refundStatus,
-                                      style: GoogleFonts.poppins(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
+                                      child: Text(
+                                        'Approve',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
                                       ),
                                     ),
-                                  ),
+                                    const SizedBox(width: 6),
+                                    ElevatedButton(
+                                      onPressed: _isProcessingAction ? null : () => _cancelRefund(refund),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: ApprovalQueueColors.errorRed,
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      child: Text(
+                                        'Cancel',
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ],
@@ -1792,20 +2690,472 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
     );
   }
 
+  Widget _buildCompactDiscountCard(Map<String, dynamic> discount, int index) {
+    final discountId = discount['discountId']?.toString() ?? '#${index + 1}';
+    final invoiceId = discount['invoiceId']?.toString() ?? 'N/A';
+    final invoiceType = discount['invoiceType']?.toString() ?? 'N/A';
+    final requestType = discount['requestType']?.toString() ?? 'N/A';
+    final requestDate = discount['requestedDate']?.toString() ?? '';
+    final requestedBy = discount['requestedUserid']?.toString() ?? 'N/A';
+    final approvedDate = discount['approvedDate']?.toString() ?? '';
+    final approvedBy = discount['approverUserid']?.toString() ?? '';
+    final approvedNote = discount['approveNote']?.toString() ?? '';
+    final patientName = discount['patientName']?.toString() ?? 'N/A';
+    final uhid = discount['abrivationId']?.toString() ?? 'N/A';
+    final drName = discount['practitionerName']?.toString() ?? 'N/A';
+    final patientCategory = discount['payeeName']?.toString() ?? 'N/A';
+    final reqNotes = discount['requestNote']?.toString() ?? '';
+    
+    final discountTypeFlag = discount['discountTypeFlag'] as int?;
+    final discType = _getDiscountType(discountTypeFlag);
+    
+    final disc = discount['discount']?.toString() ?? 'N/A';
+    final totalDiscountAmount = double.tryParse(discount['chargeDiscountAmount']?.toString() ?? '0') ?? 0.0;
+    final invoiceAmount = double.tryParse(discount['invoiceAmount']?.toString() ?? '0') ?? 0.0;
+    final afterDiscount = double.tryParse(discount['invoiceAmountAfterDiscount']?.toString() ?? '0') ?? 0.0;
+    final statusCode = discount['discountStatus'] as int?;
+    final status = _getDiscountStatusFromCode(statusCode);
+    
+    final isRequested = statusCode == 1;
+
+    return AnimationConfiguration.staggeredList(
+      position: index,
+      duration: const Duration(milliseconds: 300),
+      child: SlideAnimation(
+        verticalOffset: 30.0,
+        child: FadeInAnimation(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.08),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  decoration: BoxDecoration(
+                    color: _getStatusColor(status).withOpacity(0.05),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      if (isRequested)
+                        Checkbox(
+                          value: _selectedDiscounts[index] ?? false,
+                          onChanged: _isApprovingDiscounts 
+                              ? null 
+                              : (value) => _handleCheckboxChange(index, value),
+                          activeColor: ApprovalQueueColors.checkboxColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      if (isRequested)
+                        const SizedBox(width: 4),
+                      Text(
+                        '#',
+                        style: GoogleFonts.poppins(
+                          fontSize: 10,
+                          color: ApprovalQueueColors.textBodyColor,
+                        ),
+                      ),
+                      const SizedBox(width: 2),
+                      Text(
+                        discountId,
+                        style: GoogleFonts.poppins(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: ApprovalQueueColors.textDark,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getStatusColor(status).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _getStatusColor(status).withOpacity(0.2),
+                          ),
+                        ),
+                        child: Text(
+                          status,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: _getStatusColor(status),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  patientName,
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.bold,
+                                    color: ApprovalQueueColors.primaryDarkBlue,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  'UHID: $uhid',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: ApprovalQueueColors.textBodyColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                'Invoice ID',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 10,
+                                  color: ApprovalQueueColors.textBodyColor,
+                                ),
+                              ),
+                              Text(
+                                invoiceId,
+                                style: GoogleFonts.poppins(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: ApprovalQueueColors.textDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 8),
+                      const Divider(height: 1, color: ApprovalQueueColors.dividerColor),
+                      const SizedBox(height: 8),
+                      
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDiscountInfoRow('Invoice Type', invoiceType),
+                          ),
+                          Expanded(
+                            child: _buildDiscountInfoRow('Request Type', requestType),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDiscountInfoRow('Request Date', _formatDate(requestDate)),
+                          ),
+                          Expanded(
+                            child: _buildDiscountInfoRow('Requested By', requestedBy),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      
+                      if (approvedDate.isNotEmpty) ...[
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _buildDiscountInfoRow('Approved Date', _formatDate(approvedDate)),
+                            ),
+                            Expanded(
+                              child: _buildDiscountInfoRow('Approved By', approvedBy),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      
+                      if (approvedNote.isNotEmpty) ...[
+                        _buildDiscountInfoRow('Approved Note', approvedNote, fullWidth: true),
+                        const SizedBox(height: 6),
+                      ],
+                      
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDiscountInfoRow('Dr. Name', drName),
+                          ),
+                          Expanded(
+                            child: _buildDiscountInfoRow('Patient Category', patientCategory),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      
+                      if (reqNotes.isNotEmpty) ...[
+                        _buildDiscountInfoRow('Req. Notes', reqNotes, fullWidth: true),
+                        const SizedBox(height: 6),
+                      ],
+                      
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildDiscountInfoRow('Disc. Type', discType),
+                          ),
+                          Expanded(
+                            child: _buildDiscountInfoRow('Disc.', disc),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: ApprovalQueueColors.lightGreyColor,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Total Discount',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      color: ApprovalQueueColors.textBodyColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatIndianCurrency(totalDiscountAmount),
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: ApprovalQueueColors.primaryDarkBlue,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Invoice Amount',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      color: ApprovalQueueColors.textBodyColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatIndianCurrency(invoiceAmount),
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: ApprovalQueueColors.textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'After Discount',
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 10,
+                                      color: ApprovalQueueColors.textBodyColor,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatIndianCurrency(afterDiscount),
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: ApprovalQueueColors.successGreen,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 12),
+                      
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          OutlinedButton(
+                            onPressed: () => _showCompactDiscountDetails(discount),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: ApprovalQueueColors.primaryDarkBlue,
+                              side: BorderSide(color: ApprovalQueueColors.primaryDarkBlue),
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            child: Text(
+                              'Details',
+                              style: GoogleFonts.poppins(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          
+                          if (isRequested)
+                            ElevatedButton(
+                              onPressed: !_isApprovingDiscounts
+                                  ? () => _approveDiscount(discount)
+                                  : null,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: ApprovalQueueColors.primaryDarkBlue,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                              child: Text(
+                                'Approve',
+                                style: GoogleFonts.poppins(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDiscountInfoRow(String label, String value, {bool fullWidth = false}) {
+    if (fullWidth) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 90,
+              child: Text(
+                '$label:',
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: ApprovalQueueColors.textBodyColor,
+                ),
+              ),
+            ),
+            Expanded(
+              child: Text(
+                value,
+                style: GoogleFonts.poppins(
+                  fontSize: 11,
+                  color: ApprovalQueueColors.textDark,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.poppins(
+            fontSize: 10,
+            color: ApprovalQueueColors.textBodyColor,
+          ),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.poppins(
+            fontSize: 11,
+            fontWeight: FontWeight.w500,
+            color: ApprovalQueueColors.textDark,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
+    );
+  }
+
   void _showCompactRefundDetails(Map<String, dynamic> refund) {
     final patientName = refund['patientName']?.toString() ?? 'N/A';
     final patientId = refund['patientId']?.toString() ?? 'N/A';
-    final uhid = refund['uhid']?.toString() ?? patientId;
+    final uhid = refund['uhid']?.toString() ?? refund['abrivationId']?.toString() ?? patientId;
     final refundRequestId = refund['refundRequestId']?.toString() ?? 'N/A';
     final refundAmount = double.tryParse(refund['refundAmount']?.toString() ?? '0') ?? 0.0;
     final requestedDatetime = refund['requestedDatetime']?.toString() ?? '';
     final requestedUserid = refund['requestedUserid']?.toString() ?? 'N/A';
     final approvedUserid = refund['approvedUserid']?.toString() ?? '';
     final approvedDateTime = refund['approvedDateTime']?.toString() ?? '';
-    final refundStatus = refund['refundStatus']?.toString() ?? 'Pending';
     final refundNote = refund['refundNote']?.toString() ?? '';
     final refundFrom = refund['refundFrom']?.toString() ?? '';
     final approvedNote = refund['approvedNote']?.toString() ?? '';
+    final isDeleted = refund['isdeleted'] == 1;
+    final cancelReason = refund['cancel_reason']?.toString() ?? '';
+    final cancelDatetime = refund['cancel_datetime']?.toString() ?? '';
+    final cancelUserid = refund['cancel_userid']?.toString() ?? '';
+    
+    final displayStatus = _getRefundDisplayStatus(refund);
+    
+    final bool isActionable = _isActionable(refund);
     
     final invoiceTypeName = getInvoiceTypeFromRefund(refund);
     
@@ -1813,21 +3163,10 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
     final abrivationId = refund['abrivationId']?.toString() ?? '';
     final addmissionId = refund['addmissionId']?.toString() ?? '';
     final patientType = refund['patientType']?.toString() ?? '';
-    
 
-    int? locationId;
-    String locationName = 'N/A';
-    String locationAbbreviation = '';
-    
-    if (refund['locationId'] != null) {
-      locationId = int.tryParse(refund['locationId'].toString());
-      locationName = _getLocationName(locationId);
-      locationAbbreviation = _getLocationAbbreviation(locationId);
-    } else if (refund['location'] != null) {
-      locationName = refund['location'].toString();
-    } else if (refund['locationName'] != null) {
-      locationName = refund['locationName'].toString();
-    }
+    int? branchId = refund['branchId'];
+    String locationName = _getLocationName(branchId);
+    String locationAbbreviation = _getLocationAbbreviation(branchId);
     
     showModalBottomSheet(
       context: context,
@@ -1838,9 +3177,9 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       isScrollControlled: true,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.85,
-        minChildSize: 0.4,
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
         builder: (context, scrollController) => Container(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1893,15 +3232,15 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _getStatusColor(refundStatus).withOpacity(0.1),
+                      color: _getStatusColor(displayStatus).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      refundStatus,
+                      displayStatus,
                       style: GoogleFonts.poppins(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: _getStatusColor(refundStatus),
+                        color: _getStatusColor(displayStatus),
                       ),
                     ),
                   ),
@@ -1922,10 +3261,19 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                         : locationName),
                     _buildCompactDetailRow('Requested Date', _formatDateTime(requestedDatetime)),
                     _buildCompactDetailRow('Requested By', requestedUserid),
+                    
                     if (approvedUserid.isNotEmpty)
                       _buildCompactDetailRow('Approved By', approvedUserid),
                     if (approvedDateTime.isNotEmpty)
                       _buildCompactDetailRow('Approved Date', _formatDateTime(approvedDateTime)),
+                    
+                    if (isDeleted) ...[
+                      _buildCompactDetailRow('Cancelled By', cancelUserid.isNotEmpty ? cancelUserid : requestedUserid),
+                      _buildCompactDetailRow('Cancelled Date', _formatDateTime(cancelDatetime.isNotEmpty ? cancelDatetime : requestedDatetime)),
+                      if (cancelReason.isNotEmpty)
+                        _buildCompactDetailRow('Cancel Reason', cancelReason),
+                    ],
+                    
                     if (invoiceId.isNotEmpty)
                       _buildCompactDetailRow('Invoice ID', invoiceId),
                     if (addmissionId.isNotEmpty)
@@ -1933,7 +3281,9 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                     if (abrivationId.isNotEmpty)
                       _buildCompactDetailRow('Abbreviation ID', abrivationId),
                     _buildCompactDetailRow('Refund From', refundFrom.isNotEmpty ? refundFrom : 'N/A'),
+                    
                     const SizedBox(height: 12),
+                    
                     if (refundNote.isNotEmpty)
                       Container(
                         padding: const EdgeInsets.all(10),
@@ -1963,6 +3313,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                           ],
                         ),
                       ),
+                    
                     if (approvedNote.isNotEmpty) ...[
                       const SizedBox(height: 8),
                       Container(
@@ -1994,61 +3345,287 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                         ),
                       ),
                     ],
+                    
                     const SizedBox(height: 16),
                   ],
                 ),
               ),
-              if (refundStatus.toLowerCase() == 'pending')
-                Row(
+              
+              if (isActionable)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: _isProcessingAction ? null : () {
+                            Navigator.pop(context);
+                            _cancelRefund(refund);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ApprovalQueueColors.errorRed,
+                            side: BorderSide(color: ApprovalQueueColors.errorRed),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            "Cancel Request",
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _isProcessingAction ? null : () {
+                            Navigator.pop(context);
+                            _approveRefund(refund);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ApprovalQueueColors.primaryDarkBlue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            "Approve",
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCompactDiscountDetails(Map<String, dynamic> discount) {
+    final discountId = discount['discountId']?.toString() ?? 'N/A';
+    final invoiceId = discount['invoiceId']?.toString() ?? 'N/A';
+    final invoiceType = discount['invoiceType']?.toString() ?? 'N/A';
+    final requestType = discount['requestType']?.toString() ?? 'N/A';
+    final requestDate = discount['requestedDate']?.toString() ?? '';
+    final requestedBy = discount['requestedUserid']?.toString() ?? 'N/A';
+    final approvedDate = discount['approvedDate']?.toString() ?? '';
+    final approvedBy = discount['approverUserid']?.toString() ?? '';
+    final approvedNote = discount['approveNote']?.toString() ?? '';
+    final patientName = discount['patientName']?.toString() ?? 'N/A';
+    final uhid = discount['abrivationId']?.toString() ?? 'N/A';
+    final drName = discount['practitionerName']?.toString() ?? 'N/A';
+    final patientCategory = discount['payeeName']?.toString() ?? 'N/A';
+    final reqNotes = discount['requestNote']?.toString() ?? '';
+    
+    final discountTypeFlag = discount['discountTypeFlag'] as int?;
+    final discType = _getDiscountType(discountTypeFlag);
+    
+    final disc = discount['discount']?.toString() ?? 'N/A';
+    final totalDiscountAmount = double.tryParse(discount['chargeDiscountAmount']?.toString() ?? '0') ?? 0.0;
+    final invoiceAmount = double.tryParse(discount['invoiceAmount']?.toString() ?? '0') ?? 0.0;
+    final afterDiscount = double.tryParse(discount['invoiceAmountAfterDiscount']?.toString() ?? '0') ?? 0.0;
+    final statusCode = discount['discountStatus'] as int?;
+    final status = _getDiscountStatusFromCode(statusCode);
+    
+    final isRequested = statusCode == 1;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.9,
+        minChildSize: 0.5,
+        builder: (context, scrollController) => Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 3,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: ApprovalQueueColors.primaryDarkBlue.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.discount, color: ApprovalQueueColors.primaryDarkBlue, size: 20),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          "Discount Details",
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: ApprovalQueueColors.textDark,
+                          ),
+                        ),
+                        Text(
+                          '#$discountId',
+                          style: GoogleFonts.poppins(
+                            fontSize: 12,
+                            color: ApprovalQueueColors.textBodyColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getStatusColor(status).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      status,
+                      style: GoogleFonts.poppins(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: _getStatusColor(status),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _rejectRefund(refund);
-                        },
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: ApprovalQueueColors.errorRed,
-                          side: BorderSide(color: ApprovalQueueColors.errorRed),
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        child: Text(
-                          "Reject",
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                    _buildCompactDetailRow('Patient Name', patientName),
+                    _buildCompactDetailRow('UHID', uhid),
+                    _buildCompactDetailRow('Dr. Name', drName),
+                    _buildCompactDetailRow('Patient Category', patientCategory),
+                    const SizedBox(height: 8),
+                    
+                    _buildCompactDetailRow('Invoice ID', invoiceId),
+                    _buildCompactDetailRow('Invoice Type', invoiceType),
+                    _buildCompactDetailRow('Request Type', requestType),
+                    _buildCompactDetailRow('Request Date', _formatDateTime(requestDate)),
+                    _buildCompactDetailRow('Requested By', requestedBy),
+                    
+                    if (approvedDate.isNotEmpty) ...[
+                      _buildCompactDetailRow('Approved Date', _formatDateTime(approvedDate)),
+                      _buildCompactDetailRow('Approved By', approvedBy),
+                    ],
+                    
+                    if (reqNotes.isNotEmpty)
+                      _buildCompactDetailRow('Request Notes', reqNotes),
+                    
+                    if (approvedNote.isNotEmpty)
+                      _buildCompactDetailRow('Approved Note', approvedNote),
+                    
+                    const SizedBox(height: 8),
+                    _buildCompactDetailRow('Disc. Type', discType),
+                    _buildCompactDetailRow('Disc.', disc),
+                    
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ApprovalQueueColors.lightGreyColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        children: [
+                          _buildCompactDetailRow('Invoice Amount', _formatIndianCurrency(invoiceAmount)),
+                          const SizedBox(height: 4),
+                          _buildCompactDetailRow('Total Discount', _formatIndianCurrency(totalDiscountAmount)),
+                          const SizedBox(height: 4),
+                          _buildCompactDetailRow('After Discount', _formatIndianCurrency(afterDiscount)),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () {
-                          Navigator.pop(context);
-                          _approveRefund(refund);
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: ApprovalQueueColors.primaryDarkBlue,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                        child: Text(
-                          "Approve",
-                          style: GoogleFonts.poppins(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
+                    
+                    const SizedBox(height: 16),
                   ],
+                ),
+              ),
+              if (isRequested)
+                Padding(
+                  padding: const EdgeInsets.only(top: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                          },
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: ApprovalQueueColors.errorRed,
+                            side: BorderSide(color: ApprovalQueueColors.errorRed),
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            "Reject",
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _approveDiscount(discount);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: ApprovalQueueColors.primaryDarkBlue,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: Text(
+                            "Approve",
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
             ],
           ),
@@ -2069,7 +3646,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 100,
+            width: 110,
             child: Text(
               '$label:',
               style: GoogleFonts.poppins(
@@ -2111,8 +3688,10 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
               _selectedTab == 0 
                   ? (_refundDataList.isEmpty && _refundApiError.isEmpty
                       ? 'No refund requests found'
-                      : 'No matching requests found')
-                  : 'No discount requests found',
+                      : 'No matching refund requests found')
+                  : (_discountDataList.isEmpty && _discountApiError.isEmpty
+                      ? 'No discount requests found'
+                      : 'No matching discount requests found'),
               style: GoogleFonts.poppins(
                 fontSize: 13,
                 color: ApprovalQueueColors.textBodyColor,
@@ -2120,33 +3699,12 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
               ),
               textAlign: TextAlign.center,
             ),
-            if (_selectedTab == 0 && _refundDataList.isEmpty && _refundApiError.isEmpty) ...[
-              const SizedBox(height: 16),
-              ElevatedButton.icon(
-                onPressed: _handleViewClick,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ApprovalQueueColors.primaryDarkBlue,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-                icon: const Icon(Icons.refresh, size: 16),
-                label: Text(
-                  'Refresh',
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
       ),
     );
   }
+  
   Widget _buildCompactLoadingState() {
     return Center(
       child: Column(
@@ -2205,6 +3763,133 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
     );
   }
 
+  void _approveDiscount(Map<String, dynamic> discount) {
+    final discountId = discount['discountId']?.toString() ?? 'Unknown';
+    final patientName = discount['patientName']?.toString() ?? 'Unknown';
+    
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    
+    showDialog(
+      context: context,
+      builder: (context) => ApproveNoteDialog(
+        title: 'Approve Discount',
+        itemId: discountId,
+        patientName: patientName,
+        type: 'Discount',
+        onApprove: (note) async {
+          Navigator.pop(context);
+          
+          if (!mounted) return;
+          
+          setState(() {
+            _isApprovingDiscounts = true;
+          });
+
+          try {
+            final prefs = await SharedPreferences.getInstance();
+            final approverUserId = prefs.getString('userId') ?? '';
+            final approverUserName = prefs.getString('userName') ?? approverUserId;
+            
+            if (approverUserId.isEmpty) {
+              throw Exception('User ID not found. Please login again.');
+            }
+
+            final invoiceAmount = discount['invoiceAmount'] is int ? discount['invoiceAmount'] :
+                                 int.tryParse(discount['invoiceAmount']?.toString() ?? '0') ?? 0;
+            
+            final afterDiscountAmount = discount['invoiceAmountAfterDiscount'] is int ? discount['invoiceAmountAfterDiscount'] :
+                                       int.tryParse(discount['invoiceAmountAfterDiscount']?.toString() ?? '0') ?? 0;
+            
+            int chargeDiscountAmount = invoiceAmount - afterDiscountAmount;
+
+            final response = await _approvalService.approveDiscount(
+              id: discount['discountId'] is int ? discount['discountId'] : 
+                  int.tryParse(discount['discountId']?.toString() ?? '0') ?? 0,
+              invoiceid: discount['invoiceId'] is int ? discount['invoiceId'] :
+                        int.tryParse(discount['invoiceId']?.toString() ?? '0') ?? 0,
+              patient_id: discount['patientId'] is int ? discount['patientId'] :
+                         int.tryParse(discount['patientId']?.toString() ?? '0') ?? 0,
+              practitionerid: discount['practitionerId'] is int ? discount['practitionerId'] :
+                             int.tryParse(discount['practitionerId']?.toString() ?? '0') ?? 0,
+              requested_userid: discount['requestedUserid']?.toString() ?? '',
+              abrivationId: discount['abrivationId']?.toString(),
+              approve_note: note,
+              approver_userid: approverUserName,
+              balanceAmount: discount['balanceAmount'] as int? ?? 0,
+              branch_id: discount['branchId'] as int? ?? 0,
+              charge_discount_amount: chargeDiscountAmount,
+              delete_date_time: "",
+              deleted: 0,
+              deletedby: "",
+              deleteremark: "",
+              discount: discount['discount']?.toString() ?? '0',
+              discountAmt: discount['discountAmt'] as int? ?? 0,
+              discountSms: false,
+              discount_given_userid: discount['discountGivenUserid']?.toString(),
+              discount_type: discount['discountTypeFlag'] as int? ?? 0,
+              discountstatus: 0,
+              invoice_amount: invoiceAmount,
+              invoice_amount_after_discount: afterDiscountAmount,
+              invoice_type: discount['invoiceType']?.toString() ?? '',
+              patientname: discount['patientName']?.toString() ?? '',
+              practitionername: discount['practitionerName']?.toString() ?? '',
+              request_note: discount['requestNote']?.toString() ?? '',
+              request_type: discount['requestType']?.toString() ?? '',
+              requested_date: discount['requestedDate']?.toString() ?? '',
+              type: discount['type']?.toString() ?? '',
+            );
+
+            if (mounted) {
+              if (response['success'] == true) {
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '✅ Discount #$discountId approved successfully',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: ApprovalQueueColors.successGreen,
+                  ),
+                );
+                
+                await _fetchDiscountData();
+              } else {
+                final errorMessage = response['message'] ?? 'Failed to approve discount';
+                scaffoldMessenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '❌ $errorMessage',
+                      style: GoogleFonts.poppins(),
+                    ),
+                    backgroundColor: ApprovalQueueColors.errorRed,
+                  ),
+                );
+              }
+            }
+            
+          } catch (e) {
+            if (mounted) {
+              scaffoldMessenger.showSnackBar(
+                SnackBar(
+                  content: Text(
+                    '❌ Error: ${e.toString()}',
+                    style: GoogleFonts.poppins(),
+                  ),
+                  backgroundColor: ApprovalQueueColors.errorRed,
+                ),
+              );
+            }
+          } finally {
+            if (mounted) {
+              setState(() {
+                _isApprovingDiscounts = false;
+              });
+            }
+          }
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -2214,8 +3899,10 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
         children: [
           _buildCompactHeader(),
 
-          if (_refundApiError.isNotEmpty)
+          if (_refundApiError.isNotEmpty && _selectedTab == 0)
             _buildCompactApiErrorIndicator('Refunds: $_refundApiError'),
+          if (_discountApiError.isNotEmpty && _selectedTab == 1)
+            _buildCompactApiErrorIndicator('Discounts: $_discountApiError'),
           if (_locationApiError.isNotEmpty)
             _buildCompactApiErrorIndicator('Location: $_locationApiError'),
           if (_invoiceTypeApiError.isNotEmpty)
@@ -2273,7 +3960,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                             ),
                           ),
                           ElevatedButton.icon(
-                            onPressed: _isApprovingRefunds ? null : _approveSelectedRefunds,
+                            onPressed: _isProcessingAction ? null : _approveSelectedRefunds,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.white,
                               foregroundColor: ApprovalQueueColors.primaryDarkBlue,
@@ -2283,7 +3970,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                               ),
                               visualDensity: VisualDensity.compact,
                             ),
-                            icon: _isApprovingRefunds
+                            icon: _isProcessingAction
                                 ? SizedBox(
                                     width: 14,
                                     height: 14,
@@ -2294,7 +3981,7 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                                   )
                                 : Icon(Icons.check_circle_outline, size: 14),
                             label: Text(
-                              'Approve All',
+                              'Approve Selected',
                               style: GoogleFonts.poppins(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -2305,65 +3992,160 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
                       ),
                     ),
                   
+                  if (_selectedTab == 1 && _filteredDiscounts.isNotEmpty && _selectedDiscountsCount > 0)
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: ApprovalQueueColors.primaryDarkBlue,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: ApprovalQueueColors.primaryDarkBlue.withOpacity(0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(
+                              Icons.check_circle_outline,
+                              color: Colors.white,
+                              size: 16,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${_selectedDiscountsCount} discount${_selectedDiscountsCount > 1 ? 's' : ''} selected',
+                              style: GoogleFonts.poppins(
+                                color: Colors.white,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            onPressed: _isApprovingDiscounts ? null : _approveSelectedDiscounts,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: ApprovalQueueColors.primaryDarkBlue,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            icon: _isApprovingDiscounts
+                                ? SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      color: ApprovalQueueColors.primaryDarkBlue,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Icon(Icons.check_circle_outline, size: 14),
+                            label: Text(
+                              'Approve Selected',
+                              style: GoogleFonts.poppins(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  
+                  if ((_selectedTab == 0 && _filteredRefunds.isNotEmpty) ||
+                      (_selectedTab == 1 && _filteredDiscounts.isNotEmpty))
+                    Container(
+                      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.05),
+                            blurRadius: 3,
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Checkbox(
+                            value: _selectedTab == 0 ? _selectAll : _selectAllDiscounts,
+                            onChanged: (_selectedTab == 0 && _isProcessingAction) || 
+                                      (_selectedTab == 1 && _isApprovingDiscounts) 
+                                ? null 
+                                : _handleSelectAll,
+                            activeColor: ApprovalQueueColors.checkboxColor,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Select All',
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: ApprovalQueueColors.textDark,
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            '${_selectedTab == 0 ? _filteredRefunds.length : _filteredDiscounts.length} items',
+                            style: GoogleFonts.poppins(
+                              fontSize: 11,
+                              color: ApprovalQueueColors.textBodyColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                
                   if (_selectedTab == 0) ...[
                     if (_isLoadingRefunds)
                       _buildCompactLoadingState()
                     else if (_filteredRefunds.isEmpty)
-                      Expanded(child: _buildCompactEmptyState())
+                      _buildCompactEmptyState()
                     else
                       Column(
                         children: [
                           const SizedBox(height: 4),
-                          Container(
-                            margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.grey.withOpacity(0.05),
-                                  blurRadius: 3,
-                                  offset: const Offset(0, 1),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Checkbox(
-                                  value: _selectAll,
-                                  onChanged: _isApprovingRefunds ? null : _handleSelectAll,
-                                  activeColor: ApprovalQueueColors.checkboxColor,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  visualDensity: VisualDensity.compact,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Select All',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: ApprovalQueueColors.textDark,
-                                  ),
-                                ),
-                                const Spacer(),
-                                Text(
-                                  '${_filteredRefunds.length} items',
-                                  style: GoogleFonts.poppins(
-                                    fontSize: 11,
-                                    color: ApprovalQueueColors.textBodyColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          // Refund list
                           ..._filteredRefunds.asMap().entries.map((entry) {
                             final index = entry.key;
                             final refund = entry.value as Map<String, dynamic>;
                             return _buildCompactRefundCard(refund, index);
+                          }).toList(),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                  ] else if (_selectedTab == 1) ...[
+                    if (_isLoadingDiscounts)
+                      _buildCompactLoadingState()
+                    else if (_filteredDiscounts.isEmpty)
+                      _buildCompactEmptyState()
+                    else
+                      Column(
+                        children: [
+                          const SizedBox(height: 4),
+                          ..._filteredDiscounts.asMap().entries.map((entry) {
+                            final index = entry.key;
+                            final discount = entry.value as Map<String, dynamic>;
+                            return _buildCompactDiscountCard(discount, index);
                           }).toList(),
                           const SizedBox(height: 12),
                         ],
@@ -2377,107 +4159,228 @@ class _ApprovalQueuePageState extends State<ApprovalQueuePage> {
       ),
     );
   }
+}
 
-  void _processRefund(Map<String, dynamic> refund) {
-    _showCompactRefundDetails(refund);
-  }
+// Cancel Refund Dialog
+class CancelRefundDialog extends StatefulWidget {
+  final String refundId;
+  final String patientName;
+  final Function(String) onCancel;
 
-  void _approveRefund(Map<String, dynamic> refund) {
-    final refundRequestId = refund['refundRequestId']?.toString() ?? 'Unknown';
-    final selectedRefunds = [refund];
-    
-    showDialog(
-      context: context,
-      builder: (context) => ApproveRefundNoteDialog(
-        selectedCount: 1,
-        onApprove: (note) async {
-          Navigator.pop(context);
-          
-          setState(() {
-            _isApprovingRefunds = true;
-          });
+  const CancelRefundDialog({
+    super.key,
+    required this.refundId,
+    required this.patientName,
+    required this.onCancel,
+  });
 
-          try {
-            debugPrint('🔄 Approving single refund: $refundRequestId');
-            
-            final response = await _approvalService.approveAllRefunds(
-              refundList: selectedRefunds,
-              approvedNotes: note,
-            );
-            
-            if (response['success'] == true) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    '✅ Refund $refundRequestId approved successfully',
-                    style: GoogleFonts.poppins(),
-                  ),
-                  backgroundColor: ApprovalQueueColors.successGreen,
-                ),
-              );
-              
-              await _fetchRefundData();
-            } else {
-              final errorMessage = response['message'] ?? 'Failed to approve refund';
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    '❌ $errorMessage',
-                    style: GoogleFonts.poppins(),
-                  ),
-                  backgroundColor: ApprovalQueueColors.errorRed,
-                ),
-              );
-            }
-          } catch (e) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  '❌ Error: ${e.toString()}',
-                  style: GoogleFonts.poppins(),
-                ),
-                backgroundColor: ApprovalQueueColors.errorRed,
-              ),
-            );
-          } finally {
-            setState(() {
-              _isApprovingRefunds = false;
-            });
-          }
-        },
+  @override
+  State<CancelRefundDialog> createState() => _CancelRefundDialogState();
+}
+
+class _CancelRefundDialogState extends State<CancelRefundDialog> {
+  final TextEditingController _reasonController = TextEditingController();
+  bool _isCancelling = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
       ),
-    );
-  }
-
-  void _rejectRefund(Map<String, dynamic> refund) {
-    final refundRequestId = refund['refundRequestId']?.toString() ?? 'Unknown';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Refund $refundRequestId rejected',
-          style: GoogleFonts.poppins(),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
         ),
-        backgroundColor: ApprovalQueueColors.errorRed,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: ApprovalQueueColors.errorRed.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.cancel_outlined,
+                    color: ApprovalQueueColors.errorRed,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Cancel Refund Request',
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: ApprovalQueueColors.textDark,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Refund ID: ${widget.refundId}',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: ApprovalQueueColors.textBodyColor,
+              ),
+            ),
+            Text(
+              'Patient: ${widget.patientName}',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: ApprovalQueueColors.textBodyColor,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Please provide a reason for cancellation:',
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                color: ApprovalQueueColors.textBodyColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              decoration: BoxDecoration(
+                color: ApprovalQueueColors.lightGreyColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TextField(
+                controller: _reasonController,
+                decoration: InputDecoration(
+                  hintText: 'Enter cancellation reason...',
+                  hintStyle: GoogleFonts.poppins(
+                    color: ApprovalQueueColors.textBodyColor,
+                    fontSize: 12,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+                maxLines: 3,
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: ApprovalQueueColors.textDark,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _isCancelling
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                          },
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: ApprovalQueueColors.textBodyColor,
+                      side: BorderSide(color: ApprovalQueueColors.dividerColor),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      'Back',
+                      style: GoogleFonts.poppins(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isCancelling || _reasonController.text.trim().isEmpty
+                        ? null
+                        : () async {
+                            setState(() {
+                              _isCancelling = true;
+                            });
+                            
+                            await widget.onCancel(_reasonController.text.trim());
+                            
+                            if (mounted) {
+                              Navigator.pop(context);
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ApprovalQueueColors.errorRed,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: _isCancelling
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : Text(
+                            'Cancel Request',
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _reasonController.dispose();
+    super.dispose();
   }
 }
 
-class ApproveRefundNoteDialog extends StatefulWidget {
-  final int selectedCount;
+// Unified Approve Note Dialog
+class ApproveNoteDialog extends StatefulWidget {
+  final String title;
+  final String itemId;
+  final String patientName;
+  final String type;
   final Function(String) onApprove;
 
-  const ApproveRefundNoteDialog({
+  const ApproveNoteDialog({
     super.key,
-    required this.selectedCount,
+    required this.title,
+    required this.itemId,
+    required this.patientName,
+    required this.type,
     required this.onApprove,
   });
 
   @override
-  State<ApproveRefundNoteDialog> createState() => _ApproveRefundNoteDialogState();
+  State<ApproveNoteDialog> createState() => _ApproveNoteDialogState();
 }
 
-class _ApproveRefundNoteDialogState extends State<ApproveRefundNoteDialog> {
+class _ApproveNoteDialogState extends State<ApproveNoteDialog> {
   final TextEditingController _noteController = TextEditingController();
   bool _isApproving = false;
 
@@ -2514,7 +4417,7 @@ class _ApproveRefundNoteDialogState extends State<ApproveRefundNoteDialog> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Approve ${widget.selectedCount} Refund${widget.selectedCount > 1 ? 's' : ''}',
+                    widget.title,
                     style: GoogleFonts.poppins(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -2524,6 +4427,32 @@ class _ApproveRefundNoteDialogState extends State<ApproveRefundNoteDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            if (widget.type == 'Refund') ...[
+              Text(
+                'Refund ID: ${widget.itemId}',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: ApprovalQueueColors.textBodyColor,
+                ),
+              ),
+            ] else ...[
+              Text(
+                'Discount ID: ${widget.itemId}',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: ApprovalQueueColors.textBodyColor,
+                ),
+              ),
+            ],
+            if (widget.patientName != 'Bulk Approval')
+              Text(
+                'Patient: ${widget.patientName}',
+                style: GoogleFonts.poppins(
+                  fontSize: 13,
+                  color: ApprovalQueueColors.textBodyColor,
+                ),
+              ),
             const SizedBox(height: 12),
             Text(
               'Add an approval note (optional):',

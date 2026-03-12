@@ -8,7 +8,9 @@ import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:staff_mate/services/clinic_service.dart';
 import 'package:staff_mate/services/user_information_service.dart';
 import 'package:staff_mate/services/session_manger.dart';
+import 'package:staff_mate/services/biometric_auth_service.dart';
 import 'package:staff_mate/pages/forget_password.dart';
+import 'package:staff_mate/widgets/otp_verification_dialog.dart'; // New dialog widget
 
 // Unified Color Palette
 class AppColors {
@@ -34,6 +36,9 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
+  
+  // Store login response data
+  Map<String, dynamic>? _loginResponseData;
 
   @override
   void initState() {
@@ -68,11 +73,12 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
 
-    const String apiUrl = "https://test.smartcarehis.com:443/security/auth/login";
+    const String apiUrl = "https://test.smartcarehis.com:8443/security/auth/login";
     final headers = {
       "Content-Type": "application/json",
       "Access-Control-Allow-Origin": "*",
     };
+    
     final body = jsonEncode({
       "userName": _usernameController.text.trim(),
       "password": _passwordController.text.trim(),
@@ -94,65 +100,190 @@ class _LoginPageState extends State<LoginPage> {
         
         if (innerData == null) {
           _showErrorDialog("Invalid response from server");
+          setState(() => _isLoading = false);
           return;
         }
 
         final subscriptionDays = innerData['subscription_remaining_days'] ?? 0;
         if (subscriptionDays <= 0) {
           _showErrorDialog("Your subscription has expired. Please contact support.");
+          setState(() => _isLoading = false);
           return;
         }
 
-        // Save session using SessionManager
-        await SessionManager.saveFromApi(innerData);
-
-        // Save username for future biometric login
+        // Store the login response data
+        _loginResponseData = Map<String, dynamic>.from(innerData);
+        
+        // Save username for future
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('last_username', _usernameController.text.trim());
 
-        try {
-          final clinicService = ClinicService();
-          await clinicService.fetchAndSaveClinicDetails(
-            token: innerData['token'] ?? '',
-            clinicId: innerData['clinicid'] ?? '',
-            userId: innerData['userId'] ?? '',
-            zoneid: innerData['zoneid'] ?? 'Asia/Kolkata',
-            branchId: 1, 
-          );
-        } catch (clinicError) {
-          debugPrint("⚠️ Clinic details fetch failed: $clinicError");
-        }
-
-        try {
-          final userInfoService = UserInformationService();
-          await userInfoService.fetchAndSaveUserInformation(
-            token: innerData['token'] ?? '',
-            clinicId: innerData['clinicid'] ?? '',
-            userId: innerData['userId'] ?? '',
-            zoneid: innerData['zoneid'] ?? 'Asia/Kolkata',
-            branchId: 1, 
-          );
-        } catch (userError) {
-          debugPrint("⚠️ User information fetch failed: $userError");
-        }
-
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        // Show OTP verification dialog instead of proceeding directly
+        _showOTPVerificationDialog();
         
       } else if (response.statusCode == 401) {
         _showErrorDialog("Invalid username or password");
+        setState(() => _isLoading = false);
       } else if (response.statusCode == 409) {
         _showErrorDialog("You are already logged in on another device. Please logout there first.");
+        setState(() => _isLoading = false);
       } else {
         _showErrorDialog("Login failed (Status ${response.statusCode}). Please try again.");
+        setState(() => _isLoading = false);
       }
     } catch (e) {
       if (!mounted) return;
       _showErrorDialog("Network error. Please check your connection and try again.");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+      setState(() => _isLoading = false);
     }
   }
+
+void _showOTPVerificationDialog() {
+  showDialog(
+    context: context,
+    barrierDismissible: false, // Prevent dismissing by tapping outside
+    builder: (BuildContext context) {
+      return OTPVerificationDialog(
+        userId: _loginResponseData?['userId'] ?? 
+                _loginResponseData?['userid'] ?? 
+                _loginResponseData?['user_id'] ?? '',
+        clinicId: _loginResponseData?['clinicid'] ?? 
+                  _loginResponseData?['clinicId'] ?? 
+                  _loginResponseData?['clinic_id'] ?? '',
+        token: _loginResponseData?['token'] ?? '',
+        onVerificationSuccess: () {
+          // After OTP verification is successful, complete the login process
+          _completeLogin();
+        },
+        onVerificationFailed: () {
+          // If verification fails, go back to login
+          setState(() {
+            _isLoading = false;
+          });
+        },
+      );
+    },
+  );
+}
+
+Future<void> _completeLogin() async {
+  if (_loginResponseData == null) {
+    Navigator.pushReplacementNamed(context, '/dashboard');
+    return;
+  }
+
+  await SessionManager.saveFromApi(_loginResponseData!);
+  await SessionManager.saveCredentialsSecurely(
+    username: _usernameController.text.trim(),
+    password: _passwordController.text.trim(),
+  );
+  await SessionManager.setBiometricSessionActive(true);
+
+  try {
+    final clinicService = ClinicService();
+    await clinicService.fetchAndSaveClinicDetails(
+      token: _loginResponseData!['token'] ?? '',
+      clinicId: _loginResponseData!['clinicid'] ?? '',
+      userId: _loginResponseData!['userId'] ?? '',
+      zoneid: _loginResponseData!['zoneid'] ?? 'Asia/Kolkata',
+      branchId: 1,
+    );
+  } catch (clinicError) {
+    debugPrint("⚠️ Clinic details fetch failed: $clinicError");
+  }
+
+  try {
+    final userInfoService = UserInformationService();
+    await userInfoService.fetchAndSaveUserInformation(
+      token: _loginResponseData!['token'] ?? '',
+      clinicId: _loginResponseData!['clinicid'] ?? '',
+      userId: _loginResponseData!['userId'] ?? '',
+      zoneid: _loginResponseData!['zoneid'] ?? 'Asia/Kolkata',
+      branchId: 1,
+    );
+  } catch (userError) {
+    debugPrint("⚠️ User information fetch failed: $userError");
+  }
+
+  if (!mounted) return;
+
+  // ✅ Save navigator BEFORE any async operations below
+  final navigator = Navigator.of(context);
+
+  // Close OTP dialog
+  navigator.popUntil((route) => route.isFirst);
+
+  // Check biometric availability
+  final biometricAvailable = await BiometricAuthService.isBiometricAvailable();
+  final biometricEnabled = await BiometricAuthService.isBiometricEnabled();
+
+  if (biometricAvailable && !biometricEnabled && mounted) {
+    _showEnableBiometricDialog();
+  } else {
+    navigator.pushReplacementNamed('/dashboard');
+  }
+}
+
+// ── Add this method too ──────────────────────────────────────────────────────
+
+void _showEnableBiometricDialog() async {
+  final label = await BiometricAuthService.getBiometricLabel();
+  if (!mounted) return;
+
+  // ✅ Use a local navigator key reference BEFORE async gap
+  final navigator = Navigator.of(context);
+
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Enable $label?',
+        style: GoogleFonts.poppins(
+          fontWeight: FontWeight.bold,
+          color: AppColors.textDark,
+        ),
+      ),
+      content: Text(
+        'Next time you open the app, use $label instead of your password for faster access.',
+        style: GoogleFonts.poppins(
+          fontSize: 14,
+          color: AppColors.textBodyColor,
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.of(ctx).pop(); // ✅ close dialog using ctx
+            navigator.pushReplacementNamed('/dashboard'); // ✅ use saved navigator
+          },
+          child: Text(
+            'Not Now',
+            style: GoogleFonts.poppins(color: Colors.grey),
+          ),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.primaryDarkBlue,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          onPressed: () async {
+            await BiometricAuthService.enableBiometric();
+            Navigator.of(ctx).pop(); // ✅ close dialog using ctx
+            navigator.pushReplacementNamed('/dashboard'); // ✅ use saved navigator
+          },
+          child: Text(
+            'Enable',
+            style: GoogleFonts.poppins(color: Colors.white),
+          ),
+        ),
+      ],
+    ),
+  );
+}
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -235,7 +366,7 @@ class _LoginPageState extends State<LoginPage> {
             children: [
               // 1. TOP SECTION: Logo
               Expanded(
-                flex: 4, // 40% height
+                flex: 4,
                 child: SafeArea(
                   child: Center(
                     child: SingleChildScrollView(
@@ -293,7 +424,7 @@ class _LoginPageState extends State<LoginPage> {
 
               // 2. BOTTOM SECTION: White Action Sheet (Form)
               Expanded(
-                flex: 6, // 60% height
+                flex: 6,
                 child: Container(
                   width: double.infinity,
                   decoration: const BoxDecoration(

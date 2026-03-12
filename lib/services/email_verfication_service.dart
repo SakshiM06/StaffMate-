@@ -1,14 +1,15 @@
+// lib/services/email_verification_service.dart
+
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class ForgetPasswordService {
-  static const String _baseUrl = "https://test.smartcarehis.com:8443/smartcaremain/passwordupdate";
+class EmailVerificationService {
+  static const String _baseUrl = "http://192.168.1.38:9090/smartcaremain/verifyemail";
   
   static const String _sendOtpUrl = "$_baseUrl/sendEmailOTP";
   static const String _verifyOtpUrl = "$_baseUrl/verifyOTP";
-  static const String _updatePasswordUrl = "$_baseUrl/updatePassword";
 
   Future<Map<String, String>> _getHeaders() async {
     try {
@@ -44,11 +45,12 @@ class ForgetPasswordService {
     }
   }
 
+  /// Send OTP to email for verification
   Future<Map<String, dynamic>> sendEmailOTP({
     required String email,
     required String userId,
   }) async {
-    debugPrint('Sending OTP to email: $email for user: $userId');
+    debugPrint('Sending email verification OTP to: $email for user: $userId');
     
     try {
       final headers = await _getHeaders();
@@ -95,7 +97,7 @@ class ForgetPasswordService {
           };
         }
       } else {
-        String errorMessage = 'Failed to send OTP (Status ${response.statusCode})';
+        String errorMessage = 'Failed to send verification OTP (Status ${response.statusCode})';
         
         try {
           final errorBody = jsonDecode(response.body);
@@ -115,7 +117,7 @@ class ForgetPasswordService {
         };
       }
     } catch (e, stackTrace) {
-      debugPrint('Error sending OTP: $e');
+      debugPrint('Error sending verification OTP: $e');
       debugPrint('StackTrace: $stackTrace');
       
       String errorMessage = 'Network error occurred';
@@ -133,12 +135,12 @@ class ForgetPasswordService {
     }
   }
 
-
+  /// Verify OTP for email verification
   Future<Map<String, dynamic>> verifyOTP({
     required String userOtp,
     required String userId,
   }) async {
-    debugPrint('Verifying OTP: $userOtp for user: $userId');
+    debugPrint('Verifying email OTP: $userOtp for user: $userId');
     
     try {
       final headers = await _getHeaders();
@@ -205,7 +207,7 @@ class ForgetPasswordService {
         };
       }
     } catch (e, stackTrace) {
-      debugPrint('Error verifying OTP: $e');
+      debugPrint('Error verifying email OTP: $e');
       debugPrint('StackTrace: $stackTrace');
       
       String errorMessage = 'Network error occurred';
@@ -223,224 +225,119 @@ class ForgetPasswordService {
     }
   }
 
-  Future<Map<String, dynamic>> updatePassword({
-    required String password,
-    required String email,
-    required String userId,
-  }) async {
-    debugPrint('Updating password for user: $userId');
-    
-    try {
-      final headers = await _getHeaders();
-      
-      if (password.length < 6) {
-        return {
-          'success': false,
-          'message': 'Password must be at least 6 characters long',
-        };
-      }
-     
-      final body = {
-        "password": password.trim(),
-        "email": email.trim(),
-        "userId": userId.trim(),
-      };
-      
-      debugPrint('Update Password URL: $_updatePasswordUrl');
-      debugPrint('Update Password Headers: $headers');
-      debugPrint('Update Password Body: ${body.toString().replaceAll(password, '***')}'); // Hide password in logs
-
-      final response = await http.post(
-        Uri.parse(_updatePasswordUrl),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30));
-
-      debugPrint('Update Password API Status Code: ${response.statusCode}');
-      debugPrint('Update Password API Response: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        
-        if (decoded is Map<String, dynamic>) {
-          final statusCode = decoded['status_code'] ?? 200;
-          final message = decoded['message'] ?? '';
-          final data = decoded['data'] ?? {};
-          
-          return {
-            'success': statusCode == 200,
-            'statusCode': statusCode,
-            'message': message,
-            'data': data,
-            'timestamp': decoded['timestamp'] ?? '',
-            'error': decoded['error'],
-          };
-        } else {
-          return {
-            'success': false,
-            'message': 'Invalid response format from server',
-            'error': 'Response is not in expected JSON format',
-          };
-        }
-      } else {
-        String errorMessage = 'Failed to update password (Status ${response.statusCode})';
-        
-        try {
-          final errorBody = jsonDecode(response.body);
-          if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ?? 
-                          errorBody['error'] ?? 
-                          errorMessage;
-          }
-        } catch (e) {
-          errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
-        }
-        
-        return {
-          'success': false,
-          'message': errorMessage,
-          'statusCode': response.statusCode,
-        };
-      }
-    } catch (e, stackTrace) {
-      debugPrint('Error updating password: $e');
-      debugPrint('StackTrace: $stackTrace');
-      
-      String errorMessage = 'Network error occurred';
-      if (e is http.ClientException) {
-        errorMessage = 'Connection failed. Please check your internet connection.';
-      } else if (e.toString().contains('TimeoutException')) {
-        errorMessage = 'Request timed out. Please try again.';
-      }
-      
-      return {
-        'success': false,
-        'message': errorMessage,
-        'error': e.toString(),
-      };
-    }
-  }
-
-  Future<Map<String, dynamic>> resetPassword({
+  /// Complete email verification flow (send OTP + verify OTP)
+  Future<Map<String, dynamic>> verifyEmail({
     required String email,
     required String userId,
     required String otp,
-    required String newPassword,
   }) async {
-    debugPrint('Starting password reset flow for user: $userId');
+    debugPrint('Starting email verification flow for user: $userId');
     
-   
-    debugPrint('Step 1: Sending OTP...');
+    // Step 1: Send OTP
+    debugPrint('Step 1: Sending verification OTP...');
     final otpResult = await sendEmailOTP(email: email, userId: userId);
     
     if (!otpResult['success']) {
       return otpResult;
     }
     
+    // Step 2: Verify OTP
     debugPrint('Step 2: Verifying OTP...');
     final verifyResult = await verifyOTP(userOtp: otp, userId: userId);
     
-    if (!verifyResult['success']) {
-      return verifyResult;
-    }
-    
-    debugPrint('Step 3: Updating password...');
-    final updateResult = await updatePassword(
-      password: newPassword,
-      email: email,
-      userId: userId,
-    );
-    
-    return updateResult;
+    return verifyResult;
   }
 
-
+  /// Validate email format
   bool isValidEmail(String email) {
     final emailRegex = RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
     return emailRegex.hasMatch(email.trim());
   }
 
+  /// Validate OTP format (6-digit number)
   bool isValidOTP(String otp) {
     final otpRegex = RegExp(r'^\d{6}$');
     return otpRegex.hasMatch(otp.trim());
   }
 
-  Map<String, dynamic> validatePassword(String password) {
-    final errors = <String>[];
-    
-    if (password.length < 6) {
-      errors.add('Password must be at least 6 characters long');
-    }
-    
-    return {
-      'isValid': errors.isEmpty,
-      'errors': errors,
-      'strength': _calculatePasswordStrength(password),
-    };
-  }
-
-  int _calculatePasswordStrength(String password) {
-    int strength = 0;
-    
-    if (password.length >= 6) strength++;
-    if (password.length >= 8) strength++;
-    if (RegExp(r'[A-Z]').hasMatch(password)) strength++;
-    if (RegExp(r'[a-z]').hasMatch(password)) strength++;
-    if (RegExp(r'[0-9]').hasMatch(password)) strength++;
-    if (RegExp(r'[!@#$%^&*(),.?":{}|<>]').hasMatch(password)) strength++;
-    
-    return strength.clamp(1, 5);
-  }
-
-  Future<void> saveResetData({
+  /// Save email verification data to SharedPreferences
+  Future<void> saveVerificationData({
     required String email,
     required String userId,
     String? otp,
-    String? resetToken,
+    String? verificationToken,
   }) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('reset_email', email);
-      await prefs.setString('reset_userId', userId);
+      await prefs.setString('verification_email', email);
+      await prefs.setString('verification_userId', userId);
       
       if (otp != null) {
-        await prefs.setString('reset_otp', otp);
+        await prefs.setString('verification_otp', otp);
       }
       
-      if (resetToken != null) {
-        await prefs.setString('reset_token', resetToken);
+      if (verificationToken != null) {
+        await prefs.setString('verification_token', verificationToken);
       }
       
-      debugPrint('Reset data saved to SharedPreferences');
+      debugPrint('Email verification data saved to SharedPreferences');
     } catch (e) {
-      debugPrint('Error saving reset data: $e');
+      debugPrint('Error saving verification data: $e');
     }
   }
 
-  Future<Map<String, String>> getResetData() async {
+  /// Get saved email verification data
+  Future<Map<String, String>> getVerificationData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       return {
-        'email': prefs.getString('reset_email') ?? '',
-        'userId': prefs.getString('reset_userId') ?? '',
-        'otp': prefs.getString('reset_otp') ?? '',
-        'resetToken': prefs.getString('reset_token') ?? '',
+        'email': prefs.getString('verification_email') ?? '',
+        'userId': prefs.getString('verification_userId') ?? '',
+        'otp': prefs.getString('verification_otp') ?? '',
+        'verificationToken': prefs.getString('verification_token') ?? '',
       };
     } catch (e) {
-      debugPrint('Error getting reset data: $e');
+      debugPrint('Error getting verification data: $e');
       return {};
     }
   }
-  Future<void> clearResetData() async {
+
+  /// Clear saved email verification data
+  Future<void> clearVerificationData() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('reset_email');
-      await prefs.remove('reset_userId');
-      await prefs.remove('reset_otp');
-      await prefs.remove('reset_token');
-      debugPrint('Reset data cleared from SharedPreferences');
+      await prefs.remove('verification_email');
+      await prefs.remove('verification_userId');
+      await prefs.remove('verification_otp');
+      await prefs.remove('verification_token');
+      debugPrint('Email verification data cleared from SharedPreferences');
     } catch (e) {
-      debugPrint('Error clearing reset data: $e');
+      debugPrint('Error clearing verification data: $e');
+    }
+  }
+
+  /// Check if email is already verified (can be implemented based on your app logic)
+  Future<bool> isEmailVerified(String email) async {
+    try {
+      // You might want to check with your backend or local storage
+      // This is a placeholder implementation
+      final prefs = await SharedPreferences.getInstance();
+      final verifiedEmail = prefs.getString('verified_email');
+      return verifiedEmail == email;
+    } catch (e) {
+      debugPrint('Error checking email verification status: $e');
+      return false;
+    }
+  }
+
+  /// Mark email as verified in local storage
+  Future<void> markEmailAsVerified(String email) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('verified_email', email);
+      debugPrint('Email marked as verified: $email');
+    } catch (e) {
+      debugPrint('Error marking email as verified: $e');
     }
   }
 }

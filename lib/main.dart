@@ -4,7 +4,7 @@ import 'package:staff_mate/pages/login_page.dart';
 import 'package:staff_mate/pages/dashboard_page.dart';
 import 'package:staff_mate/pages/nurse_page.dart';
 // import 'package:staff_mate/services/ipd_services.dart';
-import 'package:staff_mate/tabs/ipd_tab.dart';
+// import 'package:staff_mate/tabs/ipd_tab.dart';
 
 void main() {
   runApp(const MyApp());
@@ -24,7 +24,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const DashboardPage(),
         '/nurse': (context) => const NursePage(),
-        'services':(context) => const IPDTab(),
+        // 'services':(context) => const IPDTab(),
       },
     );
   }

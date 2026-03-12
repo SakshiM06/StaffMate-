@@ -540,9 +540,7 @@ class IpdService {
 
     return [];
   }
-
-  /// Fetch available beds in a specific ward
-  /// [wardId] - Ward ID (required)
+  /// [wardId] 
   Future<List<dynamic>> fetchAvailableBedsInWard({
     required String wardId,
   }) async {
@@ -593,7 +591,6 @@ class IpdService {
         debugPrint('Available Beds API Response Type: ${decoded.runtimeType}');
         debugPrint('Available Beds API Response: $decoded');
 
-        // Handle response format: {"bedlist": [{bedid: 1, bedname: "01"}, ...]}
         if (decoded is Map<String, dynamic>) {
           if (decoded.containsKey('bedlist')) {
             final bedList = decoded['bedlist'];
@@ -614,7 +611,6 @@ class IpdService {
               return data;
             }
           } else {
-            // Check if any value in the map is a list
             for (final entry in decoded.entries) {
               if (entry.value is List) {
                 debugPrint('Successfully fetched ${(entry.value as List).length} beds (from ${entry.key} key)');
@@ -646,8 +642,6 @@ class IpdService {
     return [];
   }
 
-  /// Shift patient bed
-  /// Shifts a patient to a different bed/ward
   Future<Map<String, dynamic>> shiftPatientBed({
     required String patientId,
     required String admissionId,
@@ -698,7 +692,6 @@ class IpdService {
 
       debugPrint('Shift Bed Headers: $headers');
 
-      // Parse integers where needed
       int admissionIdInt;
       try {
         admissionIdInt = int.parse(admissionId);
@@ -799,9 +792,7 @@ class IpdService {
       };
     }
   }
-
-  /// Add Standard Charges
-  /// Adds standard charges for a patient in a new ward
+  
   Future<Map<String, dynamic>> addStandardCharges({
     required String patientId,
     required String admissionId,
@@ -850,7 +841,6 @@ class IpdService {
 
       debugPrint('Add Standard Charges Headers: $headers');
 
-      // Parse integers where needed
       int admissionIdInt;
       try {
         admissionIdInt = int.parse(admissionId);
@@ -1308,8 +1298,8 @@ class IpdService {
           {
             "patientId": patientId,
             "description": description,
-            "practitionerId": practitionerIdInt,  // 🔥 SEND AS NUMBER
-            "conditionId": conditionIdInt,        // 🔥 SEND AS NUMBER
+            "practitionerId": practitionerIdInt, 
+            "conditionId": conditionIdInt,        
             "documentType": documentType,
             "ipdOrOpd": ipdOrOpdInt,
             "uploadby": uploadby,

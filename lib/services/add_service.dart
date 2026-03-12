@@ -154,4 +154,6 @@ class AddMedicineService {
     if (cached == null || cached.isEmpty) return null;
     return jsonDecode(cached) as Map<String, dynamic>;
   }
+
+  static Future<void> saveRemark(String text) async {}
 }

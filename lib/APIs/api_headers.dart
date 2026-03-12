@@ -1,4 +1,4 @@
-// lib/core/api/api_headers.dart
+
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,8 +15,8 @@ class ApiHeaders {
     final zoneId = prefs.getString('ZONEID') ?? 'Asia/Kolkata';
     final userId = prefs.getString('userId') ?? '';
     final branchId = prefs.getString('branchId') ?? '1';
-    final clinicId = prefs.getString('clinicId') ?? 'hr_staging';
-    final empid = prefs.getString('empId') ?? '';
+    final clinicId = prefs.getString('clinicId') ?? '';
+    // final empid = prefs.getString('empId') ?? '';
     
     // Exactly like your React apiHeaders function
     return {
@@ -28,7 +28,7 @@ class ApiHeaders {
       // 'userid': userId, // You can uncomment if needed
       // 'branchId': branchId, // You can uncomment if needed
       // 'patientid': patientId ?? '', // You can uncomment if needed
-      'empid': empid,
+      // 'empid': empid,
     };
   }
   

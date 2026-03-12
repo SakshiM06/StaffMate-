@@ -65,7 +65,7 @@ class StaffDOB {
       designation: json['designation']?.toString() ?? 
                    json['jobTitle']?.toString() ?? 
                    json['role']?.toString(),
-      email: json['email']?.toString() ?? 
+      email: json['']?.toString() ?? 
              json['emailId']?.toString(),
       mobile: json['mobile']?.toString() ?? 
               json['mobileNo']?.toString() ?? 

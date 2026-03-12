@@ -1,0 +1,3276 @@
+// chat_screen.dart - Complete redesigned version with modern, intuitive UI
+import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:staff_mate/ai/ticket_model.dart';
+import 'package:staff_mate/ai/ticket_screen.dart';
+import 'package:staff_mate/services/support_service.dart';
+import 'chat_provider.dart';
+import 'message_model.dart';
+
+// Extension for safe ticket ID display
+extension TicketIdExtension on String {
+  String get displayId {
+    if (length >= 6) {
+      return '#${substring(0, 6)}';
+    } else {
+      return '#$this';
+    }
+  }
+}
+
+class ChatScreen extends StatelessWidget {
+  const ChatScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return ChangeNotifierProvider(
+      create: (_) => ChatProvider(),
+      child: const Scaffold(
+        body: _ChatBody(),
+      ),
+    );
+  }
+}
+
+// ─── Fullscreen Image Viewer ─────────────────────────────────────────────────
+class _FullscreenImageViewer extends StatelessWidget {
+  final Uint8List imageData;
+  final String label;
+
+  const _FullscreenImageViewer({required this.imageData, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text(label, style: const TextStyle(color: Colors.white, fontSize: 14)),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 5.0,
+          child: Image.memory(imageData, fit: BoxFit.contain),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Inline Ticket Image (auto-fetch, expand/collapse, fullscreen on tap) ────
+class _InlineTicketImage extends StatefulWidget {
+  final int ticketId;
+  final String fileType; // 'user' or 'developer'
+  final String label;
+
+  const _InlineTicketImage({
+    required this.ticketId,
+    required this.fileType,
+    required this.label,
+  });
+
+  @override
+  State<_InlineTicketImage> createState() => _InlineTicketImageState();
+}
+
+class _InlineTicketImageState extends State<_InlineTicketImage> {
+  Uint8List? _imageData;
+  bool _loading = true;
+  bool _hasError = false;
+  bool _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchImage();
+  }
+
+  Future<void> _fetchImage() async {
+    try {
+      final result = await SupportService.viewTicketImageBase64(
+        ticketId: widget.ticketId,
+        fileType: widget.fileType.toUpperCase(),
+      );
+      if (!mounted) return;
+
+      if (result['success'] == true && result['data'] != null) {
+        final raw = result['data']['imageBase64']?.toString() ?? '';
+        if (raw.isNotEmpty) {
+          final pure = raw.contains(',') ? raw.split(',').last : raw;
+          final bytes = base64Decode(pure);
+          setState(() {
+            _imageData = bytes;
+            _loading = false;
+          });
+          return;
+        }
+      }
+      setState(() {
+        _loading = false;
+        _hasError = true;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+        });
+      }
+    }
+  }
+
+  void _openFullscreen() {
+    if (_imageData == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _FullscreenImageViewer(
+          imageData: _imageData!,
+          label: '${widget.label} — Ticket #${widget.ticketId}',
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Container(
+        height: 70,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    if (_hasError || _imageData == null) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.image_not_supported, size: 13, color: Colors.grey.shade400),
+            const SizedBox(width: 6),
+            Text(
+              'No ${widget.label} image',
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Tap header to expand/collapse
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.blue.shade100),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.image, size: 13, color: Colors.blue.shade700),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.blue.shade700,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Icon(
+                  _expanded ? Icons.expand_less : Icons.expand_more,
+                  size: 16,
+                  color: Colors.blue.shade700,
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        // Expandable image — tap to open fullscreen
+        if (_expanded) ...[
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: _openFullscreen,
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.memory(
+                    _imageData!,
+                    width: double.infinity,
+                    height: 180,
+                    fit: BoxFit.cover,
+                  ),
+                ),
+                Container(
+                  margin: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.fullscreen, size: 12, color: Colors.white),
+                      SizedBox(width: 3),
+                      Text(
+                        'Tap to expand',
+                        style: TextStyle(color: Colors.white, fontSize: 9),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+// Modern Gradient App Bar
+class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const _ModernAppBar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF1A237E), Color(0xFF283593)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: AppBar(
+        title: Row(
+          children: [
+            TweenAnimationBuilder(
+              tween: Tween<double>(begin: 0.8, end: 1.0),
+              duration: const Duration(milliseconds: 800),
+              curve: Curves.elasticOut,
+              builder: (context, double scale, child) {
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 2,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.support_agent,
+                      color: Color(0xFF1A237E),
+                      size: 24,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Support Assistant',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade400,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.green.shade400.withValues(alpha: 0.5),
+                            blurRadius: 4,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Online • Ready to help',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white70,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
+        ),
+        actions: [
+          _buildActionButton(
+            icon: Icons.refresh,
+            onPressed: () {
+              context.read<ChatProvider>().clearChat();
+              _showSnackBar(context, 'Chat restarted');
+            },
+            tooltip: 'Restart Chat',
+          ),
+          _buildActionButton(
+            icon: Icons.close,
+            onPressed: () => Navigator.pop(context),
+            tooltip: 'Close',
+          ),
+        ],
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required VoidCallback onPressed,
+    required String tooltip,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        shape: BoxShape.circle,
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: Colors.white),
+        onPressed: onPressed,
+        tooltip: tooltip,
+      ),
+    );
+  }
+
+  void _showSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  @override
+  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+}
+
+// Main Chat Body with Modern Design
+class _ChatBody extends StatefulWidget {
+  const _ChatBody();
+
+  @override
+  State<_ChatBody> createState() => _ChatBodyState();
+}
+
+class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
+  final ScrollController _scrollController = ScrollController();
+  final TextEditingController _textController = TextEditingController();
+  final FocusNode _focusNode = FocusNode();
+  late AnimationController _animationController;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ChatProvider>().loadChatHistory();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<ChatProvider>(
+      builder: (context, provider, child) {
+        // Auto-scroll when messages change
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToBottom();
+        });
+        
+        return Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.grey.shade50,
+                Colors.white,
+              ],
+            ),
+          ),
+          child: Column(
+            children: [
+              const _ModernAppBar(),
+              
+              // Messages List
+              Expanded(
+                child: provider.isLoading && provider.messages.isEmpty
+                    ? _buildShimmerLoading()
+                    : provider.messages.isEmpty
+                        ? _buildModernEmptyState(context)
+                        : ListView.builder(
+                            controller: _scrollController,
+                            padding: const EdgeInsets.all(16),
+                            itemCount: provider.messages.length,
+                            itemBuilder: (context, index) {
+                              final message = provider.messages[index];
+                              return _ModernMessageBubble(
+                                message: message,
+                                onOptionSelected: (reply) => _handleQuickReply(reply, provider),
+                                index: index,
+                              );
+                            },
+                          ),
+              ),
+              
+              // Typing Indicator
+              if (provider.isBotTyping) const _ModernTypingIndicator(),
+              
+              // Input Area
+              _buildModernInputArea(provider),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildModernEmptyState(BuildContext context) {
+    return Center(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TweenAnimationBuilder(
+              tween: Tween<double>(begin: 0.8, end: 1.0),
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.elasticOut,
+              builder: (context, double scale, child) {
+                return Transform.scale(
+                  scale: scale,
+                  child: Container(
+                    width: 120,
+                    height: 120,
+                    decoration: BoxDecoration(
+                      gradient: const RadialGradient(
+                        colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)],
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.blue.withValues(alpha: 0.2),
+                          blurRadius: 30,
+                          spreadRadius: 5,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.support_agent,
+                      size: 60,
+                      color: Color(0xFF1A237E),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Hello! How can we help you today?',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1A237E),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Choose an option below to get started',
+              style: TextStyle(
+                fontSize: 14,
+                color: Colors.grey.shade600,
+              ),
+            ),
+            const SizedBox(height: 32),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: [
+                  _buildModernActionChip('🎫 Create Ticket', Colors.blue, context),
+                  _buildModernActionChip('📋 View Tickets', Colors.green, context),
+                  _buildModernActionChip('🔍 Track Ticket', Colors.orange, context),
+                  _buildModernActionChip('🔐 Password Reset', Colors.red, context),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernActionChip(String label, Color color, BuildContext context) {
+    return Material(
+      elevation: 2,
+      shadowColor: color.withValues(alpha: 0.3),
+      borderRadius: BorderRadius.circular(30),
+      child: InkWell(
+        onTap: () => _handleQuickReply(label, context.read<ChatProvider>()),
+        borderRadius: BorderRadius.circular(30),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [color, color.withValues(alpha: 0.8)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(30),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildModernInputArea(ChatProvider provider) {
+    final isTyping = _textController.text.isNotEmpty;
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: Icon(Icons.mic, color: Colors.grey.shade700),
+              onPressed: () {
+                _showSnackBar(context, 'Voice input coming soon!');
+              },
+            ),
+          ),
+          
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                  color: isTyping ? Colors.blue.shade300 : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: TextField(
+                controller: _textController,
+                focusNode: _focusNode,
+                onChanged: (value) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: _getHintText(provider.currentInputType),
+                  hintStyle: TextStyle(
+                    color: provider.currentInputType != null 
+                        ? Colors.blue.shade700 
+                        : Colors.grey.shade500,
+                  ),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 15,
+                  ),
+                  prefixIcon: provider.currentInputType != null
+                      ? Icon(
+                          _getInputIcon(provider.currentInputType!),
+                          color: Colors.blue.shade700,
+                        )
+                      : null,
+                ),
+                onSubmitted: (_) => _sendMessage(provider),
+                textInputAction: TextInputAction.send,
+                obscureText: provider.currentInputType == 'new_password' || 
+                            provider.currentInputType == 'new_password_input',
+                keyboardType: _getKeyboardType(provider.currentInputType),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeInOut,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isTyping 
+                    ? [Colors.green, Colors.green.shade700]
+                    : [const Color(0xFF1A237E), const Color(0xFF283593)],
+              ),
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: (isTyping ? Colors.green : const Color(0xFF1A237E))
+                      .withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: IconButton(
+              icon: Icon(
+                isTyping ? Icons.send : Icons.send,
+                color: Colors.white,
+              ),
+              onPressed: () => _sendMessage(provider),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildShimmerLoading() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: 5,
+      itemBuilder: (context, index) {
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Row(
+            mainAxisAlignment: index.isEven ? MainAxisAlignment.start : MainAxisAlignment.end,
+            children: [
+              if (index.isEven) ...[
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Container(
+                width: 200,
+                height: 60,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              if (index.isOdd) ...[
+                const SizedBox(width: 8),
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Colors.grey,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _handleQuickReply(String reply, ChatProvider provider) {
+    provider.processOption(reply).then((_) {
+      // Scroll will happen automatically via the post frame callback in build method
+    });
+  }
+
+  void _sendMessage(ChatProvider provider) {
+    final text = _textController.text.trim();
+    if (text.isEmpty) return;
+
+    _textController.clear();
+    setState(() {});
+
+    if (provider.currentInputType != null) {
+      provider.processTextInput(text).then((_) {
+        // Scroll will happen automatically via the post frame callback in build method
+      });
+    } else {
+      provider.processOption(text).then((_) {
+        // Scroll will happen automatically via the post frame callback in build method
+      });
+    }
+  }
+
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  void _showSnackBar(BuildContext context, String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+    );
+  }
+
+  String _getHintText(String? inputType) {
+    switch (inputType) {
+      case 'user_id_input':
+        return 'Enter your User ID...';
+      case 'email':
+        return 'Enter your email address...';
+      case 'otp':
+        return 'Enter 6-digit OTP...';
+      case 'new_password':
+      case 'new_password_input':
+        return 'Enter new password...';
+      default:
+        return 'Type your message...';
+    }
+  }
+
+  IconData _getInputIcon(String inputType) {
+    switch (inputType) {
+      case 'user_id_input':
+        return Icons.person_outline;
+      case 'email':
+        return Icons.email_outlined;
+      case 'otp':
+        return Icons.lock_outline;
+      case 'new_password':
+      case 'new_password_input':
+        return Icons.vpn_key;
+      default:
+        return Icons.message;
+    }
+  }
+
+  TextInputType _getKeyboardType(String? inputType) {
+    switch (inputType) {
+      case 'email':
+        return TextInputType.emailAddress;
+      case 'otp':
+        return TextInputType.number;
+      default:
+        return TextInputType.text;
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    _textController.dispose();
+    _focusNode.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+}
+
+// Modern Message Bubble
+class _ModernMessageBubble extends StatelessWidget {
+  final MessageModel message;
+  final Function(String) onOptionSelected;
+  final int index;
+
+  const _ModernMessageBubble({
+    required this.message,
+    required this.onOptionSelected,
+    required this.index,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isUser = message.isUser;
+    
+    return TweenAnimationBuilder(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 300 + (index * 50)),
+      curve: Curves.easeOut,
+      builder: (context, double opacity, child) {
+        return Opacity(
+          opacity: opacity,
+          child: Transform.translate(
+            offset: Offset(0, 20 * (1 - opacity)),
+            child: child,
+          ),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        child: Column(
+          crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (!isUser) _buildAvatar(Icons.support_agent, Colors.blue),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isUser 
+                            ? [const Color(0xFF1A237E), const Color(0xFF283593)]
+                            : [Colors.white, Colors.grey.shade50],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(20),
+                        topRight: const Radius.circular(20),
+                        bottomLeft: Radius.circular(isUser ? 20 : 4),
+                        bottomRight: Radius.circular(isUser ? 4 : 20),
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 5,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildMessageText(),
+                        const SizedBox(height: 4),
+                        Text(
+                          message.formattedTime,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: isUser ? Colors.white70 : Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (isUser) ...[
+                  const SizedBox(width: 8),
+                  _buildAvatar(Icons.person, Colors.green),
+                ],
+              ],
+            ),
+            
+            // Quick Replies
+            if (!isUser && message.hasQuickReplies) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: message.quickReplies!.map((option) {
+                    return _buildModernOptionChip(option);
+                  }).toList(),
+                ),
+              ),
+            ],
+            
+            // Ticket Form
+            if (!isUser && message.type == 'ticket_form') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _ModernTicketForm(
+                  onSubmit: (title, description, priority, images) async {
+                    final provider = context.read<ChatProvider>();
+                    
+                    // Show loading message
+                    final loadingMsg = MessageModel(
+                      id: DateTime.now().toString(),
+                      text: '⏳ Creating your ticket...',
+                      isUser: false,
+                      timestamp: DateTime.now(),
+                      type: 'loading',
+                    );
+                    provider.addMessage(loadingMsg);
+                    
+                    try {
+                      final prefs = await SharedPreferences.getInstance();
+                      final userId = prefs.getString('userId') ?? '';
+                      
+                      final result = await SupportService.createTicket(
+                        title: title,
+                        description: description,
+                        priority: priority,
+                        userId: userId,
+                        images: images.isNotEmpty ? images : null,
+                      );
+                      
+                      // Extract ticket ID correctly from response
+                      String ticketId = 'N/A';
+                      if (result['data'] != null) {
+                        if (result['data']['ticketId'] != null) {
+                          ticketId = result['data']['ticketId'].toString();
+                        } else if (result['data']['data'] != null && result['data']['data']['ticketId'] != null) {
+                          ticketId = result['data']['data']['ticketId'].toString();
+                        }
+                      }
+                      
+                      // Remove loading message
+                      provider.messages.removeLast();
+                      
+                      // Add success message with ticket ID
+                      final successMsg = MessageModel(
+                        id: DateTime.now().toString(),
+                        text: '✅ **Ticket Created Successfully!**\n\n'
+                              '**Ticket ID:** `$ticketId`\n'
+                              '**Title:** $title\n'
+                              '**Priority:** $priority\n\n'
+                              'Our support team will review your request shortly.',
+                        isUser: false,
+                        timestamp: DateTime.now(),
+                        type: 'ticket_confirmation',
+                        ticketId: ticketId,
+                        quickReplies: const [
+                          '📋 View My Tickets',
+                          '🎫 Create Another',
+                          '🏠 Main Menu',
+                        ],
+                      );
+                      provider.addMessage(successMsg);
+                      
+                    } catch (e) {
+                      // Remove loading message
+                      provider.messages.removeLast();
+                      
+                      // Show error message
+                      final errorMsg = MessageModel(
+                        id: DateTime.now().toString(),
+                        text: '❌ **Failed to create ticket**\n\n'
+                              'Error: ${e.toString().replaceAll('Exception:', '')}\n\n'
+                              'Please try again.',
+                        isUser: false,
+                        timestamp: DateTime.now(),
+                        type: 'error',
+                        quickReplies: const [
+                          '🔄 Try Again',
+                          '🎫 Create Ticket',
+                          '🏠 Main Menu',
+                        ],
+                      );
+                      provider.addMessage(errorMsg);
+                    }
+                  },
+                  onCancel: () {
+                    final cancelMsg = MessageModel(
+                      id: DateTime.now().toString(),
+                      text: '❌ Ticket creation cancelled.',
+                      isUser: false,
+                      timestamp: DateTime.now(),
+                      type: 'info',
+                      quickReplies: const ['🎫 Create Ticket', '🏠 Main Menu'],
+                    );
+                    context.read<ChatProvider>().addMessage(cancelMsg);
+                  },
+                ),
+              ),
+            ],
+            
+            // Status Selection for View Tickets (4 options)
+            if (!isUser && message.type == 'status_selection' && 
+                message.tempData?['action'] == 'view_tickets_by_status') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildViewTicketsStatusOptions(),
+              ),
+            ],
+            
+            // Status Selection for Track Tickets (4 options)
+            if (!isUser && message.type == 'status_selection' && 
+                message.tempData?['action'] == 'track_tickets_by_status') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildTrackTicketsStatusOptions(),
+              ),
+            ],
+            
+            // Ticket List Display by Status (View Tickets)
+            if (!isUser && message.isTicketList && message.tickets != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: TicketListWidget(
+                  tickets: message.tickets!,
+                  onTicketTap: (ticket) {
+                    onOptionSelected('🔍 View Ticket #${ticket.id}');
+                  },
+                  onQuickReply: onOptionSelected,
+                ),
+              ),
+            ],
+            
+            if (!isUser && message.type == 'track_ticket_list' && message.tickets != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _TrackTicketListWidget(
+                  tickets: message.tickets!,
+                  onTicketTap: (ticket) {
+                    onOptionSelected('🔍 Track #${ticket.id}');
+                  },
+                  onQuickReply: onOptionSelected,
+                ),
+              ),
+            ],
+            
+            // Track Ticket Detail Display
+            if (!isUser && message.type == 'track_ticket_detail' && message.ticket != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _TrackTicketDetailCard(
+                  ticket: message.ticket!,
+                  onOptionSelected: onOptionSelected,
+                ),
+              ),
+            ],
+            
+            // Status Selection for Updating Status
+            if (!isUser && message.type == 'status_selection' && 
+                message.tempData?['ticketId'] != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildUpdateStatusOptions(message.tempData?['ticketId'] ?? ''),
+              ),
+            ],
+            
+            // Resolution Input Display
+            if (!isUser && message.type == 'resolution_input') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildResolutionInput(message.tempData?['ticketId'] ?? ''),
+              ),
+            ],
+            
+            // Ticket Detail Display (View Ticket)
+            if (!isUser && message.type == 'ticket_detail' && message.ticket != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: TicketDetailWidget(
+                  ticket: message.ticket!,
+                  onQuickReply: onOptionSelected,
+                ),
+              ),
+            ],
+            
+            // Success Message with Ticket ID
+            if (!isUser && message.type == 'ticket_confirmation') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(Icons.check, color: Colors.white, size: 16),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              message.text,
+                              style: const TextStyle(fontSize: 14),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (message.ticketId != null) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade100,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.confirmation_number,
+                                size: 14,
+                                color: Colors.green,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Ticket ID: ${message.ticketId}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Build status options for viewing tickets
+  Widget _buildViewTicketsStatusOptions() {
+    return _buildStatusOptionsContainer(
+      title: 'View Tickets by Status',
+      icon: Icons.filter_list,
+      options: [
+        _buildStatusOption('OPEN', Icons.email, Colors.blue, '📋 OPEN Tickets'),
+        _buildStatusOption('IN_PROGRESS', Icons.access_time, Colors.orange, '📋 IN_PROGRESS Tickets'),
+        _buildStatusOption('RESOLVED', Icons.check_circle, Colors.green, '📋 RESOLVED Tickets'),
+        _buildStatusOption('CLOSED', Icons.lock, Colors.grey, '📋 CLOSED Tickets'),
+      ],
+    );
+  }
+
+  // Build status options for tracking tickets
+  Widget _buildTrackTicketsStatusOptions() {
+    return _buildStatusOptionsContainer(
+      title: 'Track Tickets by Status',
+      icon: Icons.track_changes,
+      options: [
+        _buildStatusOption('OPEN', Icons.email, Colors.blue, '🔍 OPEN Tickets'),
+        _buildStatusOption('IN_PROGRESS', Icons.access_time, Colors.orange, '🔍 IN_PROGRESS Tickets'),
+        _buildStatusOption('RESOLVED', Icons.check_circle, Colors.green, '🔍 RESOLVED Tickets'),
+        _buildStatusOption('CLOSED', Icons.lock, Colors.grey, '🔍 CLOSED Tickets'),
+      ],
+    );
+  }
+
+  // Build status options container
+  Widget _buildStatusOptionsContainer({
+    required String title,
+    required IconData icon,
+    required List<Widget> options,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF283593)],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(4),
+            child: Column(children: options),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: _buildActionButton(
+              icon: Icons.home,
+              label: 'Main Menu',
+              onTap: () => onOptionSelected('🏠 Main Menu'),
+              height: 30,
+              fontSize: 10,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Build status option
+  Widget _buildStatusOption(String status, IconData icon, Color color, String quickReply) {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      leading: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: color, size: 14),
+      ),
+      title: Text(
+        status,
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          color: color,
+          fontSize: 12,
+        ),
+      ),
+      trailing: Icon(Icons.arrow_forward_ios, size: 10, color: Colors.grey.shade400),
+      onTap: () => onOptionSelected(quickReply),
+    );
+  }
+
+  // Build status options for updating ticket status
+  Widget _buildUpdateStatusOptions(String ticketId) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF283593)],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.edit, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  'Select New Status',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(4),
+            child: Column(
+              children: [
+                _buildUpdateStatusOption('OPEN', Icons.email, Colors.blue, ticketId),
+                _buildUpdateStatusOption('IN_PROGRESS', Icons.access_time, Colors.orange, ticketId),
+                _buildUpdateStatusOption('RESOLVED', Icons.check_circle, Colors.green, ticketId),
+                _buildUpdateStatusOption('REOPENED', Icons.refresh, Colors.purple, ticketId),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUpdateStatusOption(String status, IconData icon, Color color, String ticketId) {
+    return ListTile(
+      dense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      leading: Container(
+        padding: const EdgeInsets.all(6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.1),
+          shape: BoxShape.circle,
+        ),
+        child: Icon(icon, color: color, size: 14),
+      ),
+      title: Text(
+        status,
+        style: TextStyle(
+          fontWeight: FontWeight.w500,
+          color: color,
+          fontSize: 12,
+        ),
+      ),
+      onTap: () => onOptionSelected('✅ Set Status: $status for #$ticketId'),
+    );
+  }
+
+  Widget _buildResolutionInput(String ticketId) {
+    final controller = TextEditingController();
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF283593)],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.note_add, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  'Add Resolution',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              children: [
+                TextField(
+                  controller: controller,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Type resolution details...',
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    filled: true,
+                    fillColor: Colors.grey.shade50,
+                    contentPadding: const EdgeInsets.all(8),
+                  ),
+                  style: const TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => onOptionSelected('❌ Cancel'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: const Text('Cancel', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          if (controller.text.isNotEmpty) {
+                            onOptionSelected('📝 Submit Resolution: ${controller.text}');
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1A237E),
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        child: const Text('Submit', style: TextStyle(fontSize: 11)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAvatar(IconData icon, Color color) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color, color.withValues(alpha: 0.7)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.3),
+            blurRadius: 6,
+            spreadRadius: 1,
+          ),
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: 18),
+    );
+  }
+
+  Widget _buildMessageText() {
+    if (message.validationError != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message.text,
+            style: TextStyle(
+              color: message.isUser ? Colors.white : Colors.black87,
+              fontSize: 13,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, size: 14, color: Colors.red.shade700),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    message.validationError!,
+                    style: TextStyle(
+                      color: Colors.red.shade700,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(
+      message.text,
+      style: TextStyle(
+        color: message.isUser ? Colors.white : Colors.black87,
+        fontSize: 13,
+        height: 1.4,
+      ),
+    );
+  }
+
+  Widget _buildModernOptionChip(String option) {
+    Color getChipColor() {
+      if (option.contains('Generate')) return Colors.purple;
+      if (option.contains('Use')) return Colors.green;
+      if (option.contains('Type')) return Colors.blue;
+      if (option.contains('Cancel')) return Colors.red;
+      if (option.contains('Resend')) return Colors.orange;
+      if (option.contains('View')) return Colors.teal;
+      if (option.contains('Create')) return Colors.indigo;
+      if (option.contains('Track')) return Colors.orange;
+      if (option.contains('Update')) return Colors.amber;
+      return Colors.grey;
+    }
+
+    final color = getChipColor();
+    
+    return Material(
+      elevation: 1,
+      shadowColor: color.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () => onOptionSelected(option),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Text(
+            option,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w500,
+              fontSize: 11,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    double? height,
+    double? fontSize,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: height != null ? height! * 0.5 : 14, color: Colors.grey.shade700),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: fontSize ?? 10,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Track Ticket List Widget
+class _TrackTicketListWidget extends StatelessWidget {
+  final List<TicketModel> tickets;
+  final Function(TicketModel) onTicketTap;
+  final Function(String) onQuickReply;
+
+  const _TrackTicketListWidget({
+    required this.tickets,
+    required this.onTicketTap,
+    required this.onQuickReply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF283593)],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.track_changes, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text(
+                  'Select Ticket to Track',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Ticket List
+          ...tickets.take(10).map((ticket) => _buildTicketItem(ticket)),
+          
+          // Quick Actions
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.home_outlined,
+                    label: 'Main Menu',
+                    onTap: () => onQuickReply('🏠 Main Menu'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTicketItem(TicketModel ticket) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onTicketTap(ticket),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade200,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Status Indicator
+              Container(
+                width: 3,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: ticket.statusColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              
+              // Icon
+              Container(
+                width: 35,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: ticket.statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  ticket.statusIcon,
+                  color: ticket.statusColor,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              
+              // Content - Simplified: Title, Status, ID only
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ticket.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: ticket.statusColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            ticket.statusText,
+                            style: TextStyle(
+                              fontSize: 8,
+                              color: ticket.statusColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '#${ticket.id}',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Arrow
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 10,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 14, color: Colors.grey.shade700),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Track Ticket Detail Card
+class _TrackTicketDetailCard extends StatelessWidget {
+  final TicketModel ticket;
+  final Function(String) onOptionSelected;
+
+  const _TrackTicketDetailCard({
+    required this.ticket,
+    required this.onOptionSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ticketIdInt = int.tryParse(ticket.id);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with Ticket ID and Status
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  ticket.statusColor,
+                  ticket.statusColor.withValues(alpha: 0.8),
+                ],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    ticket.statusIcon,
+                    color: Colors.white,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Ticket #${ticket.id}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          ticket.statusText,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Content
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title
+                Text(
+                  ticket.title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                
+                // Description
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    ticket.description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(height: 12),
+                
+                // Dates Grid
+                _buildInfoRow(
+                  'Created:', 
+                  _formatDateTime(ticket.createdAt),
+                  Icons.calendar_today,
+                  Colors.blue,
+                ),
+                if (ticket.resolvedAt != null)
+                  _buildInfoRow(
+                    'Resolved:',
+                    _formatDateTime(ticket.resolvedAt!),
+                    Icons.check_circle,
+                    Colors.green,
+                  ),
+                if (ticket.closedDate != null)
+                  _buildInfoRow(
+                    'Closed:',
+                    _formatDateTime(ticket.closedDate!),
+                    Icons.lock,
+                    Colors.grey,
+                  ),
+                
+                // Resolution Summary
+                if (ticket.currentResolutionSummary != null && 
+                    ticket.currentResolutionSummary!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.green.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.description, size: 12, color: Colors.green.shade700),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Resolution',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.green.shade700,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          ticket.currentResolutionSummary!,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Colors.green.shade800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Inline images
+                if (ticketIdInt != null && ticket.hasUserImage) ...[
+                  const SizedBox(height: 10),
+                  _InlineTicketImage(
+                    ticketId: ticketIdInt,
+                    fileType: 'user',
+                    label: 'User Attachment',
+                  ),
+                ],
+                if (ticketIdInt != null && ticket.hasResUserImage) ...[
+                  const SizedBox(height: 8),
+                  _InlineTicketImage(
+                    ticketId: ticketIdInt,
+                    fileType: 'developer',
+                    label: 'Developer Attachment',
+                  ),
+                ],
+              ],
+            ),
+          ),
+          
+          // Action Buttons
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(color: Colors.grey.shade200),
+              ),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    // Expanded(
+                    //   child: _buildActionButton2(
+                    //     icon: Icons.edit,
+                    //     label: 'Update Status',
+                    //     onTap: () => onOptionSelected('✏️ Update Status for #${ticket.id}'),
+                    //   ),
+                    // ),
+                    const SizedBox(width: 6),
+                    // Expanded(
+                    //   child: _buildActionButton2(
+                    //     icon: Icons.note_add,
+                    //     label: 'Add Resolution',
+                    //     onTap: () => onOptionSelected('📝 Add Resolution for #${ticket.id}'),
+                    //   ),
+                    // ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildActionButton2(
+                        icon: Icons.arrow_back,
+                        label: 'Back',
+                        onTap: () => onOptionSelected('🔍 Track Ticket'),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: _buildActionButton2(
+                        icon: Icons.home,
+                        label: 'Main Menu',
+                        onTap: () => onOptionSelected('🏠 Main Menu'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, IconData icon, Color color) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildActionButton2({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 12, color: Colors.grey.shade700),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDateTime(DateTime date) {
+    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+  }
+}
+
+// Modern Ticket Form Widget
+class _ModernTicketForm extends StatefulWidget {
+  final Function(String, String, String, List<File>) onSubmit;
+  final VoidCallback onCancel;
+
+  const _ModernTicketForm({
+    required this.onSubmit,
+    required this.onCancel,
+  });
+
+  @override
+  State<_ModernTicketForm> createState() => _ModernTicketFormState();
+}
+
+class _ModernTicketFormState extends State<_ModernTicketForm> {
+  final _formKey = GlobalKey<FormState>();
+  final _titleController = TextEditingController();
+  final _descriptionController = TextEditingController();
+  
+  String _selectedPriority = 'MEDIUM';
+  List<File> _selectedImages = [];
+  bool _isUploading = false;
+  bool _isSubmitting = false;
+
+  final List<String> _priorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white,
+                Colors.grey.shade50,
+              ],
+            ),
+          ),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              children: [
+                // Header
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF1A237E), Color(0xFF283593)],
+                    ),
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(12),
+                      topRight: Radius.circular(12),
+                    ),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.support_agent, color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Create Support Ticket',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                // Form Fields
+                Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Column(
+                    children: [
+                      // Title Field
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: TextFormField(
+                          controller: _titleController,
+                          decoration: InputDecoration(
+                            hintText: 'Title',
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            prefixIcon: Icon(Icons.title, color: Colors.grey.shade600, size: 16),
+                          ),
+                          style: const TextStyle(fontSize: 12),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Required';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 6),
+                      
+                      // Description Field
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: TextFormField(
+                          controller: _descriptionController,
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            hintText: 'Description',
+                            border: InputBorder.none,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                            prefixIcon: Icon(Icons.description, color: Colors.grey.shade600, size: 16),
+                          ),
+                          style: const TextStyle(fontSize: 12),
+                          validator: (value) {
+                            if (value == null || value.isEmpty) {
+                              return 'Required';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 6),
+                      
+                      // Priority Selection
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
+                        child: DropdownButtonFormField<String>(
+                          decoration: const InputDecoration(
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                          value: _selectedPriority,
+                          items: _priorities.map((priority) {
+                            return DropdownMenuItem(
+                              value: priority,
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: _getPriorityColor(priority),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(priority, style: const TextStyle(fontSize: 11)),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                          onChanged: (value) {
+                            setState(() {
+                              _selectedPriority = value!;
+                            });
+                          },
+                          icon: Icon(Icons.arrow_drop_down, color: Colors.grey.shade600, size: 18),
+                          style: const TextStyle(fontSize: 11),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 6),
+                      
+                      // Image Upload Section
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.image, size: 14, color: Colors.grey.shade700),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Attachments (Optional)',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w500,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            
+                            // Image previews
+                            if (_selectedImages.isNotEmpty) ...[
+                              SizedBox(
+                                height: 40,
+                                child: ListView.builder(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: _selectedImages.length,
+                                  itemBuilder: (context, index) {
+                                    return Stack(
+                                      children: [
+                                        Container(
+                                          width: 40,
+                                          height: 40,
+                                          margin: const EdgeInsets.only(right: 4),
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(4),
+                                            border: Border.all(color: Colors.grey.shade300),
+                                            image: DecorationImage(
+                                              image: FileImage(_selectedImages[index]),
+                                              fit: BoxFit.cover,
+                                            ),
+                                          ),
+                                        ),
+                                        Positioned(
+                                          top: 0,
+                                          right: 0,
+                                          child: GestureDetector(
+                                            onTap: () {
+                                              setState(() {
+                                                _selectedImages.removeAt(index);
+                                              });
+                                            },
+                                            child: Container(
+                                              padding: const EdgeInsets.all(2),
+                                              decoration: const BoxDecoration(
+                                                color: Colors.red,
+                                                shape: BoxShape.circle,
+                                              ),
+                                              child: const Icon(
+                                                Icons.close,
+                                                size: 8,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                            ],
+                            
+                            // Upload button
+                            InkWell(
+                              onTap: _isUploading ? null : _pickImages,
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.symmetric(vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue.shade50,
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(
+                                    color: Colors.blue.shade200,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    if (_isUploading)
+                                      const SizedBox(
+                                        width: 12,
+                                        height: 12,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                                        ),
+                                      )
+                                    else
+                                      Icon(Icons.cloud_upload, size: 12, color: Colors.blue.shade700),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      _isUploading ? 'Uploading...' : 'Upload Images',
+                                      style: TextStyle(
+                                        color: Colors.blue.shade700,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            
+                            const SizedBox(height: 2),
+                            Text(
+                              'Max 1MB • JPG, PNG',
+                              style: TextStyle(
+                                fontSize: 8,
+                                color: Colors.grey.shade500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 10),
+                      
+                      // Action Buttons
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: _isSubmitting ? null : widget.onCancel,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.grey.shade700,
+                                side: BorderSide(color: Colors.grey.shade300),
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              child: const Text('Cancel', style: TextStyle(fontSize: 11)),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: _isSubmitting ? null : _submitForm,
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1A237E),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                              ),
+                              child: _isSubmitting
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Text('Create', style: TextStyle(fontSize: 11)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'LOW': return Colors.green;
+      case 'MEDIUM': return Colors.orange;
+      case 'HIGH': return Colors.deepOrange;
+      case 'CRITICAL': return Colors.red;
+      default: return Colors.grey;
+    }
+  }
+
+  Future<void> _pickImages() async {
+    setState(() => _isUploading = true);
+    
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        allowMultiple: true,
+      );
+      
+      if (result != null) {
+        final validFiles = <File>[];
+        
+        for (var i = 0; i < result.files.length; i++) {
+          final file = result.files[i];
+          if (file.size <= 1048576) {
+            validFiles.add(File(file.path!));
+          }
+        }
+        
+        setState(() {
+          _selectedImages.addAll(validFiles);
+          _isUploading = false;
+        });
+      } else {
+        setState(() => _isUploading = false);
+      }
+    } catch (e) {
+      setState(() => _isUploading = false);
+    }
+  }
+
+  void _submitForm() async {
+    if (_formKey.currentState!.validate()) {
+      setState(() => _isSubmitting = true);
+      
+      await widget.onSubmit(
+        _titleController.text,
+        _descriptionController.text,
+        _selectedPriority,
+        _selectedImages,
+      );
+      
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _descriptionController.dispose();
+    super.dispose();
+  }
+}
+
+// Modern Ticket List Widget for View Tickets - Simplified
+class TicketListWidget extends StatelessWidget {
+  final List<TicketModel> tickets;
+  final Function(TicketModel) onTicketTap;
+  final Function(String) onQuickReply;
+
+  const TicketListWidget({
+    super.key,
+    required this.tickets,
+    required this.onTicketTap,
+    required this.onQuickReply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF1A237E), Color(0xFF283593)],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: const Icon(
+                    Icons.confirmation_number,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Your Tickets',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${tickets.length}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Ticket List
+          ...tickets.take(10).map((ticket) => _buildTicketItem(ticket)),
+          
+          // Quick Actions
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.add_circle_outline,
+                    label: 'Create New',
+                    onTap: () => onQuickReply('🎫 Create Ticket'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.home_outlined,
+                    label: 'Main Menu',
+                    onTap: () => onQuickReply('🏠 Main Menu'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTicketItem(TicketModel ticket) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () => onTicketTap(ticket),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: Colors.grey.shade200,
+                width: 1,
+              ),
+            ),
+          ),
+          child: Row(
+            children: [
+              // Status Indicator
+              Container(
+                width: 3,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: ticket.statusColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              
+              // Icon
+              Container(
+                width: 35,
+                height: 35,
+                decoration: BoxDecoration(
+                  color: ticket.statusColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Icon(
+                  ticket.statusIcon,
+                  color: ticket.statusColor,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 10),
+              
+              // Content - Title, Description, Status, Date
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      ticket.title,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      ticket.description.length > 30 
+                          ? '${ticket.description.substring(0, 30)}...' 
+                          : ticket.description,
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.grey.shade600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: ticket.statusColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            ticket.statusText,
+                            style: TextStyle(
+                              fontSize: 8,
+                              color: ticket.statusColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          _formatDate(ticket.createdAt),
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: Colors.grey.shade500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              
+              // Arrow
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 10,
+                color: Colors.grey.shade400,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 14, color: Colors.grey.shade700),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+}
+
+// Modern Ticket Detail Widget for View Ticket
+class TicketDetailWidget extends StatelessWidget {
+  final TicketModel ticket;
+  final Function(String) onQuickReply;
+
+  const TicketDetailWidget({
+    super.key,
+    required this.ticket,
+    required this.onQuickReply,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final ticketIdInt = int.tryParse(ticket.id);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  ticket.statusColor,
+                  ticket.statusColor.withValues(alpha: 0.8),
+                ],
+              ),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(
+                    ticket.statusIcon,
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Ticket #${ticket.id}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      Text(
+                        ticket.statusText,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          
+          // Content
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Title
+                Text(
+                  ticket.title,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                
+                // Description
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    ticket.description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Metadata
+                Row(
+                  children: [
+                    Icon(Icons.person_outline, size: 12, color: Colors.grey.shade500),
+                    const SizedBox(width: 4),
+                    Text(
+                      ticket.createdBy,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Icon(Icons.access_time, size: 12, color: Colors.grey.shade500),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDate(ticket.createdAt),
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+
+                // Inline images
+                if (ticketIdInt != null && ticket.hasUserImage) ...[
+                  const SizedBox(height: 10),
+                  _InlineTicketImage(
+                    ticketId: ticketIdInt,
+                    fileType: 'user',
+                    label: 'User Attachment',
+                  ),
+                ],
+                if (ticketIdInt != null && ticket.hasResUserImage) ...[
+                  const SizedBox(height: 8),
+                  _InlineTicketImage(
+                    ticketId: ticketIdInt,
+                    fileType: 'developer',
+                    label: 'Developer Attachment',
+                  ),
+                ],
+              ],
+            ),
+          ),
+          
+          // Quick Actions
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.arrow_back,
+                    label: 'Back',
+                    onTap: () => onQuickReply('📋 View My Tickets'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildActionButton(
+                    icon: Icons.home,
+                    label: 'Main Menu',
+                    onTap: () => onQuickReply('🏠 Main Menu'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.day}/${date.month}/${date.year}';
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 12, color: Colors.grey.shade700),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 9,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Modern Typing Indicator
+class _ModernTypingIndicator extends StatelessWidget {
+  const _ModernTypingIndicator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 28,
+            height: 28,
+            decoration: const BoxDecoration(
+              color: Colors.blue,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.support_agent,
+              color: Colors.white,
+              size: 14,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 5,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildAnimatedDot(0),
+                const SizedBox(width: 4),
+                _buildAnimatedDot(150),
+                const SizedBox(width: 4),
+                _buildAnimatedDot(300),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAnimatedDot(int delay) {
+    return TweenAnimationBuilder(
+      tween: Tween<double>(begin: 0.5, end: 1.0),
+      duration: Duration(milliseconds: 600 + delay),
+      curve: Curves.easeInOut,
+      builder: (context, double value, child) {
+        return Container(
+          width: 6 * value,
+          height: 6 * value,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.grey.shade500,
+          ),
+        );
+      },
+    );
+  }
+}

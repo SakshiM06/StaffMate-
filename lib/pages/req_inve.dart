@@ -78,6 +78,9 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     'Other': 1,         
   };
 
+  // Track active snackbar
+  ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? _activeSnackBar;
+
   @override
   void initState() {
     super.initState();
@@ -110,7 +113,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
               _isListeningForInvestigationType = false;
             });
             _showSnackBar('Speech recognition error: $error', Colors.orange,
-            duration: 2
+            duration: 1
             );
           }
         },
@@ -124,6 +127,38 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     }
   }
 
+  // Updated snackbar method with shorter duration and auto-hide
+  void _showSnackBar(String message, Color backgroundColor, {int duration = 1}) {
+    // Hide any existing snackbar first
+    if (_activeSnackBar != null) {
+      _activeSnackBar!.close();
+    }
+    
+    if (mounted) {
+      _activeSnackBar = ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message,
+            style: GoogleFonts.poppins(fontSize: 13),
+          ),
+          backgroundColor: backgroundColor,
+          duration: Duration(seconds: duration),
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.only(bottom: 80, left: 10, right: 10), // Move up to avoid buttons
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      );
+      
+      // Auto-dismiss after duration
+      Future.delayed(Duration(seconds: duration), () {
+        if (_activeSnackBar != null && mounted) {
+          _activeSnackBar!.close();
+          _activeSnackBar = null;
+        }
+      });
+    }
+  }
+
   Future<void> _startVoiceSearchForPackage() async {
     if (_isListeningForPackage) {
       await _stopListening();
@@ -133,7 +168,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     if (!_isSpeechInitialized) {
       await _initSpeech();
       if (!_speechAvailable) {
-        _showSnackBar('Speech recognition is not available on this device', Colors.orange, duration: 2);
+        _showSnackBar('Speech recognition is not available on this device', Colors.orange, duration: 1);
         return;
       }
     }
@@ -185,14 +220,14 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         listenOptions: options,
       );
       
-      _showSnackBar('Listening for package name... Speak now', Colors.blue,duration:1);
+      _showSnackBar('Listening for package name... Speak now', Colors.blue, duration:1);
     } catch (e) {
       debugPrint('Error starting speech listening: $e');
       if (mounted) {
         setState(() {
           _isListeningForPackage = false;
         });
-        _showSnackBar('Failed to start listening: $e', Colors.red,duration:1);
+        _showSnackBar('Failed to start listening: $e', Colors.red, duration:1);
       }
     }
   }
@@ -206,13 +241,13 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     if (!_isSpeechInitialized) {
       await _initSpeech();
       if (!_speechAvailable) {
-        _showSnackBar('Speech recognition is not available on this device', Colors.orange,duration: 1);
+        _showSnackBar('Speech recognition is not available on this device', Colors.orange, duration: 1);
         return;
       }
     }
 
     if (_selectedJobTitle == null) {
-      _showSnackBar('Please select a job title first', Colors.orange,duration: 2);
+      _showSnackBar('Please select a job title first', Colors.orange, duration: 1);
       return;
     }
 
@@ -270,7 +305,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         listenOptions: options,
       );
 
-      _showSnackBar('Listening for multiple tests... Say test names like "CBC, KFT, Urine"', Colors.blue, duration: 2);
+      _showSnackBar('Listening for multiple tests... Say test names like "CBC, KFT, Urine"', Colors.blue, duration: 1);
     } catch (e) {
       debugPrint('Error starting speech listening: $e');
       if (mounted) {
@@ -401,7 +436,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
 
     if (spokenTests.isEmpty) {
       setState(() => _isProcessingMultipleTests = false);
-      _showSnackBar('Could not recognize test names. Please try again or type manually.', Colors.orange, duration: 2);
+      _showSnackBar('Could not recognize test names. Please try again or type manually.', Colors.orange, duration: 1);
       return;
     }
 
@@ -459,7 +494,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     });
 
     if (matchedTests.isEmpty) {
-      _showSnackBar('No matching tests found for: ${spokenTests.join(", ")}', Colors.orange, duration: 3);
+      _showSnackBar('No matching tests found for: ${spokenTests.join(", ")}', Colors.orange, duration: 2);
       return;
     }
     
@@ -654,7 +689,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                                     });
                                     if (matchedTests.isEmpty) {
                                       Navigator.pop(context);
-                                      _showSnackBar('All tests removed', Colors.orange, duration: 2);
+                                      _showSnackBar('All tests removed', Colors.orange, duration: 1);
                                     }
                                   },
                                 ),
@@ -733,7 +768,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                           bool allLoaded = testDetails.values.every((detail) => detail['isLoading'] == false);
                           
                           if (!allLoaded) {
-                            _showSnackBar('Please wait while we load all test details...', Colors.blue, duration: 2);
+                            _showSnackBar('Please wait while we load all test details...', Colors.blue, duration: 1);
                             return;
                           }
                           
@@ -956,7 +991,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       backgroundColor = Colors.red;
     }
 
-    _showSnackBar(message, backgroundColor);
+    _showSnackBar(message, backgroundColor, duration: 1);
   }
 
   Future<void> _loadInitialData() async {
@@ -1059,7 +1094,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
           _selectedInvestigationType = null;
         });
        
-        _showSnackBar('Failed to load investigations for $jobTitle', Colors.red, duration: 2);
+        _showSnackBar('Failed to load investigations for $jobTitle', Colors.red, duration: 1);
       }
     }
   }
@@ -1187,7 +1222,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
 
   void _addItem() {
     if (_selectedInvestigationType == null) {
-      _showSnackBar('Please select an Investigation Type.', Colors.red, duration: 2);
+      _showSnackBar('Please select an Investigation Type.', Colors.red, duration: 1);
       return;
     }
 
@@ -1213,7 +1248,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       _updateTotal();
     });
 
-    _showSnackBar('Item added successfully!', Colors.green, duration: 2);
+    _showSnackBar('Item added successfully!', Colors.green, duration: 1);
   }
 
   void _clearForm() {
@@ -1257,18 +1292,18 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       
       _loadInvestigationTypesForJobTitle(suggestedJobTitle);
       
-      _showSnackBar('Suggested Job Title: $suggestedJobTitle', Colors.teal, duration: 2);
+      _showSnackBar('Suggested Job Title: $suggestedJobTitle', Colors.teal, duration: 1);
     }
   }
 
   Future<void> _submitInvestigationRequest() async {
     if (_investigationItems.isEmpty) {
-      _showSnackBar('Please add at least one investigation item.', Colors.red, duration: 2);
+      _showSnackBar('Please add at least one investigation item.', Colors.red, duration: 1);
       return;
     }
 
     if (_selectedJobTitle == null || _selectedJobTitle!.isEmpty) {
-      _showSnackBar('Please select a Job Title.', Colors.red, duration: 2);
+      _showSnackBar('Please select a Job Title.', Colors.red, duration: 1);
       return;
     }
 
@@ -1304,8 +1339,8 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         if (successMessage.endsWith('.')) {
           successMessage = successMessage.substring(0, successMessage.length - 1);
         }
-        _showSnackBar('$successMessage. Notifications will refresh automatically.', Colors.green, duration: 2);
-        await Future.delayed(const Duration(milliseconds: 1500));
+        _showSnackBar('$successMessage', Colors.green, duration: 1);
+        await Future.delayed(const Duration(milliseconds: 800));
         
         if (mounted) {
           _investigationItems.clear();
@@ -1336,7 +1371,7 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
             successMessage = successMessage.substring(0, successMessage.length - 1);
           }
           
-          await Future.delayed(const Duration(milliseconds: 1500));
+          await Future.delayed(const Duration(milliseconds: 800));
           
           if (mounted) {
             _investigationItems.clear();
@@ -1344,12 +1379,12 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
             Navigator.pop(context, true);
           }
         } else {
-          _showSnackBar(errorMessage, Colors.orange, duration: 2);
+          _showSnackBar(errorMessage, Colors.orange, duration: 1);
         }
       }
     } catch (e) {
       debugPrint('Error submitting investigation: $e');
-      _showSnackBar('Network error occurred while submitting', Colors.red, duration: 2);
+      _showSnackBar('Network error occurred while submitting', Colors.red, duration: 1);
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
@@ -1487,42 +1522,71 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       backgroundColor: Colors.transparent,
       builder: (context) {
         List<Map<String, dynamic>> filteredList = List.from(types);
+        TextEditingController searchController = TextEditingController();
         bool isListening = false;
-        String recognizedText = '';
 
         return StatefulBuilder(
           builder: (BuildContext context, StateSetter setSheetState) {
             return Container(
               height: MediaQuery.of(context).size.height * 0.85,
-              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+              decoration: const BoxDecoration(
+                color: Colors.white, 
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24))
+              ),
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
               child: Column(
                 children: [
-                  Center(child: Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 10, bottom: 20), decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-                  Text("Select Investigation Type", style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)),
+                  Center(
+                    child: Container(
+                      width: 40, 
+                      height: 4, 
+                      margin: const EdgeInsets.only(top: 10, bottom: 20), 
+                      decoration: BoxDecoration(
+                        color: Colors.grey[300], 
+                        borderRadius: BorderRadius.circular(2)
+                      )
+                    )
+                  ),
+                  Text(
+                    "Select Investigation Type", 
+                    style: GoogleFonts.poppins(fontSize: 18, fontWeight: FontWeight.w600)
+                  ),
                   const SizedBox(height: 15),
+                  
+                  // Search bar with mic - FIXED: Now accepts input properly
                   Container(
-                    decoration: BoxDecoration(color: Colors.grey[100], borderRadius: BorderRadius.circular(12)),
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(12)
+                    ),
                     child: Row(
                       children: [
                         Expanded(
                           child: TextField(
+                            controller: searchController,
                             autofocus: false,
-                            controller: TextEditingController(text: recognizedText),
                             style: GoogleFonts.poppins(fontSize: 14),
                             onChanged: (value) {
                               setSheetState(() {
                                 if (value.isEmpty) {
                                   filteredList = List.from(types);
                                 } else {
-                                  filteredList = types.where((element) => (element['name'] ?? '').toString().toLowerCase().contains(value.toLowerCase())).toList();
+                                  filteredList = types.where((element) => 
+                                    (element['name'] ?? '')
+                                      .toString()
+                                      .toLowerCase()
+                                      .contains(value.toLowerCase())
+                                  ).toList();
                                 }
                               });
                             },
                             decoration: InputDecoration(
-                              hintText: isListening ? "Listening..." : "Search type...", 
+                              hintText: isListening ? "Listening..." : "Type to search...", 
                               border: InputBorder.none, 
-                              prefixIcon: Icon(isListening ? Icons.mic : Icons.search, color: isListening ? Colors.blue : Colors.grey), 
+                              prefixIcon: Icon(
+                                isListening ? Icons.mic : Icons.search, 
+                                color: isListening ? Colors.blue : Colors.grey
+                              ), 
                               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14)
                             ),
                           ),
@@ -1533,16 +1597,22 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                             : Icon(Icons.mic, color: Colors.blue[700]),
                           onPressed: () async {
                             if (isListening) {
-                              _speech.stop();
+                              await _speech.stop();
                               setSheetState(() => isListening = false);
                             } else {
                               if (await _speech.hasPermission) {
                                 setSheetState(() => isListening = true);
                                 await _speech.listen(
                                   onResult: (result) {
+                                    String recognizedText = result.recognizedWords;
                                     setSheetState(() {
-                                      recognizedText = result.recognizedWords;
-                                      filteredList = types.where((element) => (element['name'] ?? '').toString().toLowerCase().contains(recognizedText.toLowerCase())).toList();
+                                      searchController.text = recognizedText;
+                                      filteredList = types.where((element) => 
+                                        (element['name'] ?? '')
+                                          .toString()
+                                          .toLowerCase()
+                                          .contains(recognizedText.toLowerCase())
+                                      ).toList();
                                     });
                                   },
                                   listenFor: const Duration(seconds: 10),
@@ -1555,11 +1625,19 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                       ],
                     ),
                   ),
+                  
                   const SizedBox(height: 10),
                   const Divider(height: 1),
+                  
+                  // Results list
                   Expanded(
                     child: filteredList.isEmpty
-                        ? Center(child: Text("No investigation types found", style: GoogleFonts.poppins(color: Colors.grey)))
+                        ? Center(
+                            child: Text(
+                              "No investigation types found", 
+                              style: GoogleFonts.poppins(color: Colors.grey)
+                            )
+                          )
                         : ListView.separated(
                             padding: const EdgeInsets.symmetric(vertical: 10),
                             itemCount: filteredList.length,
@@ -1574,11 +1652,29 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                                     color: Colors.indigo[50],
                                     borderRadius: BorderRadius.circular(8)
                                   ),
-                                  child: const Icon(Icons.science, color: Colors.indigo, size: 20)
+                                  child: const Icon(
+                                    Icons.science, 
+                                    color: Colors.indigo, 
+                                    size: 20
+                                  )
                                 ),
-                                title: Text(type['name'] ?? '', style: GoogleFonts.poppins(fontSize: 14, fontWeight: FontWeight.w500)),
+                                title: Text(
+                                  type['name'] ?? '', 
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14, 
+                                    fontWeight: FontWeight.w500
+                                  )
+                                ),
                                 subtitle: type['description']?.toString().isNotEmpty == true
-                                    ? Text(type['description'].toString(), style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis)
+                                    ? Text(
+                                        type['description'].toString(), 
+                                        style: GoogleFonts.poppins(
+                                          fontSize: 12, 
+                                          color: Colors.grey
+                                        ), 
+                                        maxLines: 1, 
+                                        overflow: TextOverflow.ellipsis
+                                      )
                                     : null,
                                 onTap: () async {
                                   Navigator.pop(context);
@@ -1604,7 +1700,10 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
       isScrollControlled: true,
       builder: (context) => Container(
         height: MediaQuery.of(context).size.height * 0.75,
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+        decoration: const BoxDecoration(
+          color: Colors.white, 
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))
+        ),
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
@@ -1620,8 +1719,14 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text("Request List", style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18)),
-                Text("${_investigationItems.length} items", style: GoogleFonts.poppins(color: Colors.grey))
+                Text(
+                  "Request List", 
+                  style: GoogleFonts.poppins(fontWeight: FontWeight.bold, fontSize: 18)
+                ),
+                Text(
+                  "${_investigationItems.length} items", 
+                  style: GoogleFonts.poppins(color: Colors.grey)
+                )
               ]
             ),
             if (_selectedJobTitle != null) ...[
@@ -1630,7 +1735,10 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                 children: [
                   Icon(Icons.work, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
-                  Text('Category: $_selectedJobTitle', style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600]))
+                  Text(
+                    'Category: $_selectedJobTitle', 
+                    style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[600])
+                  )
                 ],
               )
             ],
@@ -1643,9 +1751,15 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                         children: [
                           Icon(Icons.science_outlined, size: 60, color: Colors.grey[300]),
                           const SizedBox(height: 10),
-                          Text("No investigations added", style: GoogleFonts.poppins(color: Colors.grey)),
+                          Text(
+                            "No investigations added", 
+                            style: GoogleFonts.poppins(color: Colors.grey)
+                          ),
                           const SizedBox(height: 5),
-                          Text("Add investigations using the form above", style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400]))
+                          Text(
+                            "Add investigations using the form above", 
+                            style: GoogleFonts.poppins(fontSize: 12, color: Colors.grey[400])
+                          )
                         ],
                       ),
                     )
@@ -1729,18 +1843,6 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
         ),
       ),
     );
-  }
-
-  void _showSnackBar(String message, Color backgroundColor, {int duration = 2}) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-          backgroundColor: backgroundColor,
-          duration: Duration(seconds: duration),
-        ),
-      );
-    }
   }
 
   @override
@@ -1897,7 +1999,12 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                           _showSearchableSelectionSheet(
                             title: "Search Package",
                             searchCallback: (query) async {
-                              if (query.isEmpty) return await InvestigationService.getCachedInvestigations();
+                              // FIXED: Always fetch initial data when query is empty
+                              if (query.isEmpty) {
+                                // Return initial list without filtering
+                                return await InvestigationService.getCachedInvestigations() ?? 
+                                       await InvestigationService.fetchInvestigations(query: '');
+                              }
                               return await InvestigationService.fetchInvestigations(query: query);
                             },
                             onSelected: (val) {
@@ -2037,15 +2144,15 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
                             GestureDetector(
                               onTap: _selectedJobTitle == null
                                   ? () {
-                                      _showSnackBar('Please select a Job Title first', Colors.red, duration: 2);
+                                      _showSnackBar('Please select a Job Title first', Colors.red, duration: 1);
                                     }
                                   : () {
                                       if (investigationTypes.isNotEmpty && !_isLoadingInvestigationTypes) {
                                         _showInvestigationTypeSheet(investigationTypes);
                                       } else if (_isLoadingInvestigationTypes) {
-                                        _showSnackBar('Loading investigation types...', Colors.blue, duration: 2);
+                                        _showSnackBar('Loading investigation types...', Colors.blue, duration: 1);
                                       } else {
-                                        _showSnackBar('No investigation types available for this category', Colors.orange, duration: 2);
+                                        _showSnackBar('No investigation types available for this category', Colors.orange, duration: 1);
                                       }
                                     },
                               child: Container(
@@ -2486,6 +2593,12 @@ class _ReqInvestigationPageState extends State<ReqInvestigationPage> {
     _templateController.dispose();
     _speechTimeoutTimer?.cancel();
     _speech.stop();
+    
+    // Close any active snackbar
+    if (_activeSnackBar != null) {
+      _activeSnackBar!.close();
+    }
+    
     super.dispose();
   }
 }
@@ -2521,6 +2634,7 @@ class _SearchableSheetContentState extends State<_SearchableSheetContent> {
   @override
   void initState() {
     super.initState();
+    // FIXED: Load initial data immediately without waiting for typing
     _performSearch('');
   }
 
