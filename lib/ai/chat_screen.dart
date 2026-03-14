@@ -1,4 +1,4 @@
-// chat_screen.dart - Complete redesigned version with modern, intuitive UI
+// chat_screen.dart - Complete version with queryType mapping + inline attachments
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -12,17 +12,19 @@ import 'package:staff_mate/services/support_service.dart';
 import 'chat_provider.dart';
 import 'message_model.dart';
 
-// Extension for safe ticket ID display
 extension TicketIdExtension on String {
   String get displayId {
-    if (length >= 6) {
-      return '#${substring(0, 6)}';
-    } else {
-      return '#$this';
-    }
+    if (length >= 6) return '#${substring(0, 6)}';
+    return '#$this';
   }
 }
 
+// ── Helper: prefer queryType over title ──────────────────────────────────────
+String _ticketDisplayName(TicketModel ticket) =>
+    (ticket.queryType?.isNotEmpty == true ? ticket.queryType! : ticket.title)
+        .trim();
+
+// ─── ChatScreen root ──────────────────────────────────────────────────────────
 class ChatScreen extends StatelessWidget {
   const ChatScreen({super.key});
 
@@ -30,14 +32,12 @@ class ChatScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => ChatProvider(),
-      child: const Scaffold(
-        body: _ChatBody(),
-      ),
+      child: const Scaffold(body: _ChatBody()),
     );
   }
 }
 
-// ─── Fullscreen Image Viewer ─────────────────────────────────────────────────
+// ─── Fullscreen Image Viewer ──────────────────────────────────────────────────
 class _FullscreenImageViewer extends StatelessWidget {
   final Uint8List imageData;
   final String label;
@@ -64,10 +64,10 @@ class _FullscreenImageViewer extends StatelessWidget {
   }
 }
 
-// ─── Inline Ticket Image (auto-fetch, expand/collapse, fullscreen on tap) ────
+// ─── Inline Ticket Image (auto-fetch, expand/collapse, fullscreen on tap) ─────
 class _InlineTicketImage extends StatefulWidget {
   final int ticketId;
-  final String fileType; // 'user' or 'developer'
+  final String fileType;
   final String label;
 
   const _InlineTicketImage({
@@ -117,12 +117,7 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
         _hasError = true;
       });
     } catch (_) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _hasError = true;
-        });
-      }
+      if (mounted) setState(() { _loading = false; _hasError = true; });
     }
   }
 
@@ -150,10 +145,7 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
         ),
         child: const Center(
           child: SizedBox(
-            width: 18,
-            height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+              width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
         ),
       );
     }
@@ -170,10 +162,8 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
           children: [
             Icon(Icons.image_not_supported, size: 13, color: Colors.grey.shade400),
             const SizedBox(width: 6),
-            Text(
-              'No ${widget.label} image',
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
-            ),
+            Text('No ${widget.label} image',
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade500)),
           ],
         ),
       );
@@ -182,7 +172,6 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Tap header to expand/collapse
         GestureDetector(
           onTap: () => setState(() => _expanded = !_expanded),
           child: Container(
@@ -200,10 +189,9 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
                   child: Text(
                     widget.label,
                     style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.blue.shade700,
-                      fontWeight: FontWeight.w600,
-                    ),
+                        fontSize: 11,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.w600),
                   ),
                 ),
                 Icon(
@@ -215,8 +203,6 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
             ),
           ),
         ),
-
-        // Expandable image — tap to open fullscreen
         if (_expanded) ...[
           const SizedBox(height: 6),
           GestureDetector(
@@ -245,10 +231,8 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
                     children: [
                       Icon(Icons.fullscreen, size: 12, color: Colors.white),
                       SizedBox(width: 3),
-                      Text(
-                        'Tap to expand',
-                        style: TextStyle(color: Colors.white, fontSize: 9),
-                      ),
+                      Text('Tap to expand',
+                          style: TextStyle(color: Colors.white, fontSize: 9)),
                     ],
                   ),
                 ),
@@ -261,7 +245,7 @@ class _InlineTicketImageState extends State<_InlineTicketImage> {
   }
 }
 
-// Modern Gradient App Bar
+// ─── Modern Gradient App Bar ──────────────────────────────────────────────────
 class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
   const _ModernAppBar();
 
@@ -276,10 +260,9 @@ class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 2)),
         ],
       ),
       child: AppBar(
@@ -297,22 +280,17 @@ class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
                     height: 44,
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)],
-                      ),
+                          colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)]),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.white.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 2,
-                        ),
+                            color: Colors.white.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            spreadRadius: 2)
                       ],
                     ),
-                    child: const Icon(
-                      Icons.support_agent,
-                      color: Color(0xFF1A237E),
-                      size: 24,
-                    ),
+                    child: const Icon(Icons.support_agent,
+                        color: Color(0xFF1A237E), size: 24),
                   ),
                 );
               },
@@ -321,14 +299,11 @@ class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Support Assistant',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
+                const Text('Support Assistant',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white)),
                 Row(
                   children: [
                     Container(
@@ -339,21 +314,15 @@ class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.green.shade400.withValues(alpha: 0.5),
-                            blurRadius: 4,
-                            spreadRadius: 1,
-                          ),
+                              color: Colors.green.shade400.withValues(alpha: 0.5),
+                              blurRadius: 4,
+                              spreadRadius: 1)
                         ],
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Text(
-                      'Online • Ready to help',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white70,
-                      ),
-                    ),
+                    const Text('Online • Ready to help',
+                        style: TextStyle(fontSize: 12, color: Colors.white70)),
                   ],
                 ),
               ],
@@ -381,40 +350,34 @@ class _ModernAppBar extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required VoidCallback onPressed,
-    required String tooltip,
-  }) {
+  Widget _buildActionButton(
+      {required IconData icon,
+      required VoidCallback onPressed,
+      required String tooltip}) {
     return Container(
       margin: const EdgeInsets.only(right: 4),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        shape: BoxShape.circle,
-      ),
+          color: Colors.white.withValues(alpha: 0.2), shape: BoxShape.circle),
       child: IconButton(
-        icon: Icon(icon, color: Colors.white),
-        onPressed: onPressed,
-        tooltip: tooltip,
-      ),
+          icon: Icon(icon, color: Colors.white),
+          onPressed: onPressed,
+          tooltip: tooltip),
     );
   }
 
   void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   @override
   Size get preferredSize => const Size.fromHeight(kToolbarHeight);
 }
 
-// Main Chat Body with Modern Design
+// ─── Main Chat Body ───────────────────────────────────────────────────────────
 class _ChatBody extends StatefulWidget {
   const _ChatBody();
 
@@ -432,11 +395,18 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _animationController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 300),
-    );
+        vsync: this, duration: const Duration(milliseconds: 300));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ChatProvider>().loadChatHistory();
+
+      // Listen for keyboard focus requests from provider
+      context.read<ChatProvider>().focusKeyboardStream.listen((event) {
+        if (event == 'focus_text') {
+          Future.delayed(const Duration(milliseconds: 300), () {
+            if (mounted) FocusScope.of(context).requestFocus(_focusNode);
+          });
+        }
+      });
     });
   }
 
@@ -444,27 +414,20 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Consumer<ChatProvider>(
       builder: (context, provider, child) {
-        // Auto-scroll when messages change
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToBottom();
-        });
-        
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToBottom());
+
         return Container(
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              colors: [
-                Colors.grey.shade50,
-                Colors.white,
-              ],
+              colors: [Colors.grey.shade50, Colors.white],
             ),
           ),
           child: Column(
             children: [
               const _ModernAppBar(),
-              
-              // Messages List
               Expanded(
                 child: provider.isLoading && provider.messages.isEmpty
                     ? _buildShimmerLoading()
@@ -478,17 +441,14 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
                               final message = provider.messages[index];
                               return _ModernMessageBubble(
                                 message: message,
-                                onOptionSelected: (reply) => _handleQuickReply(reply, provider),
+                                onOptionSelected: (reply) =>
+                                    _handleQuickReply(reply, provider),
                                 index: index,
                               );
                             },
                           ),
               ),
-              
-              // Typing Indicator
               if (provider.isBotTyping) const _ModernTypingIndicator(),
-              
-              // Input Area
               _buildModernInputArea(provider),
             ],
           ),
@@ -515,43 +475,30 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
                     height: 120,
                     decoration: BoxDecoration(
                       gradient: const RadialGradient(
-                        colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)],
-                      ),
+                          colors: [Color(0xFFE8EAF6), Color(0xFFC5CAE9)]),
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.blue.withValues(alpha: 0.2),
-                          blurRadius: 30,
-                          spreadRadius: 5,
-                        ),
+                            color: Colors.blue.withValues(alpha: 0.2),
+                            blurRadius: 30,
+                            spreadRadius: 5)
                       ],
                     ),
-                    child: const Icon(
-                      Icons.support_agent,
-                      size: 60,
-                      color: Color(0xFF1A237E),
-                    ),
+                    child: const Icon(Icons.support_agent,
+                        size: 60, color: Color(0xFF1A237E)),
                   ),
                 );
               },
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Hello! How can we help you today?',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFF1A237E),
-              ),
-            ),
+            const Text('Hello! How can we help you today?',
+                style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Color(0xFF1A237E))),
             const SizedBox(height: 8),
-            Text(
-              'Choose an option below to get started',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade600,
-              ),
-            ),
+            Text('Choose an option below to get started',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600)),
             const SizedBox(height: 32),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -573,7 +520,8 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildModernActionChip(String label, Color color, BuildContext context) {
+  Widget _buildModernActionChip(
+      String label, Color color, BuildContext context) {
     return Material(
       elevation: 2,
       shadowColor: color.withValues(alpha: 0.3),
@@ -585,27 +533,22 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           decoration: BoxDecoration(
             gradient: LinearGradient(
-              colors: [color, color.withValues(alpha: 0.8)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+                colors: [color, color.withValues(alpha: 0.8)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(30),
             boxShadow: [
               BoxShadow(
-                color: color.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 3),
-              ),
+                  color: color.withValues(alpha: 0.3),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3))
             ],
           ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            ),
-          ),
+          child: Text(label,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14)),
         ),
       ),
     );
@@ -613,17 +556,16 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
 
   Widget _buildModernInputArea(ChatProvider provider) {
     final isTyping = _textController.text.isNotEmpty;
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -5),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 10,
+              offset: const Offset(0, -5))
         ],
       ),
       child: Row(
@@ -631,17 +573,13 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
           Container(
             margin: const EdgeInsets.only(right: 8),
             decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              shape: BoxShape.circle,
-            ),
+                color: Colors.grey.shade100, shape: BoxShape.circle),
             child: IconButton(
               icon: Icon(Icons.mic, color: Colors.grey.shade700),
-              onPressed: () {
-                _showSnackBar(context, 'Voice input coming soon!');
-              },
+              onPressed: () =>
+                  _showSnackBar(context, 'Voice input coming soon!'),
             ),
           ),
-          
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -659,56 +597,48 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
                 decoration: InputDecoration(
                   hintText: _getHintText(provider.currentInputType),
                   hintStyle: TextStyle(
-                    color: provider.currentInputType != null 
-                        ? Colors.blue.shade700 
+                    color: provider.currentInputType != null
+                        ? Colors.blue.shade700
                         : Colors.grey.shade500,
                   ),
                   border: InputBorder.none,
                   contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 15,
-                  ),
+                      horizontal: 20, vertical: 15),
                   prefixIcon: provider.currentInputType != null
-                      ? Icon(
-                          _getInputIcon(provider.currentInputType!),
-                          color: Colors.blue.shade700,
-                        )
+                      ? Icon(_getInputIcon(provider.currentInputType!),
+                          color: Colors.blue.shade700)
                       : null,
                 ),
                 onSubmitted: (_) => _sendMessage(provider),
                 textInputAction: TextInputAction.send,
-                obscureText: provider.currentInputType == 'new_password' || 
-                            provider.currentInputType == 'new_password_input',
-                keyboardType: _getKeyboardType(provider.currentInputType),
+                obscureText: provider.currentInputType == 'new_password' ||
+                    provider.currentInputType == 'new_password_input',
+                keyboardType:
+                    _getKeyboardType(provider.currentInputType),
               ),
             ),
           ),
           const SizedBox(width: 8),
-          
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             curve: Curves.easeInOut,
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: isTyping 
+                colors: isTyping
                     ? [Colors.green, Colors.green.shade700]
                     : [const Color(0xFF1A237E), const Color(0xFF283593)],
               ),
               shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: (isTyping ? Colors.green : const Color(0xFF1A237E))
-                      .withValues(alpha: 0.3),
-                  blurRadius: 8,
-                  spreadRadius: 1,
-                ),
+                    color: (isTyping ? Colors.green : const Color(0xFF1A237E))
+                        .withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    spreadRadius: 1)
               ],
             ),
             child: IconButton(
-              icon: Icon(
-                isTyping ? Icons.send : Icons.send,
-                color: Colors.white,
-              ),
+              icon: const Icon(Icons.send, color: Colors.white),
               onPressed: () => _sendMessage(provider),
             ),
           ),
@@ -725,37 +655,30 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
         return Padding(
           padding: const EdgeInsets.only(bottom: 16),
           child: Row(
-            mainAxisAlignment: index.isEven ? MainAxisAlignment.start : MainAxisAlignment.end,
+            mainAxisAlignment:
+                index.isEven ? MainAxisAlignment.start : MainAxisAlignment.end,
             children: [
               if (index.isEven) ...[
                 Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(
-                    color: Colors.grey,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                        color: Colors.grey, shape: BoxShape.circle)),
                 const SizedBox(width: 8),
               ],
               Container(
-                width: 200,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
+                  width: 200,
+                  height: 60,
+                  decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(16))),
               if (index.isOdd) ...[
                 const SizedBox(width: 8),
                 Container(
-                  width: 40,
-                  height: 40,
-                  decoration: const BoxDecoration(
-                    color: Colors.grey,
-                    shape: BoxShape.circle,
-                  ),
-                ),
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                        color: Colors.grey, shape: BoxShape.circle)),
               ],
             ],
           ),
@@ -765,26 +688,18 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
   }
 
   void _handleQuickReply(String reply, ChatProvider provider) {
-    provider.processOption(reply).then((_) {
-      // Scroll will happen automatically via the post frame callback in build method
-    });
+    provider.processOption(reply);
   }
 
   void _sendMessage(ChatProvider provider) {
     final text = _textController.text.trim();
     if (text.isEmpty) return;
-
     _textController.clear();
     setState(() {});
-
     if (provider.currentInputType != null) {
-      provider.processTextInput(text).then((_) {
-        // Scroll will happen automatically via the post frame callback in build method
-      });
+      provider.processTextInput(text);
     } else {
-      provider.processOption(text).then((_) {
-        // Scroll will happen automatically via the post frame callback in build method
-      });
+      provider.processOption(text);
     }
   }
 
@@ -799,55 +714,42 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
   }
 
   void _showSnackBar(BuildContext context, String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ));
   }
 
   String _getHintText(String? inputType) {
     switch (inputType) {
-      case 'user_id_input':
-        return 'Enter your User ID...';
-      case 'email':
-        return 'Enter your email address...';
-      case 'otp':
-        return 'Enter 6-digit OTP...';
+      case 'user_id_input': return 'Enter your User ID...';
+      case 'email': return 'Enter your email address...';
+      case 'otp': return 'Enter 6-digit OTP...';
       case 'new_password':
-      case 'new_password_input':
-        return 'Enter new password...';
-      default:
-        return 'Type your message...';
+      case 'new_password_input': return 'Enter new password...';
+      default: return 'Type your message...';
     }
   }
 
   IconData _getInputIcon(String inputType) {
     switch (inputType) {
-      case 'user_id_input':
-        return Icons.person_outline;
-      case 'email':
-        return Icons.email_outlined;
-      case 'otp':
-        return Icons.lock_outline;
+      case 'user_id_input': return Icons.person_outline;
+      case 'email': return Icons.email_outlined;
+      case 'otp': return Icons.lock_outline;
       case 'new_password':
-      case 'new_password_input':
-        return Icons.vpn_key;
-      default:
-        return Icons.message;
+      case 'new_password_input': return Icons.vpn_key;
+      default: return Icons.message;
     }
   }
 
   TextInputType _getKeyboardType(String? inputType) {
     switch (inputType) {
-      case 'email':
-        return TextInputType.emailAddress;
-      case 'otp':
-        return TextInputType.number;
-      default:
-        return TextInputType.text;
+      case 'email':            return TextInputType.emailAddress;
+      case 'otp':              return TextInputType.number;
+      case 'new_password':
+      case 'new_password_input': return TextInputType.visiblePassword;
+      default:                 return TextInputType.text;
     }
   }
 
@@ -861,7 +763,7 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
   }
 }
 
-// Modern Message Bubble
+// ─── Modern Message Bubble ────────────────────────────────────────────────────
 class _ModernMessageBubble extends StatelessWidget {
   final MessageModel message;
   final Function(String) onOptionSelected;
@@ -876,7 +778,7 @@ class _ModernMessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
-    
+
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 0.0, end: 1.0),
       duration: Duration(milliseconds: 300 + (index * 50)),
@@ -893,10 +795,12 @@ class _ModernMessageBubble extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),
         child: Column(
-          crossAxisAlignment: isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          crossAxisAlignment:
+              isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+              mainAxisAlignment:
+                  isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 if (!isUser) _buildAvatar(Icons.support_agent, Colors.blue),
@@ -906,8 +810,11 @@ class _ModernMessageBubble extends StatelessWidget {
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
-                        colors: isUser 
-                            ? [const Color(0xFF1A237E), const Color(0xFF283593)]
+                        colors: isUser
+                            ? [
+                                const Color(0xFF1A237E),
+                                const Color(0xFF283593)
+                              ]
                             : [Colors.white, Colors.grey.shade50],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
@@ -920,23 +827,23 @@ class _ModernMessageBubble extends StatelessWidget {
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.05),
-                          blurRadius: 5,
-                          offset: const Offset(0, 2),
-                        ),
+                            color: Colors.black.withValues(alpha: 0.05),
+                            blurRadius: 5,
+                            offset: const Offset(0, 2))
                       ],
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildMessageText(),
+                        _buildMessageContent(),
                         const SizedBox(height: 4),
                         Text(
                           message.formattedTime,
                           style: TextStyle(
-                            fontSize: 10,
-                            color: isUser ? Colors.white70 : Colors.grey.shade500,
-                          ),
+                              fontSize: 10,
+                              color: isUser
+                                  ? Colors.white70
+                                  : Colors.grey.shade500),
                         ),
                       ],
                     ),
@@ -948,8 +855,8 @@ class _ModernMessageBubble extends StatelessWidget {
                 ],
               ],
             ),
-            
-            // Quick Replies
+
+            // ── Quick Replies ──
             if (!isUser && message.hasQuickReplies) ...[
               const SizedBox(height: 8),
               Padding(
@@ -957,23 +864,21 @@ class _ModernMessageBubble extends StatelessWidget {
                 child: Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: message.quickReplies!.map((option) {
-                    return _buildModernOptionChip(option);
-                  }).toList(),
+                  children: message.quickReplies!
+                      .map((o) => _buildModernOptionChip(o))
+                      .toList(),
                 ),
               ),
             ],
-            
-            // Ticket Form
+
+            // ── Ticket Form ──
             if (!isUser && message.type == 'ticket_form') ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
                 child: _ModernTicketForm(
-                  onSubmit: (title, description, priority, images) async {
+                  onSubmit: (queryType, description, priority, images) async {
                     final provider = context.read<ChatProvider>();
-                    
-                    // Show loading message
                     final loadingMsg = MessageModel(
                       id: DateTime.now().toString(),
                       text: '⏳ Creating your ticket...',
@@ -982,40 +887,35 @@ class _ModernMessageBubble extends StatelessWidget {
                       type: 'loading',
                     );
                     provider.addMessage(loadingMsg);
-                    
+
                     try {
                       final prefs = await SharedPreferences.getInstance();
                       final userId = prefs.getString('userId') ?? '';
-                      
+
                       final result = await SupportService.createTicket(
-                        title: title,
+                        queryType: queryType,
                         description: description,
                         priority: priority,
                         userId: userId,
                         images: images.isNotEmpty ? images : null,
                       );
-                      
-                      // Extract ticket ID correctly from response
+
                       String ticketId = 'N/A';
                       if (result['data'] != null) {
-                        if (result['data']['ticketId'] != null) {
-                          ticketId = result['data']['ticketId'].toString();
-                        } else if (result['data']['data'] != null && result['data']['data']['ticketId'] != null) {
-                          ticketId = result['data']['data']['ticketId'].toString();
-                        }
+                        ticketId = (result['data']['ticketId'] ??
+                                result['data']['data']?['ticketId'] ??
+                                'N/A')
+                            .toString();
                       }
-                      
-                      // Remove loading message
+
                       provider.messages.removeLast();
-                      
-                      // Add success message with ticket ID
-                      final successMsg = MessageModel(
+                      provider.addMessage(MessageModel(
                         id: DateTime.now().toString(),
                         text: '✅ **Ticket Created Successfully!**\n\n'
-                              '**Ticket ID:** `$ticketId`\n'
-                              '**Title:** $title\n'
-                              '**Priority:** $priority\n\n'
-                              'Our support team will review your request shortly.',
+                            '**Ticket ID:** `$ticketId`\n'
+                            '**Query Type:** $queryType\n'
+                            '**Priority:** $priority\n\n'
+                            'Our support team will review your request shortly.',
                         isUser: false,
                         timestamp: DateTime.now(),
                         type: 'ticket_confirmation',
@@ -1025,19 +925,14 @@ class _ModernMessageBubble extends StatelessWidget {
                           '🎫 Create Another',
                           '🏠 Main Menu',
                         ],
-                      );
-                      provider.addMessage(successMsg);
-                      
+                      ));
                     } catch (e) {
-                      // Remove loading message
                       provider.messages.removeLast();
-                      
-                      // Show error message
-                      final errorMsg = MessageModel(
+                      provider.addMessage(MessageModel(
                         id: DateTime.now().toString(),
                         text: '❌ **Failed to create ticket**\n\n'
-                              'Error: ${e.toString().replaceAll('Exception:', '')}\n\n'
-                              'Please try again.',
+                            'Error: ${e.toString().replaceAll('Exception:', '')}\n\n'
+                            'Please try again.',
                         isUser: false,
                         timestamp: DateTime.now(),
                         type: 'error',
@@ -1046,76 +941,105 @@ class _ModernMessageBubble extends StatelessWidget {
                           '🎫 Create Ticket',
                           '🏠 Main Menu',
                         ],
-                      );
-                      provider.addMessage(errorMsg);
+                      ));
                     }
                   },
                   onCancel: () {
-                    final cancelMsg = MessageModel(
+                    context.read<ChatProvider>().addMessage(MessageModel(
                       id: DateTime.now().toString(),
                       text: '❌ Ticket creation cancelled.',
                       isUser: false,
                       timestamp: DateTime.now(),
                       type: 'info',
                       quickReplies: const ['🎫 Create Ticket', '🏠 Main Menu'],
-                    );
-                    context.read<ChatProvider>().addMessage(cancelMsg);
+                    ));
                   },
                 ),
               ),
             ],
-            
-            // Status Selection for View Tickets (4 options)
-            if (!isUser && message.type == 'status_selection' && 
+
+            // ── Status Selection for View Tickets ──
+            if (!isUser &&
+                message.type == 'status_selection' &&
                 message.tempData?['action'] == 'view_tickets_by_status') ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
-                child: _buildViewTicketsStatusOptions(),
+                child: _buildStatusOptionsContainer(
+                  title: 'View Tickets by Status',
+                  icon: Icons.filter_list,
+                  options: [
+                    _buildStatusOption('OPEN', Icons.email, Colors.blue,
+                        '📋 OPEN Tickets'),
+                    _buildStatusOption('IN_PROGRESS', Icons.access_time,
+                        Colors.orange, '📋 IN_PROGRESS Tickets'),
+                    _buildStatusOption('RESOLVED', Icons.check_circle,
+                        Colors.green, '📋 RESOLVED Tickets'),
+                    _buildStatusOption(
+                        'CLOSED', Icons.lock, Colors.grey, '📋 CLOSED Tickets'),
+                  ],
+                ),
               ),
             ],
-            
-            // Status Selection for Track Tickets (4 options)
-            if (!isUser && message.type == 'status_selection' && 
+
+            // ── Status Selection for Track Tickets ──
+            if (!isUser &&
+                message.type == 'status_selection' &&
                 message.tempData?['action'] == 'track_tickets_by_status') ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
-                child: _buildTrackTicketsStatusOptions(),
+                child: _buildStatusOptionsContainer(
+                  title: 'Track Tickets by Status',
+                  icon: Icons.track_changes,
+                  options: [
+                    _buildStatusOption('OPEN', Icons.email, Colors.blue,
+                        '🔍 OPEN Tickets'),
+                    _buildStatusOption('IN_PROGRESS', Icons.access_time,
+                        Colors.orange, '🔍 IN_PROGRESS Tickets'),
+                    _buildStatusOption('RESOLVED', Icons.check_circle,
+                        Colors.green, '🔍 RESOLVED Tickets'),
+                    _buildStatusOption(
+                        'CLOSED', Icons.lock, Colors.grey, '🔍 CLOSED Tickets'),
+                  ],
+                ),
               ),
             ],
-            
-            // Ticket List Display by Status (View Tickets)
+
+            // ── Ticket List (View Tickets) ──
             if (!isUser && message.isTicketList && message.tickets != null) ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
                 child: TicketListWidget(
                   tickets: message.tickets!,
-                  onTicketTap: (ticket) {
-                    onOptionSelected('🔍 View Ticket #${ticket.id}');
-                  },
+                  onTicketTap: (ticket) =>
+                      onOptionSelected('🔍 View Ticket #${ticket.id}'),
                   onQuickReply: onOptionSelected,
                 ),
               ),
             ],
-            
-            if (!isUser && message.type == 'track_ticket_list' && message.tickets != null) ...[
+
+            // ── Track Ticket List ──
+            if (!isUser &&
+                message.type == 'track_ticket_list' &&
+                message.tickets != null) ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
                 child: _TrackTicketListWidget(
                   tickets: message.tickets!,
-                  onTicketTap: (ticket) {
-                    onOptionSelected('🔍 Track #${ticket.id}');
-                  },
+                  onTicketTap: (ticket) =>
+                      onOptionSelected('🔍 Track #${ticket.id}'),
                   onQuickReply: onOptionSelected,
                 ),
               ),
             ],
-            
-            // Track Ticket Detail Display
-            if (!isUser && message.type == 'track_ticket_detail' && message.ticket != null) ...[
+
+            // ── Track Ticket Detail ──
+            if (!isUser &&
+                message.type == 'track_ticket_detail' &&
+                message.ticket != null) ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
@@ -1125,28 +1049,11 @@ class _ModernMessageBubble extends StatelessWidget {
                 ),
               ),
             ],
-            
-            // Status Selection for Updating Status
-            if (!isUser && message.type == 'status_selection' && 
-                message.tempData?['ticketId'] != null) ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 52),
-                child: _buildUpdateStatusOptions(message.tempData?['ticketId'] ?? ''),
-              ),
-            ],
-            
-            // Resolution Input Display
-            if (!isUser && message.type == 'resolution_input') ...[
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 52),
-                child: _buildResolutionInput(message.tempData?['ticketId'] ?? ''),
-              ),
-            ],
-            
-            // Ticket Detail Display (View Ticket)
-            if (!isUser && message.type == 'ticket_detail' && message.ticket != null) ...[
+
+            // ── View Ticket Detail ──
+            if (!isUser &&
+                message.type == 'ticket_detail' &&
+                message.ticket != null) ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
@@ -1156,8 +1063,8 @@ class _ModernMessageBubble extends StatelessWidget {
                 ),
               ),
             ],
-            
-            // Success Message with Ticket ID
+
+            // ── Ticket Confirmation ──
             if (!isUser && message.type == 'ticket_confirmation') ...[
               const SizedBox(height: 8),
               Padding(
@@ -1177,17 +1084,14 @@ class _ModernMessageBubble extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.all(8),
                             decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.check, color: Colors.white, size: 16),
+                                color: Colors.green, shape: BoxShape.circle),
+                            child: const Icon(Icons.check,
+                                color: Colors.white, size: 16),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              message.text,
-                              style: const TextStyle(fontSize: 14),
-                            ),
+                            child: Text(message.text,
+                                style: const TextStyle(fontSize: 14)),
                           ),
                         ],
                       ),
@@ -1195,9 +1099,7 @@ class _ModernMessageBubble extends StatelessWidget {
                         const SizedBox(height: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
+                              horizontal: 12, vertical: 6),
                           decoration: BoxDecoration(
                             color: Colors.green.shade100,
                             borderRadius: BorderRadius.circular(20),
@@ -1205,19 +1107,15 @@ class _ModernMessageBubble extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Icon(
-                                Icons.confirmation_number,
-                                size: 14,
-                                color: Colors.green,
-                              ),
+                              const Icon(Icons.confirmation_number,
+                                  size: 14, color: Colors.green),
                               const SizedBox(width: 4),
                               Text(
                                 'Ticket ID: ${message.ticketId}',
                                 style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green,
-                                  fontSize: 12,
-                                ),
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.green,
+                                    fontSize: 12),
                               ),
                             ],
                           ),
@@ -1228,41 +1126,170 @@ class _ModernMessageBubble extends StatelessWidget {
                 ),
               ),
             ],
+
+            // ── Update Status Options ──
+            if (!isUser &&
+                message.type == 'status_selection' &&
+                message.tempData?['ticketId'] != null) ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildUpdateStatusOptions(
+                    message.tempData?['ticketId'] ?? ''),
+              ),
+            ],
+
+            // ── Resolution Input ──
+            if (!isUser && message.type == 'resolution_input') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildResolutionInput(
+                    message.tempData?['ticketId'] ?? ''),
+              ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  // Build status options for viewing tickets
-  Widget _buildViewTicketsStatusOptions() {
-    return _buildStatusOptionsContainer(
-      title: 'View Tickets by Status',
-      icon: Icons.filter_list,
-      options: [
-        _buildStatusOption('OPEN', Icons.email, Colors.blue, '📋 OPEN Tickets'),
-        _buildStatusOption('IN_PROGRESS', Icons.access_time, Colors.orange, '📋 IN_PROGRESS Tickets'),
-        _buildStatusOption('RESOLVED', Icons.check_circle, Colors.green, '📋 RESOLVED Tickets'),
-        _buildStatusOption('CLOSED', Icons.lock, Colors.grey, '📋 CLOSED Tickets'),
-      ],
+  // ── Avatar ──
+  Widget _buildAvatar(IconData icon, Color color) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+            colors: [color, color.withValues(alpha: 0.7)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight),
+        shape: BoxShape.circle,
+        boxShadow: [
+          BoxShadow(
+              color: color.withValues(alpha: 0.3),
+              blurRadius: 6,
+              spreadRadius: 1)
+        ],
+      ),
+      child: Icon(icon, color: Colors.white, size: 18),
     );
   }
 
-  // Build status options for tracking tickets
-  Widget _buildTrackTicketsStatusOptions() {
-    return _buildStatusOptionsContainer(
-      title: 'Track Tickets by Status',
-      icon: Icons.track_changes,
-      options: [
-        _buildStatusOption('OPEN', Icons.email, Colors.blue, '🔍 OPEN Tickets'),
-        _buildStatusOption('IN_PROGRESS', Icons.access_time, Colors.orange, '🔍 IN_PROGRESS Tickets'),
-        _buildStatusOption('RESOLVED', Icons.check_circle, Colors.green, '🔍 RESOLVED Tickets'),
-        _buildStatusOption('CLOSED', Icons.lock, Colors.grey, '🔍 CLOSED Tickets'),
-      ],
+  // ── Message content (text + validation error + image) ──
+  Widget _buildMessageContent() {
+    // Image message
+    if (message.type == 'ticket_image' && message.imageData != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(message.text,
+              style: TextStyle(
+                  color: message.isUser ? Colors.white : Colors.black87,
+                  fontSize: 13,
+                  height: 1.4)),
+          const SizedBox(height: 8),
+          GestureDetector(
+            onTap: () {
+              // fullscreen handled via Navigator in parent context would need
+              // a BuildContext — use a Builder here
+            },
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.memory(
+                message.imageData!,
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.cover,
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (message.validationError != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(message.text,
+              style: TextStyle(
+                  color: message.isUser ? Colors.white : Colors.black87,
+                  fontSize: 13)),
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline, size: 14, color: Colors.red.shade700),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(message.validationError!,
+                      style: TextStyle(
+                          color: Colors.red.shade700,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Text(
+      message.text,
+      style: TextStyle(
+          color: message.isUser ? Colors.white : Colors.black87,
+          fontSize: 13,
+          height: 1.4),
     );
   }
 
-  // Build status options container
+  // ── Quick reply chip ──
+  Widget _buildModernOptionChip(String option) {
+    Color getColor() {
+      if (option.contains('Generate')) return Colors.purple;
+      if (option.contains('Use')) return Colors.green;
+      if (option.contains('Type')) return Colors.blue;
+      if (option.contains('Cancel')) return Colors.red;
+      if (option.contains('Resend')) return Colors.orange;
+      if (option.contains('View')) return Colors.teal;
+      if (option.contains('Create')) return Colors.indigo;
+      if (option.contains('Track')) return Colors.orange;
+      if (option.contains('Update')) return Colors.amber;
+      return Colors.grey;
+    }
+
+    final color = getColor();
+    return Material(
+      elevation: 1,
+      shadowColor: color.withValues(alpha: 0.2),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () => onOptionSelected(option),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.3)),
+          ),
+          child: Text(option,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.w500, fontSize: 11)),
+        ),
+      ),
+    );
+  }
+
+  // ── Status options container ──
   Widget _buildStatusOptionsContainer({
     required String title,
     required IconData icon,
@@ -1274,10 +1301,9 @@ class _ModernMessageBubble extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
@@ -1287,8 +1313,7 @@ class _ModernMessageBubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF283593)],
-              ),
+                  colors: [Color(0xFF1A237E), Color(0xFF283593)]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -1298,14 +1323,11 @@ class _ModernMessageBubble extends StatelessWidget {
               children: [
                 Icon(icon, color: Colors.white, size: 16),
                 const SizedBox(width: 8),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text(title,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -1315,12 +1337,10 @@ class _ModernMessageBubble extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.all(8),
-            child: _buildActionButton(
+            child: _smallActionBtn(
               icon: Icons.home,
               label: 'Main Menu',
               onTap: () => onOptionSelected('🏠 Main Menu'),
-              height: 30,
-              fontSize: 10,
             ),
           ),
         ],
@@ -1328,33 +1348,26 @@ class _ModernMessageBubble extends StatelessWidget {
     );
   }
 
-  // Build status option
-  Widget _buildStatusOption(String status, IconData icon, Color color, String quickReply) {
+  Widget _buildStatusOption(
+      String status, IconData icon, Color color, String quickReply) {
     return ListTile(
       dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          shape: BoxShape.circle,
-        ),
+            color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
         child: Icon(icon, color: color, size: 14),
       ),
-      title: Text(
-        status,
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: color,
-          fontSize: 12,
-        ),
-      ),
-      trailing: Icon(Icons.arrow_forward_ios, size: 10, color: Colors.grey.shade400),
+      title: Text(status,
+          style: TextStyle(
+              fontWeight: FontWeight.w500, color: color, fontSize: 12)),
+      trailing:
+          Icon(Icons.arrow_forward_ios, size: 10, color: Colors.grey.shade400),
       onTap: () => onOptionSelected(quickReply),
     );
   }
 
-  // Build status options for updating ticket status
   Widget _buildUpdateStatusOptions(String ticketId) {
     return Container(
       decoration: BoxDecoration(
@@ -1362,10 +1375,9 @@ class _ModernMessageBubble extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
@@ -1375,8 +1387,7 @@ class _ModernMessageBubble extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF283593)],
-              ),
+                  colors: [Color(0xFF1A237E), Color(0xFF283593)]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -1386,81 +1397,71 @@ class _ModernMessageBubble extends StatelessWidget {
               children: [
                 Icon(Icons.edit, color: Colors.white, size: 16),
                 SizedBox(width: 8),
-                Text(
-                  'Select New Status',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('Select New Status',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(4),
-            child: Column(
-              children: [
-                _buildUpdateStatusOption('OPEN', Icons.email, Colors.blue, ticketId),
-                _buildUpdateStatusOption('IN_PROGRESS', Icons.access_time, Colors.orange, ticketId),
-                _buildUpdateStatusOption('RESOLVED', Icons.check_circle, Colors.green, ticketId),
-                _buildUpdateStatusOption('REOPENED', Icons.refresh, Colors.purple, ticketId),
-              ],
-            ),
+            child: Column(children: [
+              _buildUpdateStatusOption(
+                  'OPEN', Icons.email, Colors.blue, ticketId),
+              _buildUpdateStatusOption(
+                  'IN_PROGRESS', Icons.access_time, Colors.orange, ticketId),
+              _buildUpdateStatusOption(
+                  'RESOLVED', Icons.check_circle, Colors.green, ticketId),
+              _buildUpdateStatusOption(
+                  'REOPENED', Icons.refresh, Colors.purple, ticketId),
+            ]),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildUpdateStatusOption(String status, IconData icon, Color color, String ticketId) {
+  Widget _buildUpdateStatusOption(
+      String status, IconData icon, Color color, String ticketId) {
     return ListTile(
       dense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       leading: Container(
         padding: const EdgeInsets.all(6),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.1),
-          shape: BoxShape.circle,
-        ),
+            color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
         child: Icon(icon, color: color, size: 14),
       ),
-      title: Text(
-        status,
-        style: TextStyle(
-          fontWeight: FontWeight.w500,
-          color: color,
-          fontSize: 12,
-        ),
-      ),
-      onTap: () => onOptionSelected('✅ Set Status: $status for #$ticketId'),
+      title: Text(status,
+          style: TextStyle(
+              fontWeight: FontWeight.w500, color: color, fontSize: 12)),
+      onTap: () =>
+          onOptionSelected('✅ Set Status: $status for #$ticketId'),
     );
   }
 
   Widget _buildResolutionInput(String ticketId) {
     final controller = TextEditingController();
-    
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF283593)],
-              ),
+                  colors: [Color(0xFF1A237E), Color(0xFF283593)]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -1470,14 +1471,11 @@ class _ModernMessageBubble extends StatelessWidget {
               children: [
                 Icon(Icons.note_add, color: Colors.white, size: 16),
                 SizedBox(width: 8),
-                Text(
-                  'Add Resolution',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('Add Resolution',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -1491,8 +1489,7 @@ class _ModernMessageBubble extends StatelessWidget {
                   decoration: InputDecoration(
                     hintText: 'Type resolution details...',
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(6),
-                    ),
+                        borderRadius: BorderRadius.circular(6)),
                     filled: true,
                     fillColor: Colors.grey.shade50,
                     contentPadding: const EdgeInsets.all(8),
@@ -1508,10 +1505,10 @@ class _ModernMessageBubble extends StatelessWidget {
                         style: OutlinedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                              borderRadius: BorderRadius.circular(4)),
                         ),
-                        child: const Text('Cancel', style: TextStyle(fontSize: 11)),
+                        child: const Text('Cancel',
+                            style: TextStyle(fontSize: 11)),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -1519,17 +1516,18 @@ class _ModernMessageBubble extends StatelessWidget {
                       child: ElevatedButton(
                         onPressed: () {
                           if (controller.text.isNotEmpty) {
-                            onOptionSelected('📝 Submit Resolution: ${controller.text}');
+                            onOptionSelected(
+                                '📝 Submit Resolution: ${controller.text}');
                           }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: const Color(0xFF1A237E),
                           padding: const EdgeInsets.symmetric(vertical: 8),
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(4),
-                          ),
+                              borderRadius: BorderRadius.circular(4)),
                         ),
-                        child: const Text('Submit', style: TextStyle(fontSize: 11)),
+                        child: const Text('Submit',
+                            style: TextStyle(fontSize: 11)),
                       ),
                     ),
                   ],
@@ -1542,151 +1540,26 @@ class _ModernMessageBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar(IconData icon, Color color) {
-    return Container(
-      width: 36,
-      height: 36,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [color, color.withValues(alpha: 0.7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.3),
-            blurRadius: 6,
-            spreadRadius: 1,
-          ),
-        ],
-      ),
-      child: Icon(icon, color: Colors.white, size: 18),
-    );
-  }
-
-  Widget _buildMessageText() {
-    if (message.validationError != null) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            message.text,
-            style: TextStyle(
-              color: message.isUser ? Colors.white : Colors.black87,
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: Colors.red.shade50,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.red.shade200),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.error_outline, size: 14, color: Colors.red.shade700),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    message.validationError!,
-                    style: TextStyle(
-                      color: Colors.red.shade700,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Text(
-      message.text,
-      style: TextStyle(
-        color: message.isUser ? Colors.white : Colors.black87,
-        fontSize: 13,
-        height: 1.4,
-      ),
-    );
-  }
-
-  Widget _buildModernOptionChip(String option) {
-    Color getChipColor() {
-      if (option.contains('Generate')) return Colors.purple;
-      if (option.contains('Use')) return Colors.green;
-      if (option.contains('Type')) return Colors.blue;
-      if (option.contains('Cancel')) return Colors.red;
-      if (option.contains('Resend')) return Colors.orange;
-      if (option.contains('View')) return Colors.teal;
-      if (option.contains('Create')) return Colors.indigo;
-      if (option.contains('Track')) return Colors.orange;
-      if (option.contains('Update')) return Colors.amber;
-      return Colors.grey;
-    }
-
-    final color = getChipColor();
-    
-    return Material(
-      elevation: 1,
-      shadowColor: color.withValues(alpha: 0.2),
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: () => onOptionSelected(option),
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: color.withValues(alpha: 0.3)),
-          ),
-          child: Text(
-            option,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w500,
-              fontSize: 11,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    double? height,
-    double? fontSize,
-  }) {
+  Widget _smallActionBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(6),
-        ),
+            color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: height != null ? height! * 0.5 : 14, color: Colors.grey.shade700),
+            Icon(icon, size: 14, color: Colors.grey.shade700),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: fontSize ?? 10,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -1694,7 +1567,7 @@ class _ModernMessageBubble extends StatelessWidget {
   }
 }
 
-// Track Ticket List Widget
+// ─── Track Ticket List Widget ─────────────────────────────────────────────────
 class _TrackTicketListWidget extends StatelessWidget {
   final List<TicketModel> tickets;
   final Function(TicketModel) onTicketTap;
@@ -1714,22 +1587,19 @@ class _TrackTicketListWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF283593)],
-              ),
+                  colors: [Color(0xFF1A237E), Color(0xFF283593)]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -1739,34 +1609,21 @@ class _TrackTicketListWidget extends StatelessWidget {
               children: [
                 Icon(Icons.track_changes, color: Colors.white, size: 16),
                 SizedBox(width: 8),
-                Text(
-                  'Select Ticket to Track',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('Select Ticket to Track',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
-          
-          // Ticket List
-          ...tickets.take(10).map((ticket) => _buildTicketItem(ticket)),
-          
-          // Quick Actions
+          ...tickets.take(10).map((t) => _buildTicketItem(t)),
           Padding(
             padding: const EdgeInsets.all(8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _buildActionButton(
-                    icon: Icons.home_outlined,
-                    label: 'Main Menu',
-                    onTap: () => onQuickReply('🏠 Main Menu'),
-                  ),
-                ),
-              ],
+            child: _actionBtn(
+              icon: Icons.home_outlined,
+              label: 'Main Menu',
+              onTap: () => onQuickReply('🏠 Main Menu'),
             ),
           ),
         ],
@@ -1775,6 +1632,7 @@ class _TrackTicketListWidget extends StatelessWidget {
   }
 
   Widget _buildTicketItem(TicketModel ticket) {
+    final name = _ticketDisplayName(ticket);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1782,27 +1640,17 @@ class _TrackTicketListWidget extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.grey.shade200,
-                width: 1,
-              ),
-            ),
-          ),
+              border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade200))),
           child: Row(
             children: [
-              // Status Indicator
               Container(
-                width: 3,
-                height: 35,
-                decoration: BoxDecoration(
-                  color: ticket.statusColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+                  width: 3,
+                  height: 35,
+                  decoration: BoxDecoration(
+                      color: ticket.statusColor,
+                      borderRadius: BorderRadius.circular(2))),
               const SizedBox(width: 10),
-              
-              // Icon
               Container(
                 width: 35,
                 height: 35,
@@ -1810,69 +1658,59 @@ class _TrackTicketListWidget extends StatelessWidget {
                   color: ticket.statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Icon(
-                  ticket.statusIcon,
-                  color: ticket.statusColor,
-                  size: 16,
-                ),
+                child: Icon(ticket.statusIcon, color: ticket.statusColor, size: 16),
               ),
               const SizedBox(width: 10),
-              
-              // Content - Simplified: Title, Status, ID only
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      ticket.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            name,
+                            style: const TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 12),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (ticket.hasUserImage || ticket.hasResUserImage)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Icon(Icons.attach_file,
+                                size: 11, color: Colors.purple.shade300),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Row(
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
+                              horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             color: ticket.statusColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(2),
                           ),
-                          child: Text(
-                            ticket.statusText,
-                            style: TextStyle(
-                              fontSize: 8,
-                              color: ticket.statusColor,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          child: Text(ticket.statusText,
+                              style: TextStyle(
+                                  fontSize: 8,
+                                  color: ticket.statusColor,
+                                  fontWeight: FontWeight.w500)),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          '#${ticket.id}',
-                          style: TextStyle(
-                            fontSize: 8,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
+                        Text('#${ticket.id}',
+                            style: TextStyle(
+                                fontSize: 8, color: Colors.grey.shade500)),
                       ],
                     ),
                   ],
                 ),
               ),
-              
-              // Arrow
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 10,
-                color: Colors.grey.shade400,
-              ),
+              Icon(Icons.arrow_forward_ios,
+                  size: 10, color: Colors.grey.shade400),
             ],
           ),
         ),
@@ -1880,32 +1718,26 @@ class _TrackTicketListWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _actionBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(6),
-        ),
+            color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 14, color: Colors.grey.shade700),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -1913,7 +1745,7 @@ class _TrackTicketListWidget extends StatelessWidget {
   }
 }
 
-// Track Ticket Detail Card
+// ─── Track Ticket Detail Card ─────────────────────────────────────────────────
 class _TrackTicketDetailCard extends StatelessWidget {
   final TicketModel ticket;
   final Function(String) onOptionSelected;
@@ -1926,6 +1758,7 @@ class _TrackTicketDetailCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ticketIdInt = int.tryParse(ticket.id);
+    final name = _ticketDisplayName(ticket);
 
     return Container(
       decoration: BoxDecoration(
@@ -1933,25 +1766,23 @@ class _TrackTicketDetailCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 10,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header with Ticket ID and Status
+          // ── Header ──
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  ticket.statusColor,
-                  ticket.statusColor.withValues(alpha: 0.8),
-                ],
-              ),
+                  colors: [
+                    ticket.statusColor,
+                    ticket.statusColor.withValues(alpha: 0.8)
+                  ]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -1965,109 +1796,106 @@ class _TrackTicketDetailCard extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(
-                    ticket.statusIcon,
-                    color: Colors.white,
-                    size: 16,
-                  ),
+                  child: Icon(ticket.statusIcon, color: Colors.white, size: 16),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Ticket #${ticket.id}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      Text('Ticket #${ticket.id}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold)),
                       const SizedBox(height: 2),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 1,
-                        ),
+                            horizontal: 6, vertical: 1),
                         decoration: BoxDecoration(
                           color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Text(
-                          ticket.statusText,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                          ),
-                        ),
+                        child: Text(ticket.statusText,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 10)),
                       ),
                     ],
                   ),
                 ),
+                if (ticket.hasUserImage || ticket.hasResUserImage)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 7, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.attach_file,
+                            size: 12, color: Colors.white),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${(ticket.hasUserImage ? 1 : 0) + (ticket.hasResUserImage ? 1 : 0)}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
 
-          // Content
+          // ── Content ──
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title
-                Text(
-                  ticket.title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                if (ticket.queryType?.isNotEmpty == true) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.category,
+                          size: 11, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text('Query Type',
+                          style: TextStyle(
+                              fontSize: 9, color: Colors.grey.shade500)),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 2),
+                ],
+                Text(name,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 6),
-                
-                // Description
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(
-                    ticket.description,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
+                  child: Text(ticket.description,
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade800)),
                 ),
-                
                 const SizedBox(height: 12),
-                
-                // Dates Grid
-                _buildInfoRow(
-                  'Created:', 
-                  _formatDateTime(ticket.createdAt),
-                  Icons.calendar_today,
-                  Colors.blue,
-                ),
+
+                _infoRow('Created:', _fmtFull(ticket.createdAt),
+                    Icons.calendar_today, Colors.blue),
                 if (ticket.resolvedAt != null)
-                  _buildInfoRow(
-                    'Resolved:',
-                    _formatDateTime(ticket.resolvedAt!),
-                    Icons.check_circle,
-                    Colors.green,
-                  ),
+                  _infoRow('Resolved:', _fmtFull(ticket.resolvedAt!),
+                      Icons.check_circle, Colors.green),
                 if (ticket.closedDate != null)
-                  _buildInfoRow(
-                    'Closed:',
-                    _formatDateTime(ticket.closedDate!),
-                    Icons.lock,
-                    Colors.grey,
-                  ),
-                
-                // Resolution Summary
-                if (ticket.currentResolutionSummary != null && 
-                    ticket.currentResolutionSummary!.isNotEmpty) ...[
+                  _infoRow('Closed:', _fmtFull(ticket.closedDate!),
+                      Icons.lock, Colors.grey),
+
+                if (ticket.currentResolutionSummary?.isNotEmpty == true) ...[
                   const SizedBox(height: 8),
                   Container(
                     padding: const EdgeInsets.all(8),
@@ -2081,100 +1909,84 @@ class _TrackTicketDetailCard extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Icon(Icons.description, size: 12, color: Colors.green.shade700),
+                            Icon(Icons.description,
+                                size: 12, color: Colors.green.shade700),
                             const SizedBox(width: 4),
-                            Text(
-                              'Resolution',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.green.shade700,
-                              ),
-                            ),
+                            Text('Resolution',
+                                style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.green.shade700)),
                           ],
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          ticket.currentResolutionSummary!,
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Colors.green.shade800,
-                          ),
-                        ),
+                        Text(ticket.currentResolutionSummary!,
+                            style: TextStyle(
+                                fontSize: 11, color: Colors.green.shade800)),
                       ],
                     ),
                   ),
                 ],
 
-                // Inline images
-                if (ticketIdInt != null && ticket.hasUserImage) ...[
+                // ── Inline attachments ──
+                if (ticketIdInt != null &&
+                    (ticket.hasUserImage || ticket.hasResUserImage)) ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.attach_file,
+                          size: 13, color: Colors.grey.shade600),
+                      const SizedBox(width: 6),
+                      Text('Attachments',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade700)),
+                    ],
+                  ),
                   const SizedBox(height: 10),
-                  _InlineTicketImage(
-                    ticketId: ticketIdInt,
-                    fileType: 'user',
-                    label: 'User Attachment',
-                  ),
-                ],
-                if (ticketIdInt != null && ticket.hasResUserImage) ...[
-                  const SizedBox(height: 8),
-                  _InlineTicketImage(
-                    ticketId: ticketIdInt,
-                    fileType: 'developer',
-                    label: 'Developer Attachment',
-                  ),
+                  if (ticket.hasUserImage)
+                    _InlineTicketImage(
+                      ticketId: ticketIdInt,
+                      fileType: 'USER',
+                      label: 'User Attachment',
+                    ),
+                  if (ticket.hasUserImage && ticket.hasResUserImage)
+                    const SizedBox(height: 10),
+                  if (ticket.hasResUserImage)
+                    _InlineTicketImage(
+                      ticketId: ticketIdInt,
+                      fileType: 'DEVELOPER',
+                      label: 'Developer Attachment',
+                    ),
                 ],
               ],
             ),
           ),
-          
-          // Action Buttons
+
+          // ── Actions ──
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              border: Border(
-                top: BorderSide(color: Colors.grey.shade200),
-              ),
-            ),
-            child: Column(
+                border: Border(top: BorderSide(color: Colors.grey.shade200))),
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    // Expanded(
-                    //   child: _buildActionButton2(
-                    //     icon: Icons.edit,
-                    //     label: 'Update Status',
-                    //     onTap: () => onOptionSelected('✏️ Update Status for #${ticket.id}'),
-                    //   ),
-                    // ),
-                    const SizedBox(width: 6),
-                    // Expanded(
-                    //   child: _buildActionButton2(
-                    //     icon: Icons.note_add,
-                    //     label: 'Add Resolution',
-                    //     onTap: () => onOptionSelected('📝 Add Resolution for #${ticket.id}'),
-                    //   ),
-                    // ),
-                  ],
+                Expanded(
+                  child: _actionBtn2(
+                    icon: Icons.arrow_back,
+                    label: 'Back',
+                    onTap: () => onOptionSelected('🔍 Track Ticket'),
+                  ),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildActionButton2(
-                        icon: Icons.arrow_back,
-                        label: 'Back',
-                        onTap: () => onOptionSelected('🔍 Track Ticket'),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: _buildActionButton2(
-                        icon: Icons.home,
-                        label: 'Main Menu',
-                        onTap: () => onOptionSelected('🏠 Main Menu'),
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 6),
+                Expanded(
+                  child: _actionBtn2(
+                    icon: Icons.home,
+                    label: 'Main Menu',
+                    onTap: () => onOptionSelected('🏠 Main Menu'),
+                  ),
                 ),
               ],
             ),
@@ -2184,524 +1996,59 @@ class _TrackTicketDetailCard extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow(String label, String value, IconData icon, Color color) {
+  Widget _infoRow(String label, String value, IconData icon, Color color) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
         children: [
           Icon(icon, size: 12, color: color),
           const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Colors.grey.shade600,
-            ),
-          ),
+          Text(label,
+              style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
           const SizedBox(width: 4),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+            child: Text(value,
+                style: const TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w500),
+                overflow: TextOverflow.ellipsis),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildActionButton2({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _actionBtn2(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(4),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(4),
-        ),
+            color: Colors.grey.shade100, borderRadius: BorderRadius.circular(4)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 12, color: Colors.grey.shade700),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
     );
   }
 
-  String _formatDateTime(DateTime date) {
-    return '${date.day}/${date.month}/${date.year} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
-  }
+  String _fmtFull(DateTime d) =>
+      '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }
 
-// Modern Ticket Form Widget
-class _ModernTicketForm extends StatefulWidget {
-  final Function(String, String, String, List<File>) onSubmit;
-  final VoidCallback onCancel;
-
-  const _ModernTicketForm({
-    required this.onSubmit,
-    required this.onCancel,
-  });
-
-  @override
-  State<_ModernTicketForm> createState() => _ModernTicketFormState();
-}
-
-class _ModernTicketFormState extends State<_ModernTicketForm> {
-  final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
-  final _descriptionController = TextEditingController();
-  
-  String _selectedPriority = 'MEDIUM';
-  List<File> _selectedImages = [];
-  bool _isUploading = false;
-  bool _isSubmitting = false;
-
-  final List<String> _priorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                Colors.white,
-                Colors.grey.shade50,
-              ],
-            ),
-          ),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              children: [
-                // Header
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF1A237E), Color(0xFF283593)],
-                    ),
-                    borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(12),
-                      topRight: Radius.circular(12),
-                    ),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.support_agent, color: Colors.white, size: 16),
-                      SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          'Create Support Ticket',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                
-                // Form Fields
-                Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: Column(
-                    children: [
-                      // Title Field
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: TextFormField(
-                          controller: _titleController,
-                          decoration: InputDecoration(
-                            hintText: 'Title',
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            prefixIcon: Icon(Icons.title, color: Colors.grey.shade600, size: 16),
-                          ),
-                          style: const TextStyle(fontSize: 12),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Required';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 6),
-                      
-                      // Description Field
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        child: TextFormField(
-                          controller: _descriptionController,
-                          maxLines: 2,
-                          decoration: InputDecoration(
-                            hintText: 'Description',
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            prefixIcon: Icon(Icons.description, color: Colors.grey.shade600, size: 16),
-                          ),
-                          style: const TextStyle(fontSize: 12),
-                          validator: (value) {
-                            if (value == null || value.isEmpty) {
-                              return 'Required';
-                            }
-                            return null;
-                          },
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 6),
-                      
-                      // Priority Selection
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-                        child: DropdownButtonFormField<String>(
-                          decoration: const InputDecoration(
-                            border: InputBorder.none,
-                            contentPadding: EdgeInsets.zero,
-                          ),
-                          value: _selectedPriority,
-                          items: _priorities.map((priority) {
-                            return DropdownMenuItem(
-                              value: priority,
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 6,
-                                    height: 6,
-                                    decoration: BoxDecoration(
-                                      color: _getPriorityColor(priority),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(priority, style: const TextStyle(fontSize: 11)),
-                                ],
-                              ),
-                            );
-                          }).toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _selectedPriority = value!;
-                            });
-                          },
-                          icon: Icon(Icons.arrow_drop_down, color: Colors.grey.shade600, size: 18),
-                          style: const TextStyle(fontSize: 11),
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 6),
-                      
-                      // Image Upload Section
-                      Container(
-                        decoration: BoxDecoration(
-                          color: Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.grey.shade200),
-                        ),
-                        padding: const EdgeInsets.all(8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.image, size: 14, color: Colors.grey.shade700),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'Attachments (Optional)',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 4),
-                            
-                            // Image previews
-                            if (_selectedImages.isNotEmpty) ...[
-                              SizedBox(
-                                height: 40,
-                                child: ListView.builder(
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: _selectedImages.length,
-                                  itemBuilder: (context, index) {
-                                    return Stack(
-                                      children: [
-                                        Container(
-                                          width: 40,
-                                          height: 40,
-                                          margin: const EdgeInsets.only(right: 4),
-                                          decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(4),
-                                            border: Border.all(color: Colors.grey.shade300),
-                                            image: DecorationImage(
-                                              image: FileImage(_selectedImages[index]),
-                                              fit: BoxFit.cover,
-                                            ),
-                                          ),
-                                        ),
-                                        Positioned(
-                                          top: 0,
-                                          right: 0,
-                                          child: GestureDetector(
-                                            onTap: () {
-                                              setState(() {
-                                                _selectedImages.removeAt(index);
-                                              });
-                                            },
-                                            child: Container(
-                                              padding: const EdgeInsets.all(2),
-                                              decoration: const BoxDecoration(
-                                                color: Colors.red,
-                                                shape: BoxShape.circle,
-                                              ),
-                                              child: const Icon(
-                                                Icons.close,
-                                                size: 8,
-                                                color: Colors.white,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                            ],
-                            
-                            // Upload button
-                            InkWell(
-                              onTap: _isUploading ? null : _pickImages,
-                              child: Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.symmetric(vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: Colors.blue.shade50,
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(
-                                    color: Colors.blue.shade200,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    if (_isUploading)
-                                      const SizedBox(
-                                        width: 12,
-                                        height: 12,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 1.5,
-                                          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                                        ),
-                                      )
-                                    else
-                                      Icon(Icons.cloud_upload, size: 12, color: Colors.blue.shade700),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      _isUploading ? 'Uploading...' : 'Upload Images',
-                                      style: TextStyle(
-                                        color: Colors.blue.shade700,
-                                        fontWeight: FontWeight.w500,
-                                        fontSize: 10,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                            
-                            const SizedBox(height: 2),
-                            Text(
-                              'Max 1MB • JPG, PNG',
-                              style: TextStyle(
-                                fontSize: 8,
-                                color: Colors.grey.shade500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      
-                      const SizedBox(height: 10),
-                      
-                      // Action Buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: _isSubmitting ? null : widget.onCancel,
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.grey.shade700,
-                                side: BorderSide(color: Colors.grey.shade300),
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              child: const Text('Cancel', style: TextStyle(fontSize: 11)),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: _isSubmitting ? null : _submitForm,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF1A237E),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 8),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                              ),
-                              child: _isSubmitting
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 1.5,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text('Create', style: TextStyle(fontSize: 11)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Color _getPriorityColor(String priority) {
-    switch (priority) {
-      case 'LOW': return Colors.green;
-      case 'MEDIUM': return Colors.orange;
-      case 'HIGH': return Colors.deepOrange;
-      case 'CRITICAL': return Colors.red;
-      default: return Colors.grey;
-    }
-  }
-
-  Future<void> _pickImages() async {
-    setState(() => _isUploading = true);
-    
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['jpg', 'jpeg', 'png'],
-        allowMultiple: true,
-      );
-      
-      if (result != null) {
-        final validFiles = <File>[];
-        
-        for (var i = 0; i < result.files.length; i++) {
-          final file = result.files[i];
-          if (file.size <= 1048576) {
-            validFiles.add(File(file.path!));
-          }
-        }
-        
-        setState(() {
-          _selectedImages.addAll(validFiles);
-          _isUploading = false;
-        });
-      } else {
-        setState(() => _isUploading = false);
-      }
-    } catch (e) {
-      setState(() => _isUploading = false);
-    }
-  }
-
-  void _submitForm() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isSubmitting = true);
-      
-      await widget.onSubmit(
-        _titleController.text,
-        _descriptionController.text,
-        _selectedPriority,
-        _selectedImages,
-      );
-      
-      if (mounted) {
-        setState(() => _isSubmitting = false);
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _titleController.dispose();
-    _descriptionController.dispose();
-    super.dispose();
-  }
-}
-
-// Modern Ticket List Widget for View Tickets - Simplified
+// ─── Ticket List Widget (View Tickets flow) ───────────────────────────────────
 class TicketListWidget extends StatelessWidget {
   final List<TicketModel> tickets;
   final Function(TicketModel) onTicketTap;
@@ -2722,22 +2069,19 @@ class TicketListWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xFF1A237E), Color(0xFF283593)],
-              ),
+                  colors: [Color(0xFF1A237E), Color(0xFF283593)]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -2748,55 +2092,41 @@ class TicketListWidget extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: const Icon(
-                    Icons.confirmation_number,
-                    color: Colors.white,
-                    size: 14,
-                  ),
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(6)),
+                  child: const Icon(Icons.confirmation_number,
+                      color: Colors.white, size: 14),
                 ),
                 const SizedBox(width: 8),
                 const Expanded(
-                  child: Text(
-                    'Your Tickets',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
+                  child: Text('Your Tickets',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600)),
                 ),
                 Container(
-                  padding: const EdgeInsets.all(2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '${tickets.length}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text('${tickets.length}',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
           ),
-          
-          // Ticket List
-          ...tickets.take(10).map((ticket) => _buildTicketItem(ticket)),
-          
-          // Quick Actions
+          ...tickets.take(10).map((t) => _buildTicketItem(t)),
           Padding(
             padding: const EdgeInsets.all(8),
             child: Row(
               children: [
                 Expanded(
-                  child: _buildActionButton(
+                  child: _actionBtn(
                     icon: Icons.add_circle_outline,
                     label: 'Create New',
                     onTap: () => onQuickReply('🎫 Create Ticket'),
@@ -2804,7 +2134,7 @@ class TicketListWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _buildActionButton(
+                  child: _actionBtn(
                     icon: Icons.home_outlined,
                     label: 'Main Menu',
                     onTap: () => onQuickReply('🏠 Main Menu'),
@@ -2819,6 +2149,7 @@ class TicketListWidget extends StatelessWidget {
   }
 
   Widget _buildTicketItem(TicketModel ticket) {
+    final name = _ticketDisplayName(ticket);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2826,27 +2157,17 @@ class TicketListWidget extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(10),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: Colors.grey.shade200,
-                width: 1,
-              ),
-            ),
-          ),
+              border: Border(
+                  bottom: BorderSide(color: Colors.grey.shade200))),
           child: Row(
             children: [
-              // Status Indicator
               Container(
-                width: 3,
-                height: 35,
-                decoration: BoxDecoration(
-                  color: ticket.statusColor,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
+                  width: 3,
+                  height: 35,
+                  decoration: BoxDecoration(
+                      color: ticket.statusColor,
+                      borderRadius: BorderRadius.circular(2))),
               const SizedBox(width: 10),
-              
-              // Icon
               Container(
                 width: 35,
                 height: 35,
@@ -2854,37 +2175,38 @@ class TicketListWidget extends StatelessWidget {
                   color: ticket.statusColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Icon(
-                  ticket.statusIcon,
-                  color: ticket.statusColor,
-                  size: 16,
-                ),
+                child: Icon(ticket.statusIcon,
+                    color: ticket.statusColor, size: 16),
               ),
               const SizedBox(width: 10),
-              
-              // Content - Title, Description, Status, Date
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      ticket.title,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 12,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(name,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 12),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                        ),
+                        if (ticket.hasUserImage || ticket.hasResUserImage)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 4),
+                            child: Icon(Icons.attach_file,
+                                size: 11, color: Colors.purple.shade300),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      ticket.description.length > 30 
-                          ? '${ticket.description.substring(0, 30)}...' 
+                      ticket.description.length > 30
+                          ? '${ticket.description.substring(0, 30)}…'
                           : ticket.description,
-                      style: TextStyle(
-                        fontSize: 9,
-                        color: Colors.grey.shade600,
-                      ),
+                      style:
+                          TextStyle(fontSize: 9, color: Colors.grey.shade600),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -2893,42 +2215,28 @@ class TicketListWidget extends StatelessWidget {
                       children: [
                         Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 4,
-                            vertical: 1,
-                          ),
+                              horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             color: ticket.statusColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(2),
                           ),
-                          child: Text(
-                            ticket.statusText,
-                            style: TextStyle(
-                              fontSize: 8,
-                              color: ticket.statusColor,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
+                          child: Text(ticket.statusText,
+                              style: TextStyle(
+                                  fontSize: 8,
+                                  color: ticket.statusColor,
+                                  fontWeight: FontWeight.w500)),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          _formatDate(ticket.createdAt),
-                          style: TextStyle(
-                            fontSize: 8,
-                            color: Colors.grey.shade500,
-                          ),
-                        ),
+                        Text(_fmt(ticket.createdAt),
+                            style: TextStyle(
+                                fontSize: 8, color: Colors.grey.shade500)),
                       ],
                     ),
                   ],
                 ),
               ),
-              
-              // Arrow
-              Icon(
-                Icons.arrow_forward_ios,
-                size: 10,
-                color: Colors.grey.shade400,
-              ),
+              Icon(Icons.arrow_forward_ios,
+                  size: 10, color: Colors.grey.shade400),
             ],
           ),
         ),
@@ -2936,44 +2244,36 @@ class TicketListWidget extends StatelessWidget {
     );
   }
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _actionBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(6),
-        ),
+            color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 14, color: Colors.grey.shade700),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 10,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
+  String _fmt(DateTime d) => '${d.day}/${d.month}/${d.year}';
 }
 
-// Modern Ticket Detail Widget for View Ticket
+// ─── Ticket Detail Widget (View Ticket flow) ──────────────────────────────────
 class TicketDetailWidget extends StatelessWidget {
   final TicketModel ticket;
   final Function(String) onQuickReply;
@@ -2987,6 +2287,7 @@ class TicketDetailWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ticketIdInt = int.tryParse(ticket.id);
+    final name = _ticketDisplayName(ticket);
 
     return Container(
       decoration: BoxDecoration(
@@ -2994,25 +2295,23 @@ class TicketDetailWidget extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
+          // ── Header ──
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  ticket.statusColor,
-                  ticket.statusColor.withValues(alpha: 0.8),
-                ],
-              ),
+                  colors: [
+                    ticket.statusColor,
+                    ticket.statusColor.withValues(alpha: 0.8)
+                  ]),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(12),
                 topRight: Radius.circular(12),
@@ -3026,125 +2325,149 @@ class TicketDetailWidget extends StatelessWidget {
                     color: Colors.white.withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Icon(
-                    ticket.statusIcon,
-                    color: Colors.white,
-                    size: 14,
-                  ),
+                  child: Icon(ticket.statusIcon, color: Colors.white, size: 14),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Ticket #${ticket.id}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      Text(
-                        ticket.statusText,
-                        style: const TextStyle(
-                          color: Colors.white70,
-                          fontSize: 10,
-                        ),
-                      ),
+                      Text('Ticket #${ticket.id}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                      Text(ticket.statusText,
+                          style: const TextStyle(
+                              color: Colors.white70, fontSize: 10)),
                     ],
                   ),
                 ),
+                if (ticket.hasUserImage || ticket.hasResUserImage)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.attach_file,
+                            size: 11, color: Colors.white),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${(ticket.hasUserImage ? 1 : 0) + (ticket.hasResUserImage ? 1 : 0)}',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
               ],
             ),
           ),
-          
-          // Content
+
+          // ── Content ──
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Title
-                Text(
-                  ticket.title,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                if (ticket.queryType?.isNotEmpty == true) ...[
+                  Row(
+                    children: [
+                      Icon(Icons.category,
+                          size: 11, color: Colors.grey.shade500),
+                      const SizedBox(width: 4),
+                      Text('Query Type',
+                          style: TextStyle(
+                              fontSize: 9, color: Colors.grey.shade500)),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 2),
+                ],
+                Text(name,
+                    style: const TextStyle(
+                        fontSize: 14, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
-                
-                // Description
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
                     color: Colors.grey.shade50,
                     borderRadius: BorderRadius.circular(6),
                   ),
-                  child: Text(
-                    ticket.description,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade800,
-                    ),
-                  ),
+                  child: Text(ticket.description,
+                      style: TextStyle(
+                          fontSize: 12, color: Colors.grey.shade800)),
                 ),
                 const SizedBox(height: 8),
-                
-                // Metadata
                 Row(
                   children: [
-                    Icon(Icons.person_outline, size: 12, color: Colors.grey.shade500),
+                    Icon(Icons.person_outline,
+                        size: 12, color: Colors.grey.shade500),
                     const SizedBox(width: 4),
-                    Text(
-                      ticket.createdBy,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    Text(ticket.createdBy,
+                        style: TextStyle(
+                            fontSize: 10, color: Colors.grey.shade600)),
                     const SizedBox(width: 12),
-                    Icon(Icons.access_time, size: 12, color: Colors.grey.shade500),
+                    Icon(Icons.access_time,
+                        size: 12, color: Colors.grey.shade500),
                     const SizedBox(width: 4),
-                    Text(
-                      _formatDate(ticket.createdAt),
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    Text(_fmt(ticket.createdAt),
+                        style: TextStyle(
+                            fontSize: 10, color: Colors.grey.shade600)),
                   ],
                 ),
 
-                // Inline images
-                if (ticketIdInt != null && ticket.hasUserImage) ...[
+                // ── Inline attachments ──
+                if (ticketIdInt != null &&
+                    (ticket.hasUserImage || ticket.hasResUserImage)) ...[
+                  const SizedBox(height: 12),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Icon(Icons.attach_file,
+                          size: 13, color: Colors.grey.shade600),
+                      const SizedBox(width: 6),
+                      Text('Attachments',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey.shade700)),
+                    ],
+                  ),
                   const SizedBox(height: 10),
-                  _InlineTicketImage(
-                    ticketId: ticketIdInt,
-                    fileType: 'user',
-                    label: 'User Attachment',
-                  ),
-                ],
-                if (ticketIdInt != null && ticket.hasResUserImage) ...[
-                  const SizedBox(height: 8),
-                  _InlineTicketImage(
-                    ticketId: ticketIdInt,
-                    fileType: 'developer',
-                    label: 'Developer Attachment',
-                  ),
+                  if (ticket.hasUserImage)
+                    _InlineTicketImage(
+                      ticketId: ticketIdInt,
+                      fileType: 'USER',
+                      label: 'User Attachment',
+                    ),
+                  if (ticket.hasUserImage && ticket.hasResUserImage)
+                    const SizedBox(height: 10),
+                  if (ticket.hasResUserImage)
+                    _InlineTicketImage(
+                      ticketId: ticketIdInt,
+                      fileType: 'DEVELOPER',
+                      label: 'Developer Attachment',
+                    ),
                 ],
               ],
             ),
           ),
-          
-          // Quick Actions
+
+          // ── Quick Actions ──
           Padding(
             padding: const EdgeInsets.all(8),
             child: Row(
               children: [
                 Expanded(
-                  child: _buildActionButton(
+                  child: _actionBtn(
                     icon: Icons.arrow_back,
                     label: 'Back',
                     onTap: () => onQuickReply('📋 View My Tickets'),
@@ -3152,7 +2475,7 @@ class TicketDetailWidget extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: _buildActionButton(
+                  child: _actionBtn(
                     icon: Icons.home,
                     label: 'Main Menu',
                     onTap: () => onQuickReply('🏠 Main Menu'),
@@ -3166,36 +2489,28 @@ class TicketDetailWidget extends StatelessWidget {
     );
   }
 
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
-  }
+  String _fmt(DateTime d) => '${d.day}/${d.month}/${d.year}';
 
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _actionBtn(
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap}) {
     return InkWell(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: BoxDecoration(
-          color: Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(6),
-        ),
+            color: Colors.grey.shade100, borderRadius: BorderRadius.circular(6)),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon, size: 12, color: Colors.grey.shade700),
             const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 9,
-                color: Colors.grey.shade700,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 9,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -3203,7 +2518,532 @@ class TicketDetailWidget extends StatelessWidget {
   }
 }
 
-// Modern Typing Indicator
+// ─── Modern Ticket Form ───────────────────────────────────────────────────────
+class _ModernTicketForm extends StatefulWidget {
+  final Function(String, String, String, List<File>) onSubmit;
+  final VoidCallback onCancel;
+
+  const _ModernTicketForm({required this.onSubmit, required this.onCancel});
+
+  @override
+  State<_ModernTicketForm> createState() => _ModernTicketFormState();
+}
+
+class _ModernTicketFormState extends State<_ModernTicketForm> {
+  final _formKey = GlobalKey<FormState>();
+  final _descriptionController = TextEditingController();
+
+  String? _selectedQueryType;
+  String _selectedPriority = 'MEDIUM';
+  List<File> _selectedImages = [];
+  bool _isUploading = false;
+  bool _isSubmitting = false;
+
+  // ── Query type → icon mapping ──
+  static const List<Map<String, dynamic>> _queryItems = [
+    {'label': 'Access Request',       'icon': Icons.vpn_key_rounded},
+    {'label': 'Billing Issue',        'icon': Icons.credit_card_rounded},
+    {'label': 'Data Correction Issue','icon': Icons.storage_rounded},
+    {'label': 'Feature Request',      'icon': Icons.auto_awesome_rounded},
+    {'label': 'General Query',        'icon': Icons.chat_bubble_outline_rounded},
+    {'label': 'Network Issue',        'icon': Icons.wifi_rounded},
+    {'label': 'Password Request',     'icon': Icons.lock_reset_rounded},
+    {'label': 'Software Issue',       'icon': Icons.computer_rounded},
+    {'label': 'Other',                'icon': Icons.list_alt_rounded},
+  ];
+
+  // ── Show bottom-sheet grid picker ──
+  void _showQueryTypeSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Handle bar
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10, bottom: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Sheet title
+              const Padding(
+                padding: EdgeInsets.only(bottom: 10),
+                child: Text(
+                  'CHOOSE CATEGORY',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1A237E),
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              // 3-column icon grid
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: GridView.count(
+                  crossAxisCount: 3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 1.1,
+                  children: _queryItems.map((item) {
+                    final label = item['label'] as String;
+                    final icon  = item['icon']  as IconData;
+                    final isSelected = _selectedQueryType == label;
+                    return GestureDetector(
+                      onTap: () {
+                        setState(() => _selectedQueryType = label);
+                        Navigator.pop(context);
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? const Color(0xFFE8EAF6)
+                              : const Color(0xFFFAFBFF),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF1A237E)
+                                : const Color(0xFFE8EAF6),
+                            width: isSelected ? 1.5 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              icon,
+                              size: 22,
+                              color: isSelected
+                                  ? const Color(0xFF1A237E)
+                                  : const Color(0xFF5C6BC0),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              label,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w600,
+                                color: isSelected
+                                    ? const Color(0xFF1A237E)
+                                    : const Color(0xFF3949AB),
+                                height: 1.2,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            children: [
+              // ── Header ──
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                      colors: [Color(0xFF1A237E), Color(0xFF283593)]),
+                  borderRadius: BorderRadius.only(
+                    topLeft: Radius.circular(12),
+                    topRight: Radius.circular(12),
+                  ),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.support_agent, color: Colors.white, size: 16),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Create Support Ticket',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+              ),
+
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  children: [
+
+                    // ── Query Type — custom trigger button ──
+                    FormField<String>(
+                      validator: (_) => (_selectedQueryType == null || _selectedQueryType!.isEmpty)
+                          ? 'Please select a query type'
+                          : null,
+                      builder: (fieldState) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GestureDetector(
+                            onTap: _showQueryTypeSheet,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: _selectedQueryType != null
+                                    ? const Color(0xFFE8EAF6)
+                                    : Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: fieldState.hasError
+                                      ? Colors.red.shade400
+                                      : _selectedQueryType != null
+                                          ? const Color(0xFF3949AB)
+                                          : Colors.grey.shade200,
+                                  width: _selectedQueryType != null ? 1.5 : 1,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _selectedQueryType != null
+                                        ? _queryItems.firstWhere(
+                                            (e) => e['label'] == _selectedQueryType,
+                                            orElse: () => _queryItems.last,
+                                          )['icon'] as IconData
+                                        : Icons.grid_view_rounded,
+                                    size: 16,
+                                    color: _selectedQueryType != null
+                                        ? const Color(0xFF1A237E)
+                                        : Colors.grey.shade500,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _selectedQueryType ?? 'Select Query Type',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: _selectedQueryType != null
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                        color: _selectedQueryType != null
+                                            ? const Color(0xFF1A237E)
+                                            : Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_selectedQueryType != null)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1A237E),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Icon(Icons.check,
+                                          size: 10, color: Colors.white),
+                                    )
+                                  else
+                                    Icon(Icons.keyboard_arrow_down_rounded,
+                                        size: 16, color: Colors.grey.shade400),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (fieldState.hasError)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4, left: 4),
+                              child: Text(
+                                fieldState.errorText!,
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.red.shade600),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+
+                    // ── Description ──
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: TextFormField(
+                        controller: _descriptionController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          hintText: 'Description',
+                          border: InputBorder.none,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
+                          prefixIcon: Icon(Icons.description,
+                              color: Colors.grey.shade600, size: 16),
+                        ),
+                        style: const TextStyle(fontSize: 12),
+                        validator: (v) =>
+                            (v == null || v.isEmpty) ? 'Required' : null,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+
+                    // ── Image Upload ──
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      padding: const EdgeInsets.all(8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.image,
+                                  size: 14, color: Colors.grey.shade700),
+                              const SizedBox(width: 4),
+                              Text('Attachments (Optional)',
+                                  style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey.shade700)),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          if (_selectedImages.isNotEmpty) ...[
+                            SizedBox(
+                              height: 44,
+                              child: ListView.builder(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: _selectedImages.length,
+                                itemBuilder: (context, i) {
+                                  return Stack(
+                                    children: [
+                                      Container(
+                                        width: 40,
+                                        height: 40,
+                                        margin:
+                                            const EdgeInsets.only(right: 4),
+                                        decoration: BoxDecoration(
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                          border: Border.all(
+                                              color: Colors.grey.shade300),
+                                          image: DecorationImage(
+                                            image:
+                                                FileImage(_selectedImages[i]),
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 0,
+                                        right: 0,
+                                        child: GestureDetector(
+                                          onTap: () => setState(() =>
+                                              _selectedImages.removeAt(i)),
+                                          child: Container(
+                                            padding: const EdgeInsets.all(2),
+                                            decoration: const BoxDecoration(
+                                                color: Colors.red,
+                                                shape: BoxShape.circle),
+                                            child: const Icon(Icons.close,
+                                                size: 8, color: Colors.white),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                          ],
+                          InkWell(
+                            onTap: _isUploading ? null : _pickImages,
+                            child: Container(
+                              width: double.infinity,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.shade50,
+                                borderRadius: BorderRadius.circular(4),
+                                border:
+                                    Border.all(color: Colors.blue.shade200),
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_isUploading)
+                                    const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 1.5,
+                                          valueColor:
+                                              AlwaysStoppedAnimation<Color>(
+                                                  Colors.blue)),
+                                    )
+                                  else
+                                    Icon(Icons.cloud_upload,
+                                        size: 12,
+                                        color: Colors.blue.shade700),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _isUploading
+                                        ? 'Uploading…'
+                                        : 'Upload Images',
+                                    style: TextStyle(
+                                        color: Colors.blue.shade700,
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 10),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text('Max 1 MB • JPG, PNG',
+                              style: TextStyle(
+                                  fontSize: 8, color: Colors.grey.shade500)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // ── Buttons ──
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed:
+                                _isSubmitting ? null : widget.onCancel,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.grey.shade700,
+                              side: BorderSide(color: Colors.grey.shade300),
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4)),
+                            ),
+                            child: const Text('Cancel',
+                                style: TextStyle(fontSize: 11)),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: ElevatedButton(
+                            onPressed: _isSubmitting ? null : _submitForm,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1A237E),
+                              foregroundColor: Colors.white,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(4)),
+                            ),
+                            child: _isSubmitting
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 1.5,
+                                        color: Colors.white))
+                                : const Text('Create',
+                                    style: TextStyle(fontSize: 11)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickImages() async {
+    setState(() => _isUploading = true);
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['jpg', 'jpeg', 'png'],
+        allowMultiple: true,
+      );
+      if (result != null) {
+        final valid = result.files
+            .where((f) => f.size <= 1048576)
+            .map((f) => File(f.path!))
+            .toList();
+        setState(() => _selectedImages.addAll(valid));
+      }
+    } catch (_) {}
+    setState(() => _isUploading = false);
+  }
+
+  void _submitForm() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSubmitting = true);
+    await widget.onSubmit(
+      _selectedQueryType!,
+      _descriptionController.text,
+      _selectedPriority,
+      _selectedImages,
+    );
+    if (mounted) setState(() => _isSubmitting = false);
+  }
+
+  @override
+  void dispose() {
+    _descriptionController.dispose();
+    super.dispose();
+  }
+}
+
+// ─── Typing Indicator ─────────────────────────────────────────────────────────
 class _ModernTypingIndicator extends StatelessWidget {
   const _ModernTypingIndicator();
 
@@ -3216,38 +3056,33 @@ class _ModernTypingIndicator extends StatelessWidget {
           Container(
             width: 28,
             height: 28,
-            decoration: const BoxDecoration(
-              color: Colors.blue,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.support_agent,
-              color: Colors.white,
-              size: 14,
-            ),
+            decoration:
+                const BoxDecoration(color: Colors.blue, shape: BoxShape.circle),
+            child:
+                const Icon(Icons.support_agent, color: Colors.white, size: 14),
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 5,
-                  offset: const Offset(0, 2),
-                ),
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2))
               ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildAnimatedDot(0),
+                _dot(0),
                 const SizedBox(width: 4),
-                _buildAnimatedDot(150),
+                _dot(150),
                 const SizedBox(width: 4),
-                _buildAnimatedDot(300),
+                _dot(300),
               ],
             ),
           ),
@@ -3256,19 +3091,17 @@ class _ModernTypingIndicator extends StatelessWidget {
     );
   }
 
-  Widget _buildAnimatedDot(int delay) {
+  Widget _dot(int delay) {
     return TweenAnimationBuilder(
       tween: Tween<double>(begin: 0.5, end: 1.0),
       duration: Duration(milliseconds: 600 + delay),
       curve: Curves.easeInOut,
-      builder: (context, double value, child) {
+      builder: (context, double v, child) {
         return Container(
-          width: 6 * value,
-          height: 6 * value,
+          width: 6 * v,
+          height: 6 * v,
           decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.grey.shade500,
-          ),
+              shape: BoxShape.circle, color: Colors.grey.shade500),
         );
       },
     );

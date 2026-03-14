@@ -1,4 +1,4 @@
-// ticket_screen.dart - Complete updated version with image viewing
+// ticket_screen.dart - Fixed version: queryType mapping + inline attachments
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -11,25 +11,266 @@ import 'chat_provider.dart';
 import 'ticket_model.dart';
 import 'message_model.dart';
 
-// Extension for safe ticket ID display
 extension TicketIdExtension on String {
   String get displayId {
-    if (length >= 6) {
-      return '#${substring(0, 6)}';
-    } else {
-      return '#$this';
+    if (length >= 6) return '#${substring(0, 6)}';
+    return '#$this';
+  }
+}
+
+extension ColorExtension on Color {
+  Color withOpacityValue(double opacity) => withValues(alpha: opacity);
+}
+
+// ─── Fullscreen Image Viewer ─────────────────────────────────────────────────
+class FullscreenImageViewer extends StatelessWidget {
+  final Uint8List imageBytes;
+  final String title;
+
+  const FullscreenImageViewer({
+    super.key,
+    required this.imageBytes,
+    required this.title,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Text(title, style: const TextStyle(color: Colors.white, fontSize: 14)),
+        leading: IconButton(
+          icon: const Icon(Icons.close, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.zoom_in, color: Colors.white),
+            onPressed: () {},
+            tooltip: 'Pinch to zoom',
+          ),
+        ],
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 5.0,
+          panEnabled: true,
+          child: Image.memory(
+            imageBytes,
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image, size: 64, color: Colors.white54),
+                  SizedBox(height: 12),
+                  Text('Failed to load image', style: TextStyle(color: Colors.white54)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Inline Image Widget (auto-fetch, tap-to-fullscreen) ─────────────────────
+class TicketImageWidget extends StatefulWidget {
+  final int ticketId;
+  final String fileType; // 'USER' or 'DEVELOPER'
+  final String label;
+
+  const TicketImageWidget({
+    super.key,
+    required this.ticketId,
+    required this.fileType,
+    required this.label,
+  });
+
+  @override
+  State<TicketImageWidget> createState() => _TicketImageWidgetState();
+}
+
+class _TicketImageWidgetState extends State<TicketImageWidget> {
+  Uint8List? _imageBytes;
+  bool _loading = true;
+  bool _hasError = false;
+  String? _errorMsg;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchImage();
+  }
+
+  Future<void> _fetchImage() async {
+    try {
+      final result = await SupportService.viewTicketImageBase64(
+        ticketId: widget.ticketId,
+        fileType: widget.fileType.toUpperCase(),
+      );
+
+      if (!mounted) return;
+
+      if (result['success'] == true && result['data'] != null) {
+        final raw = result['data']['imageBase64']?.toString() ?? '';
+        if (raw.isNotEmpty) {
+          // Strip data URI prefix if present
+          final pure = raw.contains(',') ? raw.split(',').last : raw;
+          final bytes = base64Decode(pure);
+          setState(() {
+            _imageBytes = bytes;
+            _loading = false;
+          });
+          return;
+        }
+      }
+      setState(() {
+        _loading = false;
+        _hasError = true;
+        _errorMsg = result['message'] ?? 'No image data';
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _hasError = true;
+          _errorMsg = 'Failed to load';
+        });
+      }
     }
   }
-}
 
-// Color extension for opacity
-extension ColorExtension on Color {
-  Color withOpacityValue(double opacity) {
-    return withValues(alpha: opacity);
+  void _openFullscreen() {
+    if (_imageBytes == null) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FullscreenImageViewer(
+          imageBytes: _imageBytes!,
+          title: '${widget.label} — Ticket #${widget.ticketId}',
+        ),
+      ),
+    );
+  }
+
+  Color get _accentColor =>
+      widget.fileType == 'USER' ? Colors.blue : Colors.green;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Label row
+        Row(
+          children: [
+            Icon(
+              widget.fileType == 'USER' ? Icons.person : Icons.developer_mode,
+              size: 14,
+              color: _accentColor,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              widget.label,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: _accentColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+
+        if (_loading)
+          Container(
+            height: 80,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Center(
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          )
+        else if (_hasError || _imageBytes == null)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.grey.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.image_not_supported, size: 14, color: Colors.grey.shade400),
+                const SizedBox(width: 8),
+                Text(
+                  _errorMsg ?? 'No image available',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                ),
+              ],
+            ),
+          )
+        else
+          // Thumbnail — tap to fullscreen
+          GestureDetector(
+            onTap: _openFullscreen,
+            child: Stack(
+              alignment: Alignment.bottomRight,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: Image.memory(
+                    _imageBytes!,
+                    width: double.infinity,
+                    height: 160,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 160,
+                      color: Colors.grey.shade100,
+                      child: const Center(child: Text('Failed to display image')),
+                    ),
+                  ),
+                ),
+                // "Tap to zoom" badge
+                Container(
+                  margin: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.fullscreen, size: 12, color: Colors.white),
+                      SizedBox(width: 4),
+                      Text(
+                        'Tap to zoom',
+                        style: TextStyle(color: Colors.white, fontSize: 9),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
   }
 }
 
-// Tickets List Screen - Enhanced with beautiful UI and API integration
+// ─── Tickets List Screen ──────────────────────────────────────────────────────
 class TicketsListScreen extends StatefulWidget {
   const TicketsListScreen({super.key});
 
@@ -42,8 +283,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   bool _isLoading = true;
   String? _errorMessage;
   String _selectedFilter = 'All';
-  
-  // Pagination
+
   int _currentPage = 0;
   int _totalTickets = 0;
   bool _hasMore = true;
@@ -69,55 +309,36 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     }
 
     try {
-      debugPrint('\n📋 ===== FETCHING TICKETS FROM API =====');
-      debugPrint('Page: $_currentPage, Filter: $_selectedFilter');
-      
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getString('userId') ?? '';
-      
-      if (userId.isEmpty) {
-        throw Exception('User ID not found');
-      }
-      
-      // Map filter to API status parameter
-      String statusParam = 'OPEN'; // Default
+      String statusParam = 'OPEN';
       if (_selectedFilter != 'All') {
         switch (_selectedFilter) {
           case 'Open':
             statusParam = 'OPEN';
-            break;
           case 'In Progress':
             statusParam = 'IN_PROGRESS';
-            break;
           case 'Resolved':
             statusParam = 'RESOLVED';
-            break;
           case 'Closed':
             statusParam = 'CLOSED';
-            break;
         }
       }
-      
+
       final result = await SupportService.getTodayTickets(status: statusParam);
-  
-      debugPrint('📊 API Response: ${jsonEncode(result)}');
 
       if (result['success'] == true && result['data'] != null) {
         final data = result['data'];
         List<TicketModel> fetchedTickets = [];
-        
-        // Parse tickets based on actual API response structure
+
         if (data['data'] != null && data['data'] is List) {
-          final List<dynamic> ticketsData = data['data'];
-          fetchedTickets = ticketsData.map((json) => TicketModel.fromJson(json)).toList();
-          _totalTickets = data['total'] ?? ticketsData.length;
+          fetchedTickets = (data['data'] as List)
+              .map((json) => TicketModel.fromJson(json))
+              .toList();
+          _totalTickets = data['total'] ?? fetchedTickets.length;
         } else if (data is List) {
           fetchedTickets = data.map((json) => TicketModel.fromJson(json)).toList();
           _totalTickets = fetchedTickets.length;
         }
 
-        debugPrint('✅ Fetched ${fetchedTickets.length} tickets');
-        
         setState(() {
           if (loadMore) {
             _tickets.addAll(fetchedTickets);
@@ -133,20 +354,17 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
         throw Exception(result['message'] ?? 'Failed to fetch tickets');
       }
     } catch (e) {
-      debugPrint('❌ Error loading tickets: $e');
-      
       setState(() {
         _errorMessage = 'Failed to load tickets: $e';
         _isLoading = false;
         _isLoadingMore = false;
-        _tickets = []; // Empty list on error
+        _tickets = [];
       });
     }
   }
 
   List<TicketModel> get _filteredTickets {
     if (_selectedFilter == 'All') return _tickets;
-    
     return _tickets.where((ticket) {
       switch (_selectedFilter) {
         case 'Open':
@@ -161,6 +379,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     }).toList();
   }
 
+  // ── Helper: display name (queryType takes priority over title) ──
+  String _ticketDisplayName(TicketModel ticket) =>
+      (ticket.queryType?.isNotEmpty == true ? ticket.queryType! : ticket.title).trim();
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -171,22 +393,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadTicketsFromApi,
-          ),
-          IconButton(
-            icon: const Icon(Icons.filter_list),
-            onPressed: _showFilterDialog,
-          ),
+          IconButton(icon: const Icon(Icons.refresh), onPressed: _loadTicketsFromApi),
+          IconButton(icon: const Icon(Icons.filter_list), onPressed: _showFilterDialog),
         ],
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(
-            color: Colors.white.withValues(alpha: 0.2),
-            height: 1,
-          ),
-        ),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -203,22 +412,13 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             Icon(Icons.warning, size: 16, color: Colors.orange.shade800),
                             const SizedBox(width: 8),
                             Expanded(
-                              child: Text(
-                                _errorMessage!,
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.orange.shade800,
-                                ),
-                              ),
+                              child: Text(_errorMessage!,
+                                  style: TextStyle(fontSize: 12, color: Colors.orange.shade800)),
                             ),
                           ],
                         ),
                       ),
-                    
-                    // Stats Summary
                     _buildStatsSummary(),
-                    
-                    // Tickets List
                     Expanded(
                       child: _filteredTickets.isEmpty
                           ? _buildNoTicketsForFilter()
@@ -241,8 +441,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   Widget _buildStatsSummary() {
     final openCount = _tickets.where((t) => t.isOpen || t.isInProgress).length;
     final resolvedCount = _tickets.where((t) => t.isResolved).length;
-    final closedCount = _tickets.where((t) => t.isClosed).length;
-    
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
@@ -271,27 +470,17 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          count.toString(),
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
+        Text(count.toString(),
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: color)),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey.shade600,
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey.shade600)),
       ],
     );
   }
 
   Widget _buildCompactTicketCard(TicketModel ticket) {
+    final displayName = _ticketDisplayName(ticket);
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -308,20 +497,15 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => TicketDetailScreen(ticket: ticket),
-              ),
-            );
-          },
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => TicketDetailScreen(ticket: ticket)),
+          ),
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.all(12),
             child: Row(
               children: [
-                // Left status indicator
                 Container(
                   width: 4,
                   height: 40,
@@ -331,8 +515,6 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                
-                // Icon
                 Container(
                   width: 40,
                   height: 40,
@@ -340,39 +522,26 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                     color: ticket.statusColor.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(
-                    ticket.statusIcon,
-                    color: ticket.statusColor,
-                    size: 20,
-                  ),
+                  child: Icon(ticket.statusIcon, color: ticket.statusColor, size: 20),
                 ),
                 const SizedBox(width: 12),
-                
-                // Content
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title and ID
                       Row(
                         children: [
                           Expanded(
                             child: Text(
-                              ticket.title,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
+                              displayName,
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
                               color: Colors.grey.shade100,
                               borderRadius: BorderRadius.circular(4),
@@ -380,111 +549,56 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                             child: Text(
                               ticket.id.displayId,
                               style: TextStyle(
-                                fontSize: 9,
-                                color: Colors.grey.shade700,
-                                fontWeight: FontWeight.w500,
-                              ),
+                                  fontSize: 9,
+                                  color: Colors.grey.shade700,
+                                  fontWeight: FontWeight.w500),
                             ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 4),
-                      
-                      // Description
                       Text(
                         ticket.description,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey.shade600,
-                        ),
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 6),
-                      
-                      // Footer with status, priority and date
                       Row(
                         children: [
-                          // Status chip
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: ticket.statusColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  ticket.statusIcon,
-                                  size: 8,
-                                  color: ticket.statusColor,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  ticket.statusText,
-                                  style: TextStyle(
-                                    fontSize: 8,
-                                    color: ticket.statusColor,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                          _buildMiniChip(ticket.statusText, ticket.statusColor, ticket.statusIcon),
                           const SizedBox(width: 6),
-                          
-                          // Priority chip
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: ticket.priorityColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  ticket.priorityIcon,
-                                  size: 8,
-                                  color: ticket.priorityColor,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  ticket.priorityText,
-                                  style: TextStyle(
-                                    fontSize: 8,
-                                    color: ticket.priorityColor,
-                                    fontWeight: FontWeight.w500,
+                          _buildMiniChip(ticket.priorityText, ticket.priorityColor, ticket.priorityIcon),
+                          // Attachment indicator
+                          if (ticket.hasUserImage || ticket.hasResUserImage) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.purple.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.attach_file, size: 8, color: Colors.purple),
+                                  const SizedBox(width: 2),
+                                  Text(
+                                    '${(ticket.hasUserImage ? 1 : 0) + (ticket.hasResUserImage ? 1 : 0)}',
+                                    style: const TextStyle(fontSize: 8, color: Colors.purple),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
-                          ),
-                          
+                          ],
                           const Spacer(),
-                          
-                          // Date
                           Row(
                             children: [
-                              Icon(
-                                Icons.access_time,
-                                size: 10,
-                                color: Colors.grey.shade400,
-                              ),
+                              Icon(Icons.access_time, size: 10, color: Colors.grey.shade400),
                               const SizedBox(width: 2),
                               Text(
                                 _formatCompactDate(ticket.createdAt),
-                                style: TextStyle(
-                                  fontSize: 8,
-                                  color: Colors.grey.shade500,
-                                ),
+                                style: TextStyle(fontSize: 8, color: Colors.grey.shade500),
                               ),
                             ],
                           ),
@@ -493,13 +607,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                     ],
                   ),
                 ),
-                
-                // Arrow
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 12,
-                  color: Colors.grey.shade400,
-                ),
+                Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey.shade400),
               ],
             ),
           ),
@@ -508,17 +616,29 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
     );
   }
 
+  Widget _buildMiniChip(String label, Color color, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 8, color: color),
+          const SizedBox(width: 2),
+          Text(label, style: TextStyle(fontSize: 8, color: color, fontWeight: FontWeight.w500)),
+        ],
+      ),
+    );
+  }
+
   String _formatCompactDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-    
-    if (difference.inDays > 0) {
-      return '${difference.inDays}d';
-    } else if (difference.inHours > 0) {
-      return '${difference.inHours}h';
-    } else {
-      return '${difference.inMinutes}m';
-    }
+    final diff = DateTime.now().difference(date);
+    if (diff.inDays > 0) return '${diff.inDays}d';
+    if (diff.inHours > 0) return '${diff.inHours}h';
+    return '${diff.inMinutes}m';
   }
 
   Widget _buildLoadMoreIndicator() {
@@ -527,22 +647,13 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       child: Center(
         child: _isLoadingMore
             ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
+                width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
             : _hasMore
                 ? TextButton(
                     onPressed: () => _loadTicketsFromApi(loadMore: true),
-                    child: const Text('Load More'),
-                  )
-                : Text(
-                    'No more tickets',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade500,
-                    ),
-                  ),
+                    child: const Text('Load More'))
+                : Text('No more tickets',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
       ),
     );
   }
@@ -561,9 +672,7 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
                 value: filter,
                 groupValue: _selectedFilter,
                 onChanged: (value) {
-                  setState(() {
-                    _selectedFilter = value!;
-                  });
+                  setState(() => _selectedFilter = value!);
                   Navigator.pop(context);
                 },
               ),
@@ -579,19 +688,10 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.inbox,
-            size: 40,
-            color: Colors.grey.shade400,
-          ),
+          Icon(Icons.inbox, size: 40, color: Colors.grey.shade400),
           const SizedBox(height: 8),
-          Text(
-            'No ${_selectedFilter.toLowerCase()} tickets',
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          Text('No ${_selectedFilter.toLowerCase()} tickets',
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -605,49 +705,24 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
           Container(
             width: 80,
             height: 80,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.confirmation_number,
-              size: 40,
-              color: Colors.grey.shade400,
-            ),
+            decoration: BoxDecoration(color: Colors.grey.shade100, shape: BoxShape.circle),
+            child: Icon(Icons.confirmation_number, size: 40, color: Colors.grey.shade400),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'No tickets yet',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
+          const Text('No tickets yet', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
-          Text(
-            'Create your first support ticket',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
-          ),
+          Text('Create your first support ticket',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
           const SizedBox(height: 16),
           ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: () => Navigator.pop(context),
             icon: const Icon(Icons.chat, size: 16),
             label: const Text('Go to Chat'),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF1A237E),
               foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 10,
-              ),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             ),
           ),
         ],
@@ -656,10 +731,9 @@ class _TicketsListScreenState extends State<TicketsListScreen> {
   }
 }
 
-// Ticket Form Widget - Compact version for chat
+// ─── Ticket Form Widget ───────────────────────────────────────────────────────
 class TicketFormWidget extends StatefulWidget {
   final Function(MessageModel) onTicketCreated;
-
   const TicketFormWidget({super.key, required this.onTicketCreated});
 
   @override
@@ -668,13 +742,26 @@ class TicketFormWidget extends StatefulWidget {
 
 class _TicketFormWidgetState extends State<TicketFormWidget> {
   final _formKey = GlobalKey<FormState>();
-  final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
-  
+
+  // Use queryType dropdown instead of free-text title
+  String? _selectedQueryType;
   String _selectedPriority = 'MEDIUM';
   List<File> _selectedImages = [];
   bool _isLoading = false;
   bool _isUploading = false;
+
+  static const List<String> _queryTypes = [
+    'Access Request',
+    'Billing Issue',
+    'Data Correction Issue',
+    'Feature Request',
+    'General Query',
+    'Network Issue',
+    'Password Request',
+    'Software Issue',
+    'Other',
+  ];
 
   final List<String> _priorities = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
 
@@ -699,33 +786,29 @@ class _TicketFormWidgetState extends State<TicketFormWidget> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '📝 Create Ticket',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
+            const Text('📝 Create Ticket',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            
-            // Title Field
-            TextFormField(
-              controller: _titleController,
+
+            // ── Query Type Dropdown ──
+            DropdownButtonFormField<String>(
               decoration: const InputDecoration(
-                labelText: 'Title',
-                hintText: 'Brief summary',
+                labelText: 'Query Type',
                 border: OutlineInputBorder(),
-                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                prefixIcon: Icon(Icons.title, size: 18),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                prefixIcon: Icon(Icons.category, size: 18),
               ),
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Required';
-                }
-                return null;
-              },
+              value: _selectedQueryType,
+              hint: const Text('Select query type'),
+              items: _queryTypes
+                  .map((t) => DropdownMenuItem(value: t, child: Text(t)))
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedQueryType = v),
+              validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
             ),
-            
             const SizedBox(height: 8),
-            
-            // Description Field
+
+            // ── Description ──
             TextFormField(
               controller: _descriptionController,
               decoration: const InputDecoration(
@@ -737,17 +820,11 @@ class _TicketFormWidgetState extends State<TicketFormWidget> {
                 alignLabelWithHint: true,
               ),
               maxLines: 2,
-              validator: (value) {
-                if (value == null || value.isEmpty) {
-                  return 'Required';
-                }
-                return null;
-              },
+              validator: (v) => (v == null || v.isEmpty) ? 'Required' : null,
             ),
-            
             const SizedBox(height: 8),
-            
-            // Priority Dropdown
+
+            // ── Priority Dropdown ──
             DropdownButtonFormField<String>(
               decoration: const InputDecoration(
                 labelText: 'Priority',
@@ -756,45 +833,43 @@ class _TicketFormWidgetState extends State<TicketFormWidget> {
                 prefixIcon: Icon(Icons.priority_high, size: 18),
               ),
               value: _selectedPriority,
-              items: _priorities.map((priority) {
+              items: _priorities.map((p) {
                 return DropdownMenuItem(
-                  value: priority,
+                  value: p,
                   child: Row(
                     children: [
                       Container(
                         width: 8,
                         height: 8,
                         decoration: BoxDecoration(
-                          color: _getPriorityColor(priority),
-                          shape: BoxShape.circle,
-                        ),
+                            color: _getPriorityColor(p), shape: BoxShape.circle),
                       ),
                       const SizedBox(width: 6),
-                      Text(priority, style: const TextStyle(fontSize: 13)),
+                      Text(p, style: const TextStyle(fontSize: 13)),
                     ],
                   ),
                 );
               }).toList(),
-              onChanged: (value) {
-                setState(() {
-                  _selectedPriority = value!;
-                });
-              },
+              onChanged: (v) => setState(() => _selectedPriority = v!),
             ),
-            
             const SizedBox(height: 8),
-            
-            // Image Attachment
+
+            // ── Image Attachment ──
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _isUploading ? null : _pickImages,
                     icon: _isUploading
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
                         : const Icon(Icons.image, size: 16),
                     label: Text(
-                      _selectedImages.isEmpty ? 'Add Images' : '${_selectedImages.length} selected',
+                      _selectedImages.isEmpty
+                          ? 'Add Images'
+                          : '${_selectedImages.length} selected',
                       style: const TextStyle(fontSize: 12),
                     ),
                     style: OutlinedButton.styleFrom(
@@ -814,17 +889,19 @@ class _TicketFormWidgetState extends State<TicketFormWidget> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                     ),
                     child: _isLoading
-                        ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2))
                         : const Text('Create', style: TextStyle(fontSize: 12)),
                   ),
                 ),
               ],
             ),
-            
-            // Show selected images preview
+
             if (_selectedImages.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Container(
+              SizedBox(
                 height: 60,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
@@ -842,32 +919,20 @@ class _TicketFormWidgetState extends State<TicketFormWidget> {
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(8),
-                            child: Image.file(
-                              _selectedImages[index],
-                              fit: BoxFit.cover,
-                            ),
+                            child: Image.file(_selectedImages[index], fit: BoxFit.cover),
                           ),
                         ),
                         Positioned(
                           top: 0,
                           right: 8,
                           child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _selectedImages.removeAt(index);
-                              });
-                            },
+                            onTap: () => setState(() => _selectedImages.removeAt(index)),
                             child: Container(
                               padding: const EdgeInsets.all(2),
-                              decoration: BoxDecoration(
-                                color: Colors.red,
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.close,
-                                size: 12,
-                                color: Colors.white,
-                              ),
+                              decoration: const BoxDecoration(
+                                  color: Colors.red, shape: BoxShape.circle),
+                              child:
+                                  const Icon(Icons.close, size: 12, color: Colors.white),
                             ),
                           ),
                         ),
@@ -883,131 +948,96 @@ class _TicketFormWidgetState extends State<TicketFormWidget> {
     );
   }
 
-  Color _getPriorityColor(String priority) {
-    switch (priority) {
-      case 'LOW': return Colors.green;
-      case 'MEDIUM': return Colors.orange;
-      case 'HIGH': return Colors.deepOrange;
-      case 'CRITICAL': return Colors.red;
-      default: return Colors.grey;
+  Color _getPriorityColor(String p) {
+    switch (p) {
+      case 'LOW':
+        return Colors.green;
+      case 'MEDIUM':
+        return Colors.orange;
+      case 'HIGH':
+        return Colors.deepOrange;
+      case 'CRITICAL':
+        return Colors.red;
+      default:
+        return Colors.grey;
     }
   }
 
   Future<void> _pickImages() async {
     setState(() => _isUploading = true);
-    
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
         allowedExtensions: ['jpg', 'jpeg', 'png'],
         allowMultiple: true,
       );
-      
       if (result != null) {
-        final validFiles = <File>[];
-        
-        for (var i = 0; i < result.files.length; i++) {
-          final file = result.files[i];
-          if (file.size <= 5 * 1024 * 1024) { // 5MB max
-            validFiles.add(File(file.path!));
-          }
-        }
-        
-        setState(() {
-          _selectedImages.addAll(validFiles);
-          _isUploading = false;
-        });
-      } else {
-        setState(() => _isUploading = false);
+        final valid = result.files
+            .where((f) => f.size <= 5 * 1024 * 1024)
+            .map((f) => File(f.path!))
+            .toList();
+        setState(() => _selectedImages.addAll(valid));
       }
-    } catch (e) {
-      debugPrint('Error picking images: $e');
-      setState(() => _isUploading = false);
-    }
+    } catch (_) {}
+    setState(() => _isUploading = false);
   }
 
   Future<void> _submitTicket() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+      if (userId.isEmpty) throw Exception('User ID not found. Please login again.');
 
-      try {
-        debugPrint('\n📝 ===== CREATING TICKET =====');
-        debugPrint('Title: ${_titleController.text}');
-        debugPrint('Description: ${_descriptionController.text}');
-        debugPrint('Priority: $_selectedPriority');
-        
-        final prefs = await SharedPreferences.getInstance();
-        final userId = prefs.getString('userId') ?? '';
-        
-        if (userId.isEmpty) {
-          throw Exception('User ID not found. Please login again.');
-        }
-        
-        final result = await SupportService.createTicket(
-          title: _titleController.text,
-          description: _descriptionController.text,
-          priority: _selectedPriority,
-          userId: userId,
-          images: _selectedImages.isNotEmpty ? _selectedImages : null,
-        );
-        
-        debugPrint('✅ API Response: ${jsonEncode(result)}');
-        
-        // Extract ticket ID based on API response structure
-        String ticketId = 'N/A';
-        if (result['data'] != null) {
-          if (result['data']['ticketId'] != null) {
-            ticketId = result['data']['ticketId'].toString();
-          } else if (result['data']['data'] != null && result['data']['data']['ticketId'] != null) {
-            ticketId = result['data']['data']['ticketId'].toString();
-          }
-        }
-        
-        final successMessage = MessageModel(
-          id: DateTime.now().toString(),
-          text: '✅ **Ticket Created!**\n\nID: `$ticketId`\nTitle: ${_titleController.text}',
-          isUser: false,
-          timestamp: DateTime.now(),
-          type: 'ticket_confirmation',
-          ticketId: ticketId,
-          quickReplies: const ['📋 View My Tickets', '🎫 Create Another', '🏠 Main Menu'],
-        );
-        
-        widget.onTicketCreated(successMessage);
-        
-      } catch (e) {
-        debugPrint('❌ Error: $e');
-        
-        final errorMessage = MessageModel(
-          id: DateTime.now().toString(),
-          text: '❌ Failed: ${e.toString().replaceAll('Exception:', '')}',
-          isUser: false,
-          timestamp: DateTime.now(),
-          type: 'error',
-          quickReplies: const ['🔄 Try Again', '🎫 Create Ticket', '🏠 Main Menu'],
-        );
-        
-        widget.onTicketCreated(errorMessage);
-      } finally {
-        if (mounted) {
-          setState(() => _isLoading = false);
-        }
+      final result = await SupportService.createTicket(
+        queryType: _selectedQueryType!,
+        description: _descriptionController.text,
+        priority: _selectedPriority,
+        userId: userId,
+        images: _selectedImages.isNotEmpty ? _selectedImages : null,
+      );
+
+      String ticketId = 'N/A';
+      if (result['data'] != null) {
+        ticketId =
+            (result['data']['ticketId'] ?? result['data']['data']?['ticketId'] ?? 'N/A')
+                .toString();
       }
+
+      widget.onTicketCreated(MessageModel(
+        id: DateTime.now().toString(),
+        text: '✅ **Ticket Created!**\n\nID: `$ticketId`\nQuery Type: ${_selectedQueryType!}',
+        isUser: false,
+        timestamp: DateTime.now(),
+        type: 'ticket_confirmation',
+        ticketId: ticketId,
+        quickReplies: const ['📋 View My Tickets', '🎫 Create Another', '🏠 Main Menu'],
+      ));
+    } catch (e) {
+      widget.onTicketCreated(MessageModel(
+        id: DateTime.now().toString(),
+        text: '❌ Failed: ${e.toString().replaceAll('Exception:', '')}',
+        isUser: false,
+        timestamp: DateTime.now(),
+        type: 'error',
+        quickReplies: const ['🔄 Try Again', '🎫 Create Ticket', '🏠 Main Menu'],
+      ));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   void dispose() {
-    _titleController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
 }
 
-// Ticket Detail Screen - Enhanced with image viewing
+// ─── Ticket Detail Screen ─────────────────────────────────────────────────────
 class TicketDetailScreen extends StatefulWidget {
   final TicketModel ticket;
-
   const TicketDetailScreen({super.key, required this.ticket});
 
   @override
@@ -1015,290 +1045,19 @@ class TicketDetailScreen extends StatefulWidget {
 }
 
 class _TicketDetailScreenState extends State<TicketDetailScreen> {
-  Uint8List? _userImageBytes;
-  Uint8List? _developerImageBytes;
-  bool _isLoadingUserImage = false;
-  bool _isLoadingDevImage = false;
-  String? _userImageError;
-  String? _devImageError;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadImages();
-  }
-
-  Future<void> _loadImages() async {
-    debugPrint('🖼️ ===== LOADING IMAGES FOR TICKET =====');
-    debugPrint('Ticket ID: ${widget.ticket.id}');
-    debugPrint('Has User Image: ${widget.ticket.hasUserImage}');
-    debugPrint('Has Developer Image: ${widget.ticket.hasResUserImage}');
-    
-    // Load user image if available
-    if (widget.ticket.hasUserImage) {
-      await _loadUserImage();
-    }
-    
-    // Load developer image if available
-    if (widget.ticket.hasResUserImage) {
-      await _loadResUserImage();
-    }
-  }
-
-  Future<void> _loadUserImage() async {
-    if (!mounted) return;
-    
-    setState(() {
-      _isLoadingUserImage = true;
-      _userImageError = null;
-    });
-
-    try {
-      final ticketId = int.tryParse(widget.ticket.id) ?? 0;
-      if (ticketId == 0) {
-        throw Exception('Invalid ticket ID');
-      }
-
-      debugPrint('📸 ===== LOADING USER IMAGE =====');
-      debugPrint('Ticket ID: $ticketId');
-      
-      final result = await SupportService.viewTicketImageBase64(
-        ticketId: ticketId,
-        fileType: 'USER',
-      );
-
-      debugPrint('📊 Load user image result: $result');
-
-      if (!mounted) return;
-
-      if (result['success'] == true && result['data'] != null) {
-        final data = result['data'];
-        debugPrint('📦 Image data: $data');
-        
-        if (data['imageBase64'] != null && data['imageBase64'].isNotEmpty) {
-          final base64String = data['imageBase64'];
-          debugPrint('🔤 Base64 string length: ${base64String.length}');
-          debugPrint('🔤 Base64 preview: ${base64String.substring(0, min(50, base64String.length))}...');
-          
-          try {
-            // Decode base64 to bytes
-            final imageBytes = base64Decode(base64String);
-            debugPrint('✅ Decoded image bytes length: ${imageBytes.length}');
-            
-            setState(() {
-              _userImageBytes = imageBytes;
-              _isLoadingUserImage = false;
-              _userImageError = null;
-            });
-            
-            debugPrint('✅ User image loaded and set in state successfully');
-          } catch (e) {
-            debugPrint('❌ Error decoding base64: $e');
-            setState(() {
-              _userImageError = 'Invalid image data';
-              _isLoadingUserImage = false;
-            });
-          }
-        } else {
-          debugPrint('❌ No imageBase64 field in data');
-          setState(() {
-            _userImageError = 'No image data';
-            _isLoadingUserImage = false;
-          });
-        }
-      } else {
-        String errorMsg = result['message'] ?? 'Failed to load image';
-        debugPrint('❌ Failed to load image: $errorMsg');
-        setState(() {
-          _userImageError = errorMsg;
-          _isLoadingUserImage = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('❌ Error loading user image: $e');
-      if (!mounted) return;
-      
-      setState(() {
-        _userImageError = 'Error loading image';
-        _isLoadingUserImage = false;
-      });
-    }
-  }
-
-  Future<void> _loadResUserImage() async {
-    if (!mounted) return;
-    
-    setState(() {
-      _isLoadingDevImage = true;
-      _devImageError = null;
-    });
-
-    try {
-      final ticketId = int.tryParse(widget.ticket.id) ?? 0;
-      if (ticketId == 0) {
-        throw Exception('Invalid ticket ID');
-      }
-
-      debugPrint('📸 ===== LOADING DEVELOPER IMAGE =====');
-      debugPrint('Ticket ID: $ticketId');
-      
-      final result = await SupportService.viewTicketImageBase64(
-        ticketId: ticketId,
-        fileType: 'DEVELOPER',
-      );
-
-      debugPrint('📊 Load developer image result: $result');
-
-      if (!mounted) return;
-
-      if (result['success'] == true && result['data'] != null) {
-        final data = result['data'];
-        debugPrint('📦 Image data: $data');
-        
-        if (data['imageBase64'] != null && data['imageBase64'].isNotEmpty) {
-          final base64String = data['imageBase64'];
-          debugPrint('🔤 Base64 string length: ${base64String.length}');
-          debugPrint('🔤 Base64 preview: ${base64String.substring(0, min(50, base64String.length))}...');
-          
-          try {
-            // Decode base64 to bytes
-            final imageBytes = base64Decode(base64String);
-            debugPrint('✅ Decoded image bytes length: ${imageBytes.length}');
-            
-            setState(() {
-              _developerImageBytes = imageBytes;
-              _isLoadingDevImage = false;
-              _devImageError = null;
-            });
-            
-            debugPrint('✅ Developer image loaded and set in state successfully');
-          } catch (e) {
-            debugPrint('❌ Error decoding base64: $e');
-            setState(() {
-              _devImageError = 'Invalid image data';
-              _isLoadingDevImage = false;
-            });
-          }
-        } else {
-          debugPrint('❌ No imageBase64 field in data');
-          setState(() {
-            _devImageError = 'No image data';
-            _isLoadingDevImage = false;
-          });
-        }
-      } else {
-        String errorMsg = result['message'] ?? 'Failed to load image';
-        debugPrint('❌ Failed to load image: $errorMsg');
-        setState(() {
-          _devImageError = errorMsg;
-          _isLoadingDevImage = false;
-        });
-      }
-    } catch (e) {
-      debugPrint('❌ Error loading developer image: $e');
-      if (!mounted) return;
-      
-      setState(() {
-        _devImageError = 'Error loading image';
-        _isLoadingDevImage = false;
-      });
-    }
-  }
-
-  Future<void> _viewImageFullScreen(Uint8List imageBytes, String title) async {
-    if (!mounted) return;
-    
-    debugPrint('🖼️ Opening full screen image: $title, bytes: ${imageBytes.length}');
-    
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: Container(
-          width: MediaQuery.of(context).size.width * 0.9,
-          height: MediaQuery.of(context).size.height * 0.8,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A237E),
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    topRight: Radius.circular(16),
-                  ),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // Image
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(8),
-                  child: InteractiveViewer(
-                    minScale: 0.5,
-                    maxScale: 4.0,
-                    panEnabled: true,
-                    boundaryMargin: const EdgeInsets.all(20),
-                    child: Center(
-                      child: Image.memory(
-                        imageBytes,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          debugPrint('❌ Error displaying image: $error');
-                          return Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.broken_image, size: 64, color: Colors.grey.shade400),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Failed to load image',
-                                  style: TextStyle(color: Colors.grey.shade600),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Helper method for min
-  int min(int a, int b) => a < b ? a : b;
+  /// Display name: prefer queryType over title
+  String get _displayName =>
+      (widget.ticket.queryType?.isNotEmpty == true
+              ? widget.ticket.queryType!
+              : widget.ticket.title)
+          .trim();
 
   @override
   Widget build(BuildContext context) {
+    final ticketIdInt = int.tryParse(widget.ticket.id);
+    final hasAttachments =
+        widget.ticket.hasUserImage || widget.ticket.hasResUserImage;
+
     return Scaffold(
       appBar: AppBar(
         title: Text('Ticket ${widget.ticket.id.displayId}'),
@@ -1306,42 +1065,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         foregroundColor: Colors.white,
         elevation: 2,
         actions: [
-          // Image view buttons if available
-          if (widget.ticket.hasUserImage)
-            IconButton(
-              icon: const Icon(Icons.image),
-              onPressed: () {
-                if (_userImageBytes != null) {
-                  _viewImageFullScreen(_userImageBytes!, 'User Image');
-                } else {
-                  _loadUserImage();
-                }
-              },
-              tooltip: 'View User Image',
-            ),
-          if (widget.ticket.hasResUserImage)
-            IconButton(
-              icon: const Icon(Icons.developer_mode),
-              onPressed: () {
-                if (_developerImageBytes != null) {
-                  _viewImageFullScreen(_developerImageBytes!, 'Developer Image');
-                } else {
-                  _loadResUserImage();
-                }
-              },
-              tooltip: 'View Developer Image',
-            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              _loadImages();
+              setState(() {});
               try {
-                context.read<ChatProvider>().fetchTicketDetails(int.parse(widget.ticket.id));
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e')),
-                );
-              }
+                context
+                    .read<ChatProvider>()
+                    .fetchTicketDetails(int.parse(widget.ticket.id));
+              } catch (_) {}
             },
           ),
           PopupMenuButton<String>(
@@ -1351,33 +1083,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (_) => TrackTicketScreen(ticket: widget.ticket),
-                  ),
+                      builder: (_) => TrackTicketScreen(ticket: widget.ticket)),
                 );
-              } else if (value == 'refresh_images') {
-                _loadImages();
               }
             },
-            itemBuilder: (context) => [
+            itemBuilder: (_) => [
               const PopupMenuItem(
                 value: 'track',
-                child: Row(
-                  children: [
-                    Icon(Icons.track_changes, size: 18),
-                    SizedBox(width: 8),
-                    Text('Track Ticket'),
-                  ],
-                ),
-              ),
-              const PopupMenuItem(
-                value: 'refresh_images',
-                child: Row(
-                  children: [
-                    Icon(Icons.refresh, size: 18),
-                    SizedBox(width: 8),
-                    Text('Refresh Images'),
-                  ],
-                ),
+                child:
+                    Row(children: [Icon(Icons.track_changes, size: 18), SizedBox(width: 8), Text('Track Ticket')]),
               ),
             ],
           ),
@@ -1388,56 +1102,29 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.grey.shade50,
-              Colors.white,
-            ],
+            colors: [Colors.grey.shade50, Colors.white],
           ),
         ),
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
             _buildHeader(),
-            const SizedBox(height: 20),
-            
-            // Image Sections
-            if (widget.ticket.hasUserImage || widget.ticket.hasResUserImage) ...[
-              if (widget.ticket.hasUserImage)
-                _buildImageSection(
-                  title: 'User Image',
-                  imageBytes: _userImageBytes,
-                  isLoading: _isLoadingUserImage,
-                  error: _userImageError,
-                  fileType: 'USER',
-                  onRefresh: _loadUserImage,
-                  onTap: _userImageBytes != null 
-                      ? () => _viewImageFullScreen(_userImageBytes!, 'User Image')
-                      : null,
-                ),
+            const SizedBox(height: 16),
+
+            // ── Attachments Section (inline, combined) ──
+            if (hasAttachments && ticketIdInt != null) ...[
+              _buildAttachmentsSection(ticketIdInt),
               const SizedBox(height: 16),
-              if (widget.ticket.hasResUserImage)
-                _buildImageSection(
-                  title: 'Developer Image',
-                  imageBytes: _developerImageBytes,
-                  isLoading: _isLoadingDevImage,
-                  error: _devImageError,
-                  fileType: 'DEVELOPER',
-                  onRefresh: _loadResUserImage,
-                  onTap: _developerImageBytes != null 
-                      ? () => _viewImageFullScreen(_developerImageBytes!, 'Developer Image')
-                      : null,
-                ),
-              const SizedBox(height: 20),
             ],
-            
+
             _buildDetails(),
             if (widget.ticket.currentResolutionSummary != null) ...[
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               _buildResolutionSummary(),
             ],
-            const SizedBox(height: 20),
-            _buildMessages(context, widget.ticket.messages ?? []),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
+            _buildMessages(widget.ticket.messages ?? []),
+            const SizedBox(height: 16),
             _buildAddMessage(context),
           ],
         ),
@@ -1445,163 +1132,64 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  Widget _buildImageSection({
-    required String title,
-    required Uint8List? imageBytes,
-    required bool isLoading,
-    required String? error,
-    required String fileType,
-    required VoidCallback onRefresh,
-    required VoidCallback? onTap,
-  }) {
+  // ── Combined attachments card ──
+  Widget _buildAttachmentsSection(int ticketIdInt) {
     return Card(
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    Icon(
-                      fileType == 'USER' ? Icons.person : Icons.developer_mode,
-                      size: 20,
-                      color: fileType == 'USER' ? Colors.blue : Colors.green,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
+                const Icon(Icons.attach_file, size: 18, color: Color(0xFF1A237E)),
+                const SizedBox(width: 8),
+                const Text(
+                  'Attachments',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
-                IconButton(
-                  icon: const Icon(Icons.refresh, size: 18),
-                  onPressed: onRefresh,
-                  tooltip: 'Refresh Image',
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '${(widget.ticket.hasUserImage ? 1 : 0) + (widget.ticket.hasResUserImage ? 1 : 0)}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.blue.shade700,
+                        fontWeight: FontWeight.bold),
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            
-            if (isLoading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(20),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            else if (error != null)
-              Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    children: [
-                      Icon(Icons.error_outline, size: 32, color: Colors.red.shade300),
-                      const SizedBox(height: 8),
-                      Text(
-                        error,
-                        style: TextStyle(color: Colors.red.shade600),
-                        textAlign: TextAlign.center,
-                      ),
-                    ],
-                  ),
-                ),
-              )
-            else if (imageBytes != null)
-              GestureDetector(
-                onTap: onTap,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Stack(
-                      alignment: Alignment.center,
-                      children: [
-                        Image.memory(
-                          imageBytes,
-                          height: 200,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            debugPrint('❌ Error displaying image in section: $error');
-                            return Container(
-                              height: 200,
-                              color: Colors.grey.shade100,
-                              child: const Center(
-                                child: Text('Failed to load image'),
-                              ),
-                            );
-                          },
-                        ),
-                        Positioned(
-                          bottom: 8,
-                          right: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.6),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.zoom_in, size: 14, color: Colors.white),
-                                SizedBox(width: 4),
-                                Text(
-                                  'Tap to zoom',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              )
-            else
-              Container(
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.grey.shade200, style: BorderStyle.solid),
-                ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.image_not_supported, size: 32, color: Colors.grey.shade400),
-                      const SizedBox(height: 4),
-                      Text(
-                        'No image available',
-                        style: TextStyle(color: Colors.grey.shade500),
-                      ),
-                    ],
-                  ),
-                ),
+            const SizedBox(height: 14),
+
+            // User image
+            if (widget.ticket.hasUserImage) ...[
+              TicketImageWidget(
+                ticketId: ticketIdInt,
+                fileType: 'USER',
+                label: 'User Attachment',
               ),
+            ],
+
+            if (widget.ticket.hasUserImage && widget.ticket.hasResUserImage)
+              const SizedBox(height: 16),
+
+            // Developer image
+            if (widget.ticket.hasResUserImage) ...[
+              TicketImageWidget(
+                ticketId: ticketIdInt,
+                fileType: 'DEVELOPER',
+                label: 'Developer Attachment',
+              ),
+            ],
           ],
         ),
       ),
@@ -1612,9 +1200,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     return Card(
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1622,158 +1208,92 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.ticket.statusColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.ticket.statusIcon,
-                        size: 18,
-                        color: widget.ticket.statusColor,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.ticket.statusText,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: widget.ticket.statusColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _buildStatusBadge(widget.ticket.statusColor, widget.ticket.statusIcon,
+                    widget.ticket.statusText),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: widget.ticket.priorityColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        widget.ticket.priorityIcon,
-                        size: 18,
-                        color: widget.ticket.priorityColor,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        widget.ticket.priorityText,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: widget.ticket.priorityColor,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                _buildStatusBadge(widget.ticket.priorityColor, widget.ticket.priorityIcon,
+                    widget.ticket.priorityText),
               ],
             ),
-            
             const SizedBox(height: 16),
-            
-            Text(
-              widget.ticket.title,
-              style: const TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
+
+            // ── Query Type (primary label) ──
+            if (widget.ticket.queryType?.isNotEmpty == true) ...[
+              Row(
+                children: [
+                  Icon(Icons.category, size: 14, color: Colors.grey.shade600),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Query Type',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                ],
               ),
-            ),
-            
-            const SizedBox(height: 8),
-            
+              const SizedBox(height: 4),
+              Text(
+                widget.ticket.queryType!,
+                style:
+                    const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+            ] else ...[
+              Text(
+                widget.ticket.title,
+                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+            ],
+
             Text(
               widget.ticket.description,
               style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade700,
-                height: 1.5,
-              ),
+                  fontSize: 14, color: Colors.grey.shade700, height: 1.5),
             ),
-            
             const SizedBox(height: 16),
-            
             Row(
               children: [
                 Icon(Icons.person_outline, size: 16, color: Colors.grey.shade600),
                 const SizedBox(width: 4),
-                Text(
-                  'Created by: ${widget.ticket.createdBy}',
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
+                Text('Created by: ${widget.ticket.createdBy}',
+                    style: TextStyle(color: Colors.grey.shade600)),
                 const SizedBox(width: 16),
                 Icon(Icons.access_time, size: 16, color: Colors.grey.shade600),
                 const SizedBox(width: 4),
-                Text(
-                  widget.ticket.formattedCreatedAt,
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
+                Text(widget.ticket.formattedCreatedAt,
+                    style: TextStyle(color: Colors.grey.shade600)),
               ],
             ),
-            
             if (widget.ticket.assignedTo != null) ...[
               const SizedBox(height: 8),
               Row(
                 children: [
                   Icon(Icons.support_agent, size: 16, color: Colors.grey.shade600),
                   const SizedBox(width: 4),
-                  Text(
-                    'Assigned to: ${widget.ticket.assignedTo}',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ],
-              ),
-            ],
-            
-            // Image indicators
-            if (widget.ticket.hasUserImage || widget.ticket.hasResUserImage) ...[
-              const SizedBox(height: 12),
-              const Divider(),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(Icons.image, size: 16, color: Colors.blue),
-                  const SizedBox(width: 8),
-                  const Text(
-                    'Attachments:',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  if (widget.ticket.hasUserImage)
-                    Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      child: Chip(
-                        label: const Text('User Image'),
-                        avatar: const Icon(Icons.person, size: 14),
-                        backgroundColor: Colors.blue.shade50,
-                      ),
-                    ),
-                  if (widget.ticket.hasResUserImage)
-                    Chip(
-                      label: const Text('Developer Image'),
-                      avatar: const Icon(Icons.developer_mode, size: 14),
-                      backgroundColor: Colors.green.shade50,
-                    ),
+                  Text('Assigned to: ${widget.ticket.assignedTo}',
+                      style: TextStyle(color: Colors.grey.shade600)),
                 ],
               ),
             ],
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(Color color, IconData icon, String text) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 4),
+          Text(text, style: TextStyle(fontWeight: FontWeight.bold, color: color)),
+        ],
       ),
     );
   }
@@ -1782,82 +1302,52 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     return Card(
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Timeline',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const Text('Timeline',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
-            
             _buildTimelineItem(
-              'Created',
-              widget.ticket.formattedDateTime,
-              Icons.create,
-              Colors.blue,
-            ),
-            
+                'Created', widget.ticket.formattedDateTime, Icons.create, Colors.blue),
             if (widget.ticket.resolvedAt != null)
-              _buildTimelineItem(
-                'Resolved',
-                '${widget.ticket.resolvedAt!.day}/${widget.ticket.resolvedAt!.month}/${widget.ticket.resolvedAt!.year} ${widget.ticket.resolvedAt!.hour.toString().padLeft(2, '0')}:${widget.ticket.resolvedAt!.minute.toString().padLeft(2, '0')}',
-                Icons.check_circle,
-                Colors.green,
-              ),
-            
+              _buildTimelineItem('Resolved', _fmtDate(widget.ticket.resolvedAt!),
+                  Icons.check_circle, Colors.green),
             if (widget.ticket.closedDate != null)
-              _buildTimelineItem(
-                'Closed',
-                '${widget.ticket.closedDate!.day}/${widget.ticket.closedDate!.month}/${widget.ticket.closedDate!.year} ${widget.ticket.closedDate!.hour.toString().padLeft(2, '0')}:${widget.ticket.closedDate!.minute.toString().padLeft(2, '0')}',
-                Icons.lock,
-                Colors.grey,
-              ),
+              _buildTimelineItem('Closed', _fmtDate(widget.ticket.closedDate!),
+                  Icons.lock, Colors.grey),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTimelineItem(String label, String value, IconData icon, Color color) {
+  String _fmtDate(DateTime d) =>
+      '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
+
+  Widget _buildTimelineItem(
+      String label, String value, IconData icon, Color color) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
+            decoration:
+                BoxDecoration(color: color.withValues(alpha: 0.1), shape: BoxShape.circle),
             child: Icon(icon, size: 14, color: color),
           ),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade600,
-                ),
-              ),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text(label,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600)),
+              Text(value,
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
             ],
           ),
         ],
@@ -1869,9 +1359,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     return Card(
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -1881,13 +1369,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               children: [
                 Icon(Icons.description, size: 20, color: Colors.green.shade700),
                 const SizedBox(width: 8),
-                const Text(
-                  'Resolution Summary',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+                const Text('Resolution Summary',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ],
             ),
             const SizedBox(height: 12),
@@ -1901,10 +1384,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               child: Text(
                 widget.ticket.currentResolutionSummary!,
                 style: TextStyle(
-                  fontSize: 13,
-                  color: Colors.green.shade800,
-                  height: 1.5,
-                ),
+                    fontSize: 13, color: Colors.green.shade800, height: 1.5),
               ),
             ),
           ],
@@ -1913,41 +1393,29 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
-  Widget _buildMessages(BuildContext context, List<TicketMessage> messages) {
+  Widget _buildMessages(List<TicketMessage> messages) {
     if (messages.isEmpty) {
       return Card(
         elevation: 0,
         color: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: const Padding(
           padding: EdgeInsets.all(16),
-          child: Center(
-            child: Text('No messages yet'),
-          ),
+          child: Center(child: Text('No messages yet')),
         ),
       );
     }
-
     return Card(
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Conversation',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const Text('Conversation',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             ...messages.map((msg) => _buildMessageItem(msg)),
           ],
@@ -1961,9 +1429,11 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: message.isFromUser ? Colors.blue.withValues(alpha: 0.1) : Colors.grey.shade100,
+        color: message.isFromUser
+            ? Colors.blue.withValues(alpha: 0.1)
+            : Colors.grey.shade100,
         borderRadius: BorderRadius.circular(12),
-        border: message.isInternal 
+        border: message.isInternal
             ? Border.all(color: Colors.orange.withValues(alpha: 0.3))
             : null,
       ),
@@ -1972,64 +1442,29 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         children: [
           Row(
             children: [
-              Text(
-                message.senderName,
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: message.isFromUser ? Colors.blue : Colors.black87,
-                ),
-              ),
+              Text(message.senderName,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: message.isFromUser ? Colors.blue : Colors.black87)),
               const SizedBox(width: 8),
-              Text(
-                message.formattedTime,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade500,
-                ),
-              ),
+              Text(message.formattedTime,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
               if (message.isInternal) ...[
                 const SizedBox(width: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 2,
-                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: Colors.orange,
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: const Text(
-                    'Internal',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.white,
-                    ),
-                  ),
+                      color: Colors.orange, borderRadius: BorderRadius.circular(4)),
+                  child: const Text('Internal',
+                      style: TextStyle(fontSize: 10, color: Colors.white)),
                 ),
               ],
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            message.text,
-            style: TextStyle(
-              color: Colors.grey.shade800,
-              height: 1.4,
-            ),
-          ),
-          if (message.attachments != null && message.attachments!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 4,
-              children: message.attachments!.map((att) {
-                return Chip(
-                  label: Text(att.split('/').last),
-                  avatar: const Icon(Icons.attach_file, size: 14),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                );
-              }).toList(),
-            ),
-          ],
+          Text(message.text,
+              style: TextStyle(color: Colors.grey.shade800, height: 1.4)),
         ],
       ),
     );
@@ -2037,33 +1472,23 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
 
   Widget _buildAddMessage(BuildContext context) {
     final controller = TextEditingController();
-
     return Card(
       elevation: 0,
       color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Add Message',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
+            const Text('Add Message',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             TextField(
               controller: controller,
               decoration: InputDecoration(
                 hintText: 'Type your message...',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
                 filled: true,
                 fillColor: Colors.grey.shade50,
               ),
@@ -2074,17 +1499,14 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Attachment feature coming soon!')),
-                      );
-                    },
+                    onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Attachment feature coming soon!')),
+                    ),
                     icon: const Icon(Icons.attach_file),
                     label: const Text('Attach'),
                     style: OutlinedButton.styleFrom(
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                   ),
                 ),
@@ -2093,9 +1515,10 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   child: ElevatedButton(
                     onPressed: () {
                       if (controller.text.isNotEmpty) {
-                        // Here you would call the API to add message
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Message sent: ${controller.text}')),
+                          SnackBar(
+                              content:
+                                  Text('Message sent: ${controller.text}')),
                         );
                         controller.clear();
                       }
@@ -2104,8 +1527,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                       backgroundColor: const Color(0xFF1A237E),
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                          borderRadius: BorderRadius.circular(8)),
                     ),
                     child: const Text('Send'),
                   ),
@@ -2119,11 +1541,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 }
 
-// Track Ticket Screen - For detailed tracking
+// ─── Track Ticket Screen ──────────────────────────────────────────────────────
 class TrackTicketScreen extends StatelessWidget {
   final TicketModel ticket;
-
   const TrackTicketScreen({super.key, required this.ticket});
+
+  String get _displayName =>
+      (ticket.queryType?.isNotEmpty == true ? ticket.queryType! : ticket.title).trim();
 
   @override
   Widget build(BuildContext context) {
@@ -2133,142 +1557,82 @@ class TrackTicketScreen extends StatelessWidget {
         backgroundColor: const Color(0xFF1A237E),
         foregroundColor: Colors.white,
         elevation: 2,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              // Refresh tracking data
-            },
-          ),
-        ],
       ),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Colors.grey.shade50,
-              Colors.white,
-            ],
+            colors: [Colors.grey.shade50, Colors.white],
           ),
         ),
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            // Status Card
+            // ── Status tracker bar ──
             Card(
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(20),
-                child: Column(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _buildStatusIndicator(
-                          'Created',
-                          Icons.create,
-                          Colors.blue,
-                          true,
-                        ),
-                        _buildStatusConnector(ticket.isInProgress || ticket.isResolved || ticket.isClosed),
-                        _buildStatusIndicator(
-                          'In Progress',
-                          Icons.access_time,
-                          Colors.orange,
-                          ticket.isInProgress || ticket.isResolved || ticket.isClosed,
-                        ),
-                        _buildStatusConnector(ticket.isResolved || ticket.isClosed),
-                        _buildStatusIndicator(
-                          'Resolved',
-                          Icons.check_circle,
-                          Colors.green,
-                          ticket.isResolved || ticket.isClosed,
-                        ),
-                        _buildStatusConnector(ticket.isClosed),
-                        _buildStatusIndicator(
-                          'Closed',
-                          Icons.lock,
-                          Colors.grey,
-                          ticket.isClosed,
-                        ),
-                      ],
-                    ),
+                    _buildStatusIndicator('Created', Icons.create, Colors.blue, true),
+                    _buildConnector(ticket.isInProgress || ticket.isResolved || ticket.isClosed),
+                    _buildStatusIndicator('In Progress', Icons.access_time, Colors.orange,
+                        ticket.isInProgress || ticket.isResolved || ticket.isClosed),
+                    _buildConnector(ticket.isResolved || ticket.isClosed),
+                    _buildStatusIndicator('Resolved', Icons.check_circle, Colors.green,
+                        ticket.isResolved || ticket.isClosed),
+                    _buildConnector(ticket.isClosed),
+                    _buildStatusIndicator(
+                        'Closed', Icons.lock, Colors.grey, ticket.isClosed),
                   ],
                 ),
               ),
             ),
-            
             const SizedBox(height: 16),
-            
-            // Tracking Details Card
+
+            // ── Tracking Details ──
             Card(
               elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Tracking Details',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+                    const Text('Tracking Details',
+                        style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 16),
-                    
-                    _buildTrackingRow('Ticket ID', ticket.id),
-                    _buildTrackingRow('Title', ticket.title),
-                    _buildTrackingRow('Description', ticket.description),
-                    _buildTrackingRow('Status', ticket.statusText),
-                    _buildTrackingRow('Priority', ticket.priorityText),
-                    _buildTrackingRow('Created', ticket.formattedDateTime),
-                    
+                    _buildRow('Ticket ID', ticket.id),
+                    _buildRow('Query Type', _displayName), // ← uses queryType
+                    _buildRow('Description', ticket.description),
+                    _buildRow('Status', ticket.statusText),
+                    _buildRow('Priority', ticket.priorityText),
+                    _buildRow('Created', ticket.formattedDateTime),
                     if (ticket.resolvedAt != null)
-                      _buildTrackingRow(
-                        'Resolved',
-                        '${ticket.resolvedAt!.day}/${ticket.resolvedAt!.month}/${ticket.resolvedAt!.year} ${ticket.resolvedAt!.hour.toString().padLeft(2, '0')}:${ticket.resolvedAt!.minute.toString().padLeft(2, '0')}',
-                      ),
-                    
+                      _buildRow('Resolved', _fmtDate(ticket.resolvedAt!)),
                     if (ticket.closedDate != null)
-                      _buildTrackingRow(
-                        'Closed',
-                        '${ticket.closedDate!.day}/${ticket.closedDate!.month}/${ticket.closedDate!.year} ${ticket.closedDate!.hour.toString().padLeft(2, '0')}:${ticket.closedDate!.minute.toString().padLeft(2, '0')}',
-                      ),
+                      _buildRow('Closed', _fmtDate(ticket.closedDate!)),
                   ],
                 ),
               ),
             ),
-            
+
             if (ticket.currentResolutionSummary != null) ...[
               const SizedBox(height: 16),
-              
-              // Resolution Summary Card
               Card(
                 elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Resolution Summary',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
+                      const Text('Resolution Summary',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const SizedBox(height: 12),
                       Container(
                         padding: const EdgeInsets.all(16),
@@ -2280,10 +1644,7 @@ class TrackTicketScreen extends StatelessWidget {
                         child: Text(
                           ticket.currentResolutionSummary!,
                           style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.green.shade800,
-                            height: 1.5,
-                          ),
+                              fontSize: 14, color: Colors.green.shade800, height: 1.5),
                         ),
                       ),
                     ],
@@ -2291,30 +1652,61 @@ class TrackTicketScreen extends StatelessWidget {
                 ),
               ),
             ],
-            
-            const SizedBox(height: 16),
-            
-            // Action Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.pop(context);
-                    },
-                    icon: const Icon(Icons.arrow_back),
-                    label: const Text('Back to Details'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.grey.shade200,
-                      foregroundColor: Colors.black87,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+
+            // ── Inline Attachments in Track view ──
+            if ((ticket.hasUserImage || ticket.hasResUserImage) &&
+                int.tryParse(ticket.id) != null) ...[
+              const SizedBox(height: 16),
+              Card(
+                elevation: 0,
+                shape:
+                    RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.attach_file, size: 18, color: Color(0xFF1A237E)),
+                          SizedBox(width: 8),
+                          Text('Attachments',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.bold)),
+                        ],
                       ),
-                    ),
+                      const SizedBox(height: 14),
+                      if (ticket.hasUserImage)
+                        TicketImageWidget(
+                          ticketId: int.parse(ticket.id),
+                          fileType: 'USER',
+                          label: 'User Attachment',
+                        ),
+                      if (ticket.hasUserImage && ticket.hasResUserImage)
+                        const SizedBox(height: 16),
+                      if (ticket.hasResUserImage)
+                        TicketImageWidget(
+                          ticketId: int.parse(ticket.id),
+                          fileType: 'DEVELOPER',
+                          label: 'Developer Attachment',
+                        ),
+                    ],
                   ),
                 ),
-              ],
+              ),
+            ],
+
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('Back to Details'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.grey.shade200,
+                foregroundColor: Colors.black87,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
             ),
           ],
         ),
@@ -2322,7 +1714,8 @@ class TrackTicketScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusIndicator(String label, IconData icon, Color color, bool isActive) {
+  Widget _buildStatusIndicator(
+      String label, IconData icon, Color color, bool isActive) {
     return Column(
       children: [
         Container(
@@ -2331,64 +1724,53 @@ class TrackTicketScreen extends StatelessWidget {
             color: isActive ? color : color.withValues(alpha: 0.2),
             shape: BoxShape.circle,
           ),
-          child: Icon(
-            icon,
-            color: isActive ? Colors.white : color,
-            size: 16,
-          ),
+          child: Icon(icon, color: isActive ? Colors.white : color, size: 16),
         ),
         const SizedBox(height: 4),
         Text(
           label,
           style: TextStyle(
-            fontSize: 10,
-            color: isActive ? color : Colors.grey.shade400,
-            fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-          ),
+              fontSize: 10,
+              color: isActive ? color : Colors.grey.shade400,
+              fontWeight: isActive ? FontWeight.w600 : FontWeight.normal),
         ),
       ],
     );
   }
 
-  Widget _buildStatusConnector(bool isActive) {
+  Widget _buildConnector(bool isActive) {
     return Container(
       width: 20,
       height: 2,
-      decoration: BoxDecoration(
-        color: isActive ? Colors.green : Colors.grey.shade300,
-      ),
+      color: isActive ? Colors.green : Colors.grey.shade300,
     );
   }
 
-  Widget _buildTrackingRow(String label, String value) {
+  Widget _buildRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 80,
-            child: Text(
-              label,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            width: 90,
+            child: Text(label,
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500)),
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
+            child: Text(value,
+                style:
+                    const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
           ),
         ],
       ),
     );
   }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day}/${d.month}/${d.year} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
 }

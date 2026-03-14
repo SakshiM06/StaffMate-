@@ -4,7 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pinput/pinput.dart';
 import 'package:http/http.dart' as http;
-import 'package:staff_mate/pages/login_page.dart'; // For AppColors
+import 'package:staff_mate/pages/login_page.dart'; 
+import 'package:shared_preferences/shared_preferences.dart';
 
 class OTPVerificationDialog extends StatefulWidget {
   final String userId;
@@ -139,7 +140,10 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
           setState(() {
             _showOTPInput = true;
           });
-          
+
+          final prefs = await SharedPreferences.getInstance();
+await prefs.setString('otp_email', _currentEmail);
+
           _startResendTimer();
           _showSnackBar(
             "OTP sent to ${_currentEmail.isNotEmpty ? _currentEmail : _currentPhone}", 

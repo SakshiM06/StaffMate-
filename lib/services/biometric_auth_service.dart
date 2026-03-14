@@ -30,7 +30,7 @@ class BiometricAuthService {
   static Future<bool> authenticate() async {
     try {
       return await _auth.authenticate(
-        localizedReason: 'Authenticate to access StaffMate',
+        localizedReason: 'Authenticate to access SmartMate',
         options: const AuthenticationOptions(
           stickyAuth: true,
           biometricOnly: true,

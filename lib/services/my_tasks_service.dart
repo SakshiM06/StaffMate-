@@ -70,7 +70,7 @@ class MyTasksService {
               const Duration(seconds: 30),
               onTimeout: () {
                 client.close();
-                throw Exception('Connection timeout. Server not responding at 192.168.1.14:8089');
+                throw Exception('Connection timeout. Server not responding');
               },
             );
 

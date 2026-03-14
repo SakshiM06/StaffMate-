@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:staff_mate/pages/attendance_page.dart';
 import 'package:staff_mate/pages/ipd_dashboard_page.dart';
-import 'package:staff_mate/pages/my_hr_screen.dart';
 import 'package:staff_mate/pages/mytasks.dart';
 import 'package:staff_mate/pages/nurse_page.dart';
 import 'package:staff_mate/pages/smartcarehomescreen.dart';
@@ -26,21 +25,22 @@ class _DashboardPageState extends State<DashboardPage> {
     GlobalKey<NavigatorState>(), // IPD - index 1
     GlobalKey<NavigatorState>(), // MY HR - index 2
     GlobalKey<NavigatorState>(), // My Tasks - index 3
-    GlobalKey<NavigatorState>(), // Approval Queue - index 4
-   // Day to Day Notes - index 5
   ];
 
-  // The actual pages - MUST MATCH the order of navigator keys
+  // The actual pages
   final List<Widget> _pages = [
-    SmartCareHomeScreen(key: PageStorageKey('Page1')),
-    IpdDashboardPage(key: PageStorageKey('Page4')),
-    MyHRScreen(key: PageStorageKey('Page5')),
-    MyTasksPage(key: PageStorageKey('Page6')),
-    // ApprovalQueuePage(key: PageStorageKey('Page7')),
-
+    const SmartCareHomeScreen(key: PageStorageKey('Page1')),
+    const IpdDashboardPage(key: PageStorageKey('Page4')),
+    const SizedBox.shrink(), // Empty widget for MY HR
+    const MyTasksPage(key: PageStorageKey('Page6')),
   ];
 
   void _onItemTapped(int index) {
+    if (index == 2) { // MY HR tab
+      _showComingSoonMessage();
+      return;
+    }
+    
     if (_currentTab == index) {
       _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
     } else {
@@ -48,6 +48,19 @@ class _DashboardPageState extends State<DashboardPage> {
         _currentTab = index;
       });
     }
+  }
+
+  void _showComingSoonMessage() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('HR features are coming soon! Stay tuned.'),
+        backgroundColor: const Color(0xFF1A237E),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Widget _buildNavigator(int index) {
@@ -64,10 +77,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate available width for each tab
-    final screenWidth = MediaQuery.of(context).size.width;
-    final tabWidth = screenWidth / 4;
-
     return PopScope(
       canPop: false,
       onPopInvoked: (didPop) async {
@@ -95,122 +104,100 @@ class _DashboardPageState extends State<DashboardPage> {
               _buildNavigator(1),
               _buildNavigator(2),
               _buildNavigator(3),
-              // _buildNavigator(4),
-          
             ],
           ),
         ),
-        bottomNavigationBar: Container(
-          height: 70,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.1),
-                blurRadius: 8,
-                offset: const Offset(0, -2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _buildBottomNavItem(
-                index: 0,
-                icon: Icons.home_outlined,
-                activeIcon: Icons.home,
-                label: 'Home',
-                width: tabWidth,
-              ),
-              _buildBottomNavItem(
-                index: 1,
-                icon: Icons.medical_services_outlined,
-                activeIcon: Icons.medical_services,
-                label: 'IPD',
-                width: tabWidth,
-              ),
-              _buildBottomNavItem(
-                index: 2,
-                icon: Icons.business_center_outlined,
-                activeIcon: Icons.business_center,
-                label: 'MY HR',
-                width: tabWidth,
-              ),
-              _buildBottomNavItem(
-                index: 3,
-                icon: Icons.checklist_outlined,
-                activeIcon: Icons.checklist,
-                label: 'Tasks',
-                width: tabWidth,
-              ),
-              // _buildBottomNavItem(
-              //   index: 4,
-              //   icon: Icons.approval_outlined,
-              //   activeIcon: Icons.approval,
-              //   label: 'Approvals',
-              //   width: tabWidth,
-              // ),
-      
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildBottomNavItem({
-    required int index,
-    required IconData icon,
-    required IconData activeIcon,
-    required String label,
-    required double width,
-  }) {
-    final isSelected = _currentTab == index;
-    
-    return SizedBox(
-      width: width,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => _onItemTapped(index),
-          splashColor: const Color(0xFF1A237E).withOpacity(0.1),
-          highlightColor: const Color(0xFF1A237E).withOpacity(0.05),
-          borderRadius: BorderRadius.circular(8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                margin: const EdgeInsets.only(bottom: 2),
-                decoration: isSelected
-                    ? BoxDecoration(
-                        color: const Color(0xFF1A237E).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      )
-                    : null,
-                child: Icon(
-                  isSelected ? activeIcon : icon,
-                  size: 22,
-                  color: isSelected ? const Color(0xFF1A237E) : Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 2),
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                    color: isSelected ? const Color(0xFF1A237E) : Colors.grey,
+        bottomNavigationBar: BottomNavigationBar(
+          currentIndex: _currentTab,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          selectedItemColor: const Color(0xFF1A237E),
+          unselectedItemColor: Colors.grey,
+          selectedFontSize: 11,
+          unselectedFontSize: 11,
+          elevation: 8,
+          onTap: _onItemTapped,
+          items: [
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.home_outlined),
+              activeIcon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.medical_services_outlined),
+              activeIcon: Icon(Icons.medical_services),
+              label: 'IPD',
+            ),
+            BottomNavigationBarItem(
+              icon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.business_center_outlined),
+                  Positioned(
+                    top: -8,
+                    right: -8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 16,
+                      ),
+                      child: const Text(
+                        'SOON',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                ),
+                ],
               ),
-            ],
-          ),
+              activeIcon: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  const Icon(Icons.business_center),
+                  Positioned(
+                    top: -8,
+                    right: -8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 16,
+                      ),
+                      child: const Text(
+                        'SOON',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 8,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              label: 'MY HR',
+              backgroundColor: Colors.white,
+            ),
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.checklist_outlined),
+              activeIcon: Icon(Icons.checklist),
+              label: 'Tasks',
+            ),
+          ],
         ),
       ),
     );

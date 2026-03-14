@@ -464,7 +464,7 @@ void _showEnableBiometricDialog() async {
                               ),
 
                               Text(
-                                "Login to StaffMate",
+                                "Login to SmartMate",
                                 textAlign: TextAlign.center,
                                 style: GoogleFonts.poppins(
                                   fontSize: size.width * 0.06,

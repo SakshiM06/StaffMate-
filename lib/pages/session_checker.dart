@@ -144,7 +144,7 @@ Future<void> _triggerBiometric() async {
             const SizedBox(height: 30),
             const CircularProgressIndicator(color: Colors.white, strokeWidth: 3),
             const SizedBox(height: 20),
-            Text("StaffMate",
+            Text("SmartMate",
                 style: GoogleFonts.poppins(
                     color: Colors.white,
                     fontSize: 24,

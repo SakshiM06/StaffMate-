@@ -1215,7 +1215,7 @@ class _MyTasksPageState extends State<MyTasksPage> with AutomaticKeepAliveClient
                     ),
                   ),
                   
-                  // Due Date
+                  // Due Date - Always show as "Due date" in UI regardless of API field name
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -2666,7 +2666,6 @@ class _MyTasksPageState extends State<MyTasksPage> with AutomaticKeepAliveClient
               const SizedBox(height: 16),
               const Text('Description', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
-              // Description with horizontal scroll
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Text(task.description, style: const TextStyle(color: Colors.black54)),
@@ -2674,7 +2673,7 @@ class _MyTasksPageState extends State<MyTasksPage> with AutomaticKeepAliveClient
               const SizedBox(height: 12),
               _buildDetailRow('Due Date', DateFormat('MMM dd, yyyy').format(task.dueDate), Icons.calendar_today),
               if (task.alertDate != null) _buildDetailRow('Alert', DateFormat('MMM dd, yyyy').format(task.alertDate!), Icons.notifications_active, color: Colors.orange),
-              if (task.endDate != null) _buildDetailRow(' Alert End Date', DateFormat('MMM dd, yyyy').format(task.endDate!), Icons.event, color: Colors.blue),
+              if (task.endDate != null) _buildDetailRow('Alert End Date', DateFormat('MMM dd, yyyy').format(task.endDate!), Icons.event, color: Colors.blue),
               if (task.repeatPattern != RepeatPattern.Never) 
                 _buildDetailRow('Repeat', 
                   task.repeatPattern == RepeatPattern.Custom 
@@ -2748,9 +2747,9 @@ class Task {
   final int? realId;  
   final String title;
   final String description;
-  final DateTime dueDate;
+  final DateTime dueDate;  
   final DateTime? alertDate;
-  final DateTime? endDate;
+  final DateTime? endDate;  
   final RepeatPattern repeatPattern;
   final int customRepeatDays;
   final Priority priority;
@@ -2775,6 +2774,7 @@ class Task {
 
   factory Task.fromJson(Map<String, dynamic> json, String statusFromApi) {
     DateTime dueDate;
+    // Check for dueDate first, then taskDate, then fallback to now
     if (json['dueDate'] != null) {
       dueDate = DateTime.parse(json['dueDate'].toString());
     } else if (json['taskDate'] != null) {
@@ -2790,8 +2790,13 @@ class Task {
       } catch (e) {}
     }
 
+    // Map repeatEndDate from API to endDate field
     DateTime? endDate;
-    if (json['endDate'] != null) {
+    if (json['repeatEndDate'] != null) {
+      try {
+        endDate = DateTime.parse(json['repeatEndDate'].toString());
+      } catch (e) {}
+    } else if (json['endDate'] != null) {
       try {
         endDate = DateTime.parse(json['endDate'].toString());
       } catch (e) {}
@@ -2832,7 +2837,7 @@ class Task {
       description: json['description'] ?? json['discription'] ?? '',
       dueDate: dueDate,
       alertDate: alertDate,
-      endDate: endDate,
+      endDate: endDate,  // This now maps to repeatEndDate from API
       repeatPattern: repeatPattern,
       customRepeatDays: customRepeatDays,
       priority: priority,

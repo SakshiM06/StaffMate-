@@ -157,7 +157,7 @@ class AuthOptionsPage extends StatelessWidget {
 
                                 // Subtitle
                                 Text(
-                                  'Log in to your existing account to continue managing your hospital workflow with StaffMate.',
+                                  'Log in to your existing account to continue managing your hospital workflow with SmartMate.',
                                   textAlign: TextAlign.center,
                                   style: GoogleFonts.poppins(
                                     fontSize: size.width * 0.038,

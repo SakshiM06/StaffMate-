@@ -20,21 +20,32 @@ class ChatService {
     
     await Future.delayed(const Duration(milliseconds: 800));
     
-    return [
-      MessageModel(
-        id: 'welcome_1',
-        text: '👋 Hello! I\'m your SmartCare support assistant. Please choose an option:',
-        isUser: false,
-        timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
-        type: 'welcome',
-        quickReplies: const [
-          '🎫 Create Ticket',
-          '📋 View My Tickets',
-          '🔍 Track Ticket',
-          '🔐 Forgot Password',
-        ],
-      ),
-    ];
+return [
+  MessageModel(
+    id: 'welcome_1',
+    text: '👋 Hello! I\'m your SmartCare support assistant. Please choose an option:',
+    isUser: false,
+    timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+    type: 'welcome',
+    quickReplies: const [
+      '🎫 Create Ticket',
+      '📋 View My Tickets',
+      '🔍 Track Ticket',
+      '🔐 Forgot Password',
+    ],
+  ),
+  MessageModel(
+    id: 'contact_1',
+    text: '📞 You can also call us at:\n☎️ 94040 22226\n☎️ 94040 22288',
+    isUser: false,
+    timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+    type: 'contact',
+    quickReplies: const [
+      '📞 Call 94040 22226',
+      '📞 Call 94040 22288',
+    ],
+  ),
+];
   }
 
   // ============== PUBLIC METHODS FOR CHAT PROVIDER ==============
@@ -228,7 +239,9 @@ class ChatService {
         // Get user credentials from SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         final userId = prefs.getString('userId') ?? '';
-        final email = prefs.getString('email') ?? '';
+        final email = prefs.getString('otp_email')?.isNotEmpty == true
+    ? prefs.getString('otp_email')!
+    : prefs.getString('email') ?? '';
         
         debugPrint('📱 Retrieved from SharedPreferences - UserId: $userId, Email: $email');
         
@@ -835,11 +848,12 @@ String _getImageContentType(String base64String) {
       // Call update API
       final result = await SupportService.updateTicket(
         ticketId: intTicketId,
-        title: ticket.title,
+        // title: ticket.title,
         description: ticket.description,
         priority: ticket.priorityText,
         status: newStatus,
-        currentResolutionSummary: ticket.currentResolutionSummary,
+        currentResolutionSummary: ticket.currentResolutionSummary, 
+        queryType: '',
       );
       
       debugPrint('✅ Update API Response: $result');
@@ -895,11 +909,12 @@ String _getImageContentType(String base64String) {
       
       final result = await SupportService.updateTicket(
         ticketId: int.tryParse(ticketId) ?? 0,
-        title: ticket.title,
+        // title: ticket.title,
         description: ticket.description,
         priority: ticket.priorityText,
         status: ticket.statusText,
-        currentResolutionSummary: summary,
+        currentResolutionSummary: summary, queryType: '',
+        
       );
       
       debugPrint('✅ Update API Response: $result');
@@ -1511,11 +1526,12 @@ String _getImageContentType(String base64String) {
       }
       
       final result = await SupportService.createTicket(
-        title: title,
+       queryType: title,
         description: description,
         priority: priority.toUpperCase(),
         userId: userId,
         images: imageFiles,
+        
       );
       
       debugPrint('✅ Ticket created successfully via API: $result');

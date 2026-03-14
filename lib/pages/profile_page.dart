@@ -875,7 +875,7 @@ Future<void> logout() async {
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Text(
-                "StaffMate v1.0.0", 
+                "SmartMate v1.0.0", 
                 style: GoogleFonts.nunito(color: Colors.grey, fontSize: 12)
               ),
             ),

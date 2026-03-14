@@ -425,22 +425,29 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
               Expanded(
                 child: _filteredPatients.isEmpty && _allPatients.isNotEmpty
                     ? Center(child: Text("No patients found", style: GoogleFonts.poppins(color: Colors.grey)))
-                    : GridView.builder(
-                        padding: const EdgeInsets.all(12),
-                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          crossAxisSpacing: 8,
-                          mainAxisSpacing: 8,
-                          childAspectRatio: 1.15,
-                        ),
-                        itemCount: _filteredPatients.length,
-                        itemBuilder: (context, index) {
-                          return PatientGridCardCompact(
-                            patient: _filteredPatients[index],
-                            excessLimit: _excessLimitAmount,
-                            onCardTap: () => _showPatientQuickActionSheet(_filteredPatients[index]),
-                          );
+                    : RefreshIndicator(
+                        onRefresh: () async {
+                          _refreshDashboardData();
                         },
+                        color: darkBlue,
+                        child: GridView.builder(
+                          padding: const EdgeInsets.all(12),
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 8,
+                            mainAxisSpacing: 8,
+                            childAspectRatio: 1.15,
+                          ),
+                          itemCount: _filteredPatients.length,
+                          itemBuilder: (context, index) {
+                            return PatientGridCardCompact(
+                              patient: _filteredPatients[index],
+                              excessLimit: _excessLimitAmount,
+                              onCardTap: () => _showPatientQuickActionSheet(_filteredPatients[index]),
+                            );
+                          },
+                        ),
                       ),
               ),
             ],
@@ -605,44 +612,60 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
                 children: [
                   _actionBtn(Icons.receipt, "Prescription", Colors.blue, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReqPrescriptionPage(patientName: patient.patientname, patient: patient))); 
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReqPrescriptionPage(patientName: patient.patientname, patient: patient))).then((_) {
+                      _refreshDashboardData();
+                    }); 
                   }),
                   _actionBtn(Icons.science, "Investigation", Colors.orange, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReqInvestigationPage(patientName: patient.patientname, patient: patient))); 
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReqInvestigationPage(patientName: patient.patientname, patient: patient))).then((_) {
+                      _refreshDashboardData();
+                    }); 
                   }),
                   _actionBtn(Icons.assignment_outlined, "Records", Colors.teal, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => TreatmentRecordWebViewPage(patient: patient))); 
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => TreatmentRecordWebViewPage(patient: patient))).then((_) {
+                      _refreshDashboardData();
+                    }); 
                   }),
                   _actionBtn(Icons.favorite, "Vitals", Colors.redAccent, () { 
-  Navigator.pop(context);
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => VitalsPage(patient: patient),
-    ),
-  );
-}),
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => VitalsPage(patient: patient),
+                      ),
+                    ).then((_) {
+                      _refreshDashboardData();
+                    });
+                  }),
                   // _actionBtn(Icons.notifications_active, "Alert", Colors.amber, () { 
                   //   Navigator.pop(context);
                   //   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Notification alert sent for ${patient.patientname}")));
                   // }),
                   _actionBtn(Icons.notifications_none, "Notifications", Colors.purple, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationDetailsPage(patientName: patient.patientname, patientId: patient.ipdNo,admissionId: patient.admissionId,)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationDetailsPage(patientName: patient.patientname, patientId: patient.ipdNo,admissionId: patient.admissionId,))).then((_) {
+                      _refreshDashboardData();
+                    }); 
                   }),
                   _actionBtn(Icons.note_add, "Day-to-day Notes", Colors.brown, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage(ipdId: patient.ipdNo, admissionDate: patient.admissionDate, patientName: patient.patientname, admissionId: patient.admissionId, patientId: '',)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage(ipdId: patient.ipdNo, admissionDate: patient.admissionDate, patientName: patient.patientname, admissionId: patient.admissionId, patientId: '',))).then((_) {
+                      _refreshDashboardData();
+                    }); 
                   }),
                   _actionBtn(Icons.upload_file, "Upload Doc", Colors.green, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => UploadDocScreen(patient: patient,)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => UploadDocScreen(patient: patient,))).then((_) {
+                      _refreshDashboardData();
+                    }); 
                   }),
                   _actionBtn(Icons.local_hospital, "Shift Patient", Colors.deepPurple, () { 
                     Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ShiftPatientPage(patient: patient)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => ShiftPatientPage(patient: patient))).then((_) {
+                      _refreshDashboardData();
+                    });
                   }),
                 ],
               ),

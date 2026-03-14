@@ -2226,7 +2226,7 @@ class _MyHRScreenState extends State<MyHRScreen> {
                         Padding(
                           padding: const EdgeInsets.only(top: 2.0),
                           child: Text(
-                            "StaffMate Employee",
+                            "SmartMate Employee",
                             style: GoogleFonts.nunito(
                                 color: Colors.white70, fontSize: 10),
                             overflow: TextOverflow.ellipsis,
@@ -2295,7 +2295,7 @@ class _MyHRScreenState extends State<MyHRScreen> {
             Padding(
               padding: const EdgeInsets.all(20.0),
               child: Text(
-                "StaffMate v1.0.0",
+                "SmartMate v1.0.0",
                 style: GoogleFonts.nunito(color: Colors.grey, fontSize: 12),
               ),
             ),

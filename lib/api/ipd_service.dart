@@ -35,7 +35,134 @@ class IpdService {
   static const String _shiftBedUrl =
       "https://test.smartcarehis.com:8443/ipd/common/shiftbed";
   static const String _addStdChargesUrl =
-      "https://test.smartcarehis.com:8443/ipd/patient/addstdcharges"; 
+      "https://test.smartcarehis.com:8443/ipd/patient/addstdcharges";
+
+  // ─── NEW: Prescription Location endpoint ───────────────────────────────────
+  static const String _prescriptionLocationUrl =
+      "https://test.smartcarehis.com:8443/ipd/prisc/location/get";
+
+  // ---------------------------------------------------------------------------
+  // Prescription Locations
+  // ---------------------------------------------------------------------------
+
+  /// Fetches the list of available prescription locations (e.g. OPD Pharmacy,
+  /// IPD Pharmacy, OT Store …).
+  ///
+  /// Returns a [Map] with:
+  ///   - `success`   (bool)          – whether the call succeeded.
+  ///   - `data`      (List<dynamic>) – list of `{id, name}` maps.
+  ///   - `message`   (String)        – human-readable status.
+  Future<Map<String, dynamic>> fetchPrescriptionLocations() async {
+    debugPrint('Fetching prescription locations...');
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      String getPrefAsString(String key) {
+        final val = prefs.get(key);
+        return val?.toString() ?? '';
+      }
+
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId =
+          getPrefAsString('branchId').isNotEmpty ? getPrefAsString('branchId') : '1';
+
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        return {
+          'success': false,
+          'message': '⚠️ Missing session values. Please login again.',
+          'data': [],
+        };
+      }
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
+        'Access-Control-Allow-Origin': '*',
+      };
+
+      debugPrint('Prescription Locations URL : $_prescriptionLocationUrl');
+      debugPrint('Prescription Locations Headers : $headers');
+
+      final response = await http.get(
+        Uri.parse(_prescriptionLocationUrl),
+        headers: headers,
+      );
+
+      debugPrint('Prescription Locations Status : ${response.statusCode}');
+      debugPrint('Prescription Locations Body   : ${response.body}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+
+        if (decoded is List) {
+          debugPrint(
+              'Successfully fetched ${decoded.length} prescription location(s)');
+          return {
+            'success': true,
+            'message': 'Prescription locations fetched successfully',
+            'data': decoded,
+          };
+        } else if (decoded is Map<String, dynamic>) {
+          // Handle wrapped response e.g. {"data": [...]}
+          final list = decoded['data'] ?? decoded['locationList'] ?? [];
+          if (list is List) {
+            return {
+              'success': true,
+              'message': 'Prescription locations fetched successfully',
+              'data': list,
+            };
+          }
+        }
+
+        return {
+          'success': false,
+          'message': 'Unexpected response format',
+          'data': [],
+        };
+      } else {
+        String errorMessage = 'Failed with status ${response.statusCode}';
+        try {
+          final errorBody = jsonDecode(response.body);
+          if (errorBody is Map<String, dynamic>) {
+            errorMessage =
+                errorBody['message'] ?? errorBody['error'] ?? errorMessage;
+          }
+        } catch (_) {
+          errorMessage =
+              response.body.isNotEmpty ? response.body : errorMessage;
+        }
+
+        debugPrint('Prescription Locations API Error: $errorMessage');
+
+        return {
+          'success': false,
+          'message': 'Failed to fetch prescription locations: $errorMessage',
+          'statusCode': response.statusCode,
+          'data': [],
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('Exception fetching prescription locations: $e');
+      debugPrint('StackTrace: $stackTrace');
+      return {
+        'success': false,
+        'message': 'Exception: $e',
+        'data': [],
+      };
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Prescription Notifications
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> fetchPrescriptionNotifications(String admissionId) async {
     debugPrint('Fetching prescription notifications for admission ID: $admissionId');
@@ -108,6 +235,10 @@ class IpdService {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Investigation Notifications
+  // ---------------------------------------------------------------------------
+
   Future<Map<String, dynamic>> fetchInvestigationNotifications(String admissionId) async {
     debugPrint('Fetching investigation notifications for admission ID: $admissionId');
 
@@ -178,6 +309,10 @@ class IpdService {
       rethrow;
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // IPD Dashboard
+  // ---------------------------------------------------------------------------
 
   Future<IpdDashboardData> fetchDashboardData({required String wardId}) async {
     debugPrint('Fetching IPD dashboard data...');
@@ -264,9 +399,10 @@ class IpdService {
     }
   }
 
-  /// [branchId] - Branch ID (default: "1")
-  /// [specializationId] - Specialization filter (default: 0 for all)
-  /// [isVisitingConsultant] - Filter for visiting consultants (1 = yes, 0 = no)
+  // ---------------------------------------------------------------------------
+  // Practitioners
+  // ---------------------------------------------------------------------------
+
   Future<List<dynamic>> fetchPractitionerList({
     String branchId = "1",
     int specializationId = 0,
@@ -322,7 +458,6 @@ class IpdService {
         if (decoded is Map<String, dynamic>) {
           if (decoded.containsKey('practitionerList')) {
             final practitionerList = decoded['practitionerList'];
-
             if (practitionerList is List) {
               debugPrint('Successfully fetched ${practitionerList.length} practitioners');
               return practitionerList;
@@ -356,7 +491,10 @@ class IpdService {
     }
   }
 
-  /// [branchId] - Branch ID (default: "1")
+  // ---------------------------------------------------------------------------
+  // Specializations
+  // ---------------------------------------------------------------------------
+
   Future<List<dynamic>> fetchSpecializationList({
     String branchId = "1",
   }) async {
@@ -398,13 +536,10 @@ class IpdService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        debugPrint('Specialization API Response Type: ${decoded.runtimeType}');
-        debugPrint('Specialization API Response: $decoded');
 
         if (decoded is Map<String, dynamic>) {
           if (decoded.containsKey('specializationList')) {
             final specializationList = decoded['specializationList'];
-
             if (specializationList is List) {
               debugPrint('Successfully fetched ${specializationList.length} specializations');
               return specializationList;
@@ -438,7 +573,10 @@ class IpdService {
     }
   }
 
-  /// [branchId]
+  // ---------------------------------------------------------------------------
+  // Wards
+  // ---------------------------------------------------------------------------
+
   Future<List<dynamic>> fetchBranchWardList({
     String branchId = "1",
   }) async {
@@ -485,8 +623,6 @@ class IpdService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        debugPrint('Ward List API Response Type: ${decoded.runtimeType}');
-        debugPrint('Ward List API Response: $decoded');
 
         if (decoded is Map<String, dynamic>) {
           if (decoded.containsKey('wardList')) {
@@ -514,7 +650,6 @@ class IpdService {
                 return entry.value as List;
               }
             }
-
             throw Exception(
               'API response does not contain a list of wards. Response keys: ${decoded.keys}',
             );
@@ -540,7 +675,11 @@ class IpdService {
 
     return [];
   }
-  /// [wardId] 
+
+  // ---------------------------------------------------------------------------
+  // Available Beds
+  // ---------------------------------------------------------------------------
+
   Future<List<dynamic>> fetchAvailableBedsInWard({
     required String wardId,
   }) async {
@@ -588,41 +727,25 @@ class IpdService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-        debugPrint('Available Beds API Response Type: ${decoded.runtimeType}');
-        debugPrint('Available Beds API Response: $decoded');
 
         if (decoded is Map<String, dynamic>) {
           if (decoded.containsKey('bedlist')) {
             final bedList = decoded['bedlist'];
-            if (bedList is List) {
-              debugPrint('Successfully fetched ${bedList.length} beds (from bedlist key)');
-              return bedList;
-            }
+            if (bedList is List) return bedList;
           } else if (decoded.containsKey('beds')) {
             final bedList = decoded['beds'];
-            if (bedList is List) {
-              debugPrint('Successfully fetched ${bedList.length} beds (from beds key)');
-              return bedList;
-            }
+            if (bedList is List) return bedList;
           } else if (decoded.containsKey('data')) {
             final data = decoded['data'];
-            if (data is List) {
-              debugPrint('Successfully fetched ${data.length} beds (from data key)');
-              return data;
-            }
+            if (data is List) return data;
           } else {
             for (final entry in decoded.entries) {
-              if (entry.value is List) {
-                debugPrint('Successfully fetched ${(entry.value as List).length} beds (from ${entry.key} key)');
-                return entry.value as List;
-              }
+              if (entry.value is List) return entry.value as List;
             }
-
             debugPrint('No list found in response, returning empty list');
             return [];
           }
         } else if (decoded is List) {
-          debugPrint('Successfully fetched ${decoded.length} beds (direct list format)');
           return decoded;
         } else {
           debugPrint('Unexpected response format: ${decoded.runtimeType}');
@@ -641,6 +764,10 @@ class IpdService {
 
     return [];
   }
+
+  // ---------------------------------------------------------------------------
+  // Shift Bed
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> shiftPatientBed({
     required String patientId,
@@ -689,8 +816,6 @@ class IpdService {
         'branchId': branchId.isNotEmpty ? branchId : defaultBranchId,
         'Access-Control-Allow-Origin': '*',
       };
-
-      debugPrint('Shift Bed Headers: $headers');
 
       int admissionIdInt;
       try {
@@ -746,8 +871,6 @@ class IpdService {
         final decoded = jsonDecode(response.body);
 
         if (decoded is Map<String, dynamic>) {
-          debugPrint('Patient bed shifted successfully');
-          
           return {
             'success': true,
             'data': decoded['data'] ?? decoded,
@@ -766,15 +889,13 @@ class IpdService {
         try {
           final errorBody = jsonDecode(response.body);
           if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ?? 
-                          errorBody['error'] ?? 
-                          errorMessage;
+            errorMessage = errorBody['message'] ??
+                errorBody['error'] ??
+                errorMessage;
           }
         } catch (e) {
           errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
         }
-
-        debugPrint('Shift Bed API Error: $errorMessage');
 
         return {
           'success': false,
@@ -792,7 +913,11 @@ class IpdService {
       };
     }
   }
-  
+
+  // ---------------------------------------------------------------------------
+  // Standard Charges
+  // ---------------------------------------------------------------------------
+
   Future<Map<String, dynamic>> addStandardCharges({
     required String patientId,
     required String admissionId,
@@ -839,14 +964,11 @@ class IpdService {
         'Access-Control-Allow-Origin': '*',
       };
 
-      debugPrint('Add Standard Charges Headers: $headers');
-
       int admissionIdInt;
       try {
         admissionIdInt = int.parse(admissionId);
       } catch (e) {
         admissionIdInt = 0;
-        debugPrint('⚠️ Error parsing admissionId: $e, using 0');
       }
 
       int wardIdInt;
@@ -854,7 +976,6 @@ class IpdService {
         wardIdInt = int.parse(wardId);
       } catch (e) {
         wardIdInt = 0;
-        debugPrint('⚠️ Error parsing wardId: $e, using 0');
       }
 
       final requestBody = {
@@ -883,10 +1004,7 @@ class IpdService {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         final decoded = jsonDecode(response.body);
-
         if (decoded is Map<String, dynamic>) {
-          debugPrint('Standard charges added successfully');
-          
           return {
             'success': true,
             'data': decoded['data'] ?? decoded,
@@ -905,15 +1023,11 @@ class IpdService {
         try {
           final errorBody = jsonDecode(response.body);
           if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ?? 
-                          errorBody['error'] ?? 
-                          errorMessage;
+            errorMessage = errorBody['message'] ?? errorBody['error'] ?? errorMessage;
           }
         } catch (e) {
           errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
         }
-
-        debugPrint('Add Standard Charges API Error: $errorMessage');
 
         return {
           'success': false,
@@ -931,6 +1045,10 @@ class IpdService {
       };
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // Vitals
+  // ---------------------------------------------------------------------------
 
   Future<Map<String, dynamic>> fetchVitalsMasterData() async {
     debugPrint('Fetching vitals master data...');
@@ -973,10 +1091,8 @@ class IpdService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-
         if (decoded is Map<String, dynamic>) {
           if (decoded.containsKey('data') && decoded['data'] is List) {
-            debugPrint('Successfully fetched vitals master data');
             return {
               'success': true,
               'data': decoded['data'],
@@ -1048,17 +1164,14 @@ class IpdService {
         'Access-Control-Allow-Origin': '*',
       };
 
-      debugPrint('Headers: $headers');
-
       final List<Map<String, dynamic>> requestBody = [];
 
       for (var entry in vitalEntries) {
         final vitalMasterId = entry['vitalMasterId'];
         final finding = entry['finding']?.toString() ?? '';
-
         if (finding.isEmpty) continue;
 
-        final vitalEntry = {
+        requestBody.add({
           'patientId': patientId,
           'addmissionId': admissionId,
           'date': date,
@@ -1068,9 +1181,7 @@ class IpdService {
           'userId': userId,
           'branchId': int.tryParse(branchId) ?? 1,
           'clinicId': clinicId,
-        };
-
-        requestBody.add(vitalEntry);
+        });
       }
 
       if (requestBody.isEmpty) {
@@ -1079,10 +1190,6 @@ class IpdService {
           'message': 'No valid vitals to save',
         };
       }
-
-      debugPrint('Request Body (first item): ${requestBody.first}');
-      debugPrint('Total items: ${requestBody.length}');
-      debugPrint('Full request body: ${jsonEncode(requestBody)}');
 
       final response = await http.post(
         Uri.parse(_saveVitalsUrl),
@@ -1096,8 +1203,6 @@ class IpdService {
       if (response.statusCode == 200) {
         try {
           final decoded = jsonDecode(response.body);
-          debugPrint('Decoded Response: $decoded');
-
           return {
             'success': true,
             'data': decoded,
@@ -1115,16 +1220,11 @@ class IpdService {
         try {
           final errorBody = jsonDecode(response.body);
           if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ??
-                errorBody['error'] ??
-                'Unknown error';
+            errorMessage = errorBody['message'] ?? errorBody['error'] ?? 'Unknown error';
           }
         } catch (e) {
           errorMessage = response.body;
         }
-
-        debugPrint('Error Details: $errorMessage');
-
         return {
           'success': false,
           'message': 'Failed to save vitals: $errorMessage',
@@ -1142,14 +1242,16 @@ class IpdService {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Patient Information (via InvestigationService)
+  // ---------------------------------------------------------------------------
+
   Future<Map<String, dynamic>?> fetchPatientInformation(String patientId) async {
     debugPrint('Fetching patient information for ID: $patientId via InvestigationService');
-
     try {
       final response = await InvestigationService.fetchPatientInformation(
         patientId: patientId,
       );
-
       if (response != null) {
         return {
           'success': true,
@@ -1175,12 +1277,10 @@ class IpdService {
 
   Future<Map<String, dynamic>?> fetchPatientIpdDetails(String patientId) async {
     debugPrint('Fetching patient IPD details for ID: $patientId via InvestigationService');
-
     try {
       final response = await InvestigationService.fetchPatientIpdDetails(
         patientId: patientId,
       );
-
       if (response != null) {
         return {
           'success': true,
@@ -1212,6 +1312,10 @@ class IpdService {
     return await InvestigationService.getSavedIpdParams();
   }
 
+  // ---------------------------------------------------------------------------
+  // Document Upload
+  // ---------------------------------------------------------------------------
+
   Future<Map<String, dynamic>> uploadPatientDocument({
     required String patientId,
     required String description,
@@ -1225,10 +1329,6 @@ class IpdService {
     String conditionId = "0",
   }) async {
     debugPrint('Uploading document for patient: $patientId');
-    debugPrint('Document Type: $documentType');
-    debugPrint('File Name: $fileName');
-    debugPrint('IPD/OPD: $ipdOrOpd');
-
     try {
       final prefs = await SharedPreferences.getInstance();
 
@@ -1248,9 +1348,9 @@ class IpdService {
 
       String uploadByUser = uploadby;
       if (uploadByUser.isEmpty) {
-        uploadByUser = getPrefAsString('userFullName') ?? 
-                      getPrefAsString('username') ?? 
-                      'Staff User';
+        uploadByUser = getPrefAsString('userFullName') ??
+            getPrefAsString('username') ??
+            'Staff User';
       }
 
       final headers = {
@@ -1264,33 +1364,25 @@ class IpdService {
         'Access-Control-Allow-Origin': '*',
       };
 
-      debugPrint('Upload Document Headers: $headers');
-
-      // Parse ipdOrOpd to integer
       int ipdOrOpdInt;
       try {
         ipdOrOpdInt = int.parse(ipdOrOpd);
       } catch (e) {
         ipdOrOpdInt = 0;
-        debugPrint('⚠️ Error parsing ipdOrOpd: $e, using 0');
       }
 
-      // Parse practitionerId to integer (API expects number)
       int practitionerIdInt;
       try {
         practitionerIdInt = int.parse(practitionerId);
       } catch (e) {
         practitionerIdInt = 0;
-        debugPrint('⚠️ Error parsing practitionerId: $e, using 0');
       }
 
-      // Parse conditionId to integer (API expects number)
       int conditionIdInt;
       try {
         conditionIdInt = int.parse(conditionId);
       } catch (e) {
         conditionIdInt = 0;
-        debugPrint('⚠️ Error parsing conditionId: $e, using 0');
       }
 
       final requestBody = {
@@ -1298,8 +1390,8 @@ class IpdService {
           {
             "patientId": patientId,
             "description": description,
-            "practitionerId": practitionerIdInt, 
-            "conditionId": conditionIdInt,        
+            "practitionerId": practitionerIdInt,
+            "conditionId": conditionIdInt,
             "documentType": documentType,
             "ipdOrOpd": ipdOrOpdInt,
             "uploadby": uploadby,
@@ -1309,8 +1401,6 @@ class IpdService {
           }
         ]
       };
-
-      debugPrint('Upload Document Request Body: ${jsonEncode(requestBody)}');
 
       final response = await http.post(
         Uri.parse(_uploadDocumentUrl),
@@ -1323,20 +1413,13 @@ class IpdService {
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-
         if (decoded is Map<String, dynamic>) {
-          debugPrint('Document uploaded successfully');
-          
-          final hasSuccessMessage = decoded.containsKey('File uploaded successfully!') ||
-                                   decoded.containsKey('message') ||
-                                   decoded.containsKey('success');
-          
           return {
             'success': true,
             'data': decoded['data'] ?? [],
-            'message': decoded['File uploaded successfully!'] ?? 
-                      decoded['message'] ?? 
-                      'Document uploaded successfully',
+            'message': decoded['File uploaded successfully!'] ??
+                decoded['message'] ??
+                'Document uploaded successfully',
             'response': decoded,
           };
         } else {
@@ -1347,14 +1430,11 @@ class IpdService {
         try {
           final errorBody = jsonDecode(response.body);
           if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ?? 
-                          errorBody['error'] ?? 
-                          errorMessage;
+            errorMessage = errorBody['message'] ?? errorBody['error'] ?? errorMessage;
           }
         } catch (e) {
           errorMessage = response.body;
         }
-
         throw Exception('Failed to upload document: $errorMessage');
       }
     } catch (e, stackTrace) {
@@ -1368,10 +1448,10 @@ class IpdService {
     try {
       final bytes = await file.readAsBytes();
       final base64String = base64Encode(bytes);
-      
+
       String mimeType = 'application/octet-stream';
       final extension = file.path.split('.').last.toLowerCase();
-      
+
       switch (extension) {
         case 'png':
           mimeType = 'image/png';
@@ -1399,126 +1479,124 @@ class IpdService {
     }
   }
 
-// FINAL FIX - Replace uploadDocument method in ipd_service.dart
+  Future<Map<String, dynamic>> uploadDocument({
+    required String patientId,
+    required String description,
+    required String documentType,
+    File? file,
+    required String ipdOrOpd,
+    required String uploadby,
+    required String practitionerId,
+    required String conditionId,
+  }) async {
+    debugPrint('========== UPLOAD DOCUMENT (ARRAY FORMAT) ==========');
 
-// ✅ DEFINITIVE FIX - Replace uploadDocument method in ipd_service.dart
-// The API requires fileName, fileType, and fileDataUrl even when empty
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      String getPrefAsString(String key) => prefs.get(key)?.toString() ?? '';
 
-// ✅ ACTUAL FIX - Based on React code analysis
-// practitionerId and conditionId must be STRINGS (not numbers)
+      final token = getPrefAsString('auth_token');
+      final clinicId = getPrefAsString('clinicId');
+      final userId = getPrefAsString('userId');
+      final branchId = getPrefAsString('branchId') ?? '1';
 
-// 🔥 CRITICAL TEST - Send as ARRAY (no "data" wrapper)
-
-Future<Map<String, dynamic>> uploadDocument({
-  required String patientId,
-  required String description,
-  required String documentType,
-  File? file,
-  required String ipdOrOpd,
-  required String uploadby,
-  required String practitionerId,
-  required String conditionId,
-}) async {
-  debugPrint('========== UPLOAD DOCUMENT (ARRAY FORMAT) ==========');
-
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    String getPrefAsString(String key) => prefs.get(key)?.toString() ?? '';
-
-    final token = getPrefAsString('auth_token');
-    final clinicId = getPrefAsString('clinicId');
-    final userId = getPrefAsString('userId');
-    final branchId = getPrefAsString('branchId') ?? '1';
-
-    if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
-      throw Exception('⚠️ Missing session values');
-    }
-
-    final headers = {
-      'Content-Type': 'application/json',
-      'Accept': '*/*',
-      'Authorization': 'SmartCare $token',
-      'clinicid': clinicId,
-      'userid': userId,
-      'ZONEID': 'Asia/Kolkata',
-      'branchId': branchId,
-    };
-
-    int ipdOrOpdInt = int.tryParse(ipdOrOpd) ?? 0;
-
-    String fileName = "";
-    String fileType = "";
-    String fileDataUrl = "";
-
-    if (file != null) {
-      final bytes = await file.readAsBytes();
-      final base64String = base64Encode(bytes);
-      
-      final extension = file.path.split('.').last.toLowerCase();
-      switch (extension) {
-        case 'png': fileType = 'image/png'; break;
-        case 'jpg':
-        case 'jpeg': fileType = 'image/jpeg'; break;
-        case 'pdf': fileType = 'application/pdf'; break;
-        default: fileType = 'application/octet-stream';
+      if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
+        throw Exception('⚠️ Missing session values');
       }
 
-      fileName = file.path.split('/').last;
-      fileDataUrl = 'data:$fileType;base64,$base64String';
-    }
-
-    // Match React field order exactly
-    final documentData = {
-      "patientId": patientId,
-      "description": description,
-      "practitionerId": practitionerId,  // STRING
-      "conditionId": conditionId,        // STRING
-      "uploadby": uploadby,
-      "documentType": documentType,
-      "fileName": fileName,
-      "ipdOrOpd": ipdOrOpdInt,           // NUMBER
-      "fileDataUrl": fileDataUrl,
-      "fileType": fileType,
-    };
-
-    // 🔥 SEND AS ARRAY (NOT wrapped in "data")
-    final requestBody = [documentData];
-
-    final bodyString = jsonEncode(requestBody);
-    debugPrint('📤 Body Type: Array');
-    debugPrint('📤 First 300 chars: ${bodyString.substring(0, bodyString.length > 300 ? 300 : bodyString.length)}');
-
-    final response = await http.post(
-      Uri.parse(_uploadDocumentUrl),
-      headers: headers,
-      body: bodyString,
-    );
-
-    debugPrint('📡 Status: ${response.statusCode}');
-    debugPrint('📡 Response: ${response.body}');
-
-    if (response.statusCode == 200 || response.statusCode == 201) {
-      final decoded = jsonDecode(response.body);
-      return {
-        'success': true,
-        'data': decoded is Map ? (decoded['data'] ?? []) : [],
-        'message': decoded is Map 
-            ? (decoded['File uploaded successfully!'] ?? decoded['message'] ?? 'Success')
-            : 'Document uploaded successfully',
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': '*/*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        'branchId': branchId,
       };
-    } else {
-      return {
-        'success': false,
-        'message': 'Upload failed: ${response.statusCode}',
-        'statusCode': response.statusCode,
-        'body': response.body,
+
+      int ipdOrOpdInt = int.tryParse(ipdOrOpd) ?? 0;
+
+      String fileName = "";
+      String fileType = "";
+      String fileDataUrl = "";
+
+      if (file != null) {
+        final bytes = await file.readAsBytes();
+        final base64String = base64Encode(bytes);
+
+        final extension = file.path.split('.').last.toLowerCase();
+        switch (extension) {
+          case 'png':
+            fileType = 'image/png';
+            break;
+          case 'jpg':
+          case 'jpeg':
+            fileType = 'image/jpeg';
+            break;
+          case 'pdf':
+            fileType = 'application/pdf';
+            break;
+          default:
+            fileType = 'application/octet-stream';
+        }
+
+        fileName = file.path.split('/').last;
+        fileDataUrl = 'data:$fileType;base64,$base64String';
+      }
+
+      final documentData = {
+        "patientId": patientId,
+        "description": description,
+        "practitionerId": practitionerId,
+        "conditionId": conditionId,
+        "uploadby": uploadby,
+        "documentType": documentType,
+        "fileName": fileName,
+        "ipdOrOpd": ipdOrOpdInt,
+        "fileDataUrl": fileDataUrl,
+        "fileType": fileType,
       };
+
+      final requestBody = [documentData];
+      final bodyString = jsonEncode(requestBody);
+
+      final response = await http.post(
+        Uri.parse(_uploadDocumentUrl),
+        headers: headers,
+        body: bodyString,
+      );
+
+      debugPrint('📡 Status: ${response.statusCode}');
+      debugPrint('📡 Response: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        return {
+          'success': true,
+          'data': decoded is Map ? (decoded['data'] ?? []) : [],
+          'message': decoded is Map
+              ? (decoded['File uploaded successfully!'] ??
+                  decoded['message'] ??
+                  'Success')
+              : 'Document uploaded successfully',
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Upload failed: ${response.statusCode}',
+          'statusCode': response.statusCode,
+          'body': response.body,
+        };
+      }
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error: $e\n$stackTrace');
+      return {'success': false, 'message': 'Error: $e'};
     }
-  } catch (e, stackTrace) {
-    debugPrint('❌ Error: $e\n$stackTrace');
-    return {'success': false, 'message': 'Error: $e'};
   }
-}
+
+  // ---------------------------------------------------------------------------
+  // Vitals Validation Helpers
+  // ---------------------------------------------------------------------------
 
   Map<String, dynamic> validateVitalsAgainstMaster({
     required String temperature,
@@ -1551,80 +1629,39 @@ Future<Map<String, dynamic>> uploadDocument({
 
         switch (vitalId) {
           case '1':
-            _validateVital(
-              vitalName,
-              temperature,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'temperature',
-            );
+            _validateVital(vitalName, temperature,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'temperature');
             break;
-
           case '2':
-            _validateVital(
-              vitalName,
-              heartRate,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'heartRate',
-            );
+            _validateVital(vitalName, heartRate,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'heartRate');
             break;
-
           case '3':
-            _validateVital(
-              vitalName,
-              respiratoryRate,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'respiratoryRate',
-            );
+            _validateVital(vitalName, respiratoryRate,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'respiratoryRate');
             break;
-
           case '4':
-            _validateVital(
-              vitalName,
-              systolicBp,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'systolicBp',
-            );
+            _validateVital(vitalName, systolicBp,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'systolicBp');
             break;
-
           case '5':
-            _validateVital(
-              vitalName,
-              diastolicBp,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'diastolicBp',
-            );
+            _validateVital(vitalName, diastolicBp,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'diastolicBp');
             break;
-
           case '6':
-            _validateVital(
-              vitalName,
-              rbs,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'rbs',
-            );
+            _validateVital(vitalName, rbs,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'rbs');
             break;
-
-          case '13': // SpO2
-            _validateVital(
-              vitalName,
-              spo2,
-              vital['min_value_f']?.toString(),
-              vital['max_value_f']?.toString(),
-              errors,
-              fieldName: 'spo2',
-            );
+          case '13':
+            _validateVital(vitalName, spo2,
+                vital['min_value_f']?.toString(), vital['max_value_f']?.toString(),
+                errors, fieldName: 'spo2');
             break;
         }
       }
@@ -1657,17 +1694,14 @@ Future<Map<String, dynamic>> uploadDocument({
     if (temp == null || temp < 90 || temp > 110) {
       errors['temperature'] = 'Temperature must be between 90°F and 110°F';
     }
-
     final hr = int.tryParse(heartRate);
     if (hr == null || hr < 30 || hr > 200) {
       errors['heartRate'] = 'Heart rate must be between 30 and 200 bpm';
     }
-
     final rr = int.tryParse(respiratoryRate);
     if (rr == null || rr < 6 || rr > 60) {
       errors['respiratoryRate'] = 'Respiratory rate must be between 6 and 60 /min';
     }
-
     final sys = int.tryParse(systolicBp);
     final dia = int.tryParse(diastolicBp);
     if (sys == null || sys < 70 || sys > 250) {
@@ -1679,12 +1713,10 @@ Future<Map<String, dynamic>> uploadDocument({
     if (sys != null && dia != null && sys <= dia) {
       errors['bloodPressure'] = 'Systolic must be greater than diastolic';
     }
-
     final rbsVal = int.tryParse(rbs);
     if (rbsVal == null || rbsVal < 20 || rbsVal > 600) {
       errors['rbs'] = 'RBS must be between 20 and 600 mg/dL';
     }
-
     final spo2Val = int.tryParse(spo2);
     if (spo2Val == null || spo2Val < 70 || spo2Val > 100) {
       errors['spo2'] = 'SpO2 must be between 70% and 100%';
@@ -1714,11 +1746,9 @@ Future<Map<String, dynamic>> uploadDocument({
       errors[fieldName] = '$vitalName must be a valid number';
       return;
     }
-
     if (min != null && numValue < min) {
       errors[fieldName] = '$vitalName must be at least $min';
     }
-
     if (max != null && numValue > max) {
       errors[fieldName] = '$vitalName must be at most $max';
     }
@@ -1750,18 +1780,6 @@ Future<Map<String, dynamic>> uploadDocument({
   // Day-to-Day Notes
   // ---------------------------------------------------------------------------
 
-  /// Fetches the day-to-day notes for an admitted IPD patient.
-  ///
-  /// [ipdid]         - The IPD record ID (e.g. 12129).
-  /// [admissiondate] - The admission date-time string in the format
-  ///                   "dd-MM-yyyy HH:mm:ss" (e.g. "07-01-2026 10:27:59").
-  ///
-  /// Returns a [Map] with:
-  ///   - `success`  (bool)   – whether the call succeeded.
-  ///   - `data`     (List)   – list of [DayToDayNote]-like maps from
-  ///                           `day_to_day_note_list`, or an empty list.
-  ///   - `message`  (String) – human-readable status.
-  ///   - `error`    (String) – error detail when `success` is false.
   Future<Map<String, dynamic>> fetchDayToDayNotes({
     required String ipdid,
     required String admissiondate,
@@ -1779,9 +1797,8 @@ Future<Map<String, dynamic>> uploadDocument({
       final token = getPrefAsString('auth_token');
       final clinicId = getPrefAsString('clinicId');
       final userId = getPrefAsString('userId');
-      final branchId = getPrefAsString('branchId').isNotEmpty
-          ? getPrefAsString('branchId')
-          : '1';
+      final branchId =
+          getPrefAsString('branchId').isNotEmpty ? getPrefAsString('branchId') : '1';
 
       if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
         return {
@@ -1809,7 +1826,6 @@ Future<Map<String, dynamic>> uploadDocument({
 
       debugPrint('--DAY TO DAY NOTES FETCH API--');
       debugPrint('URL     : $_dayToDayNotesUrl');
-      debugPrint('Headers : $headers');
       debugPrint('Body    : ${jsonEncode(body)}');
 
       final response = await http.post(
@@ -1825,19 +1841,13 @@ Future<Map<String, dynamic>> uploadDocument({
         final decoded = jsonDecode(response.body);
 
         if (decoded is Map<String, dynamic>) {
-          // The API wraps all notes inside "day_to_day_note_list".
           final noteList = decoded['day_to_day_note_list'];
-
-          final List<dynamic> notes =
-              (noteList is List) ? noteList : [];
-
-          debugPrint('Successfully fetched ${notes.length} day-to-day note(s)');
+          final List<dynamic> notes = (noteList is List) ? noteList : [];
 
           return {
             'success': true,
             'message': 'Day-to-day notes fetched successfully',
             'data': notes,
-            // Also expose the root-level wrapper fields for completeness.
             'meta': {
               'id': decoded['id'],
               'ipdid': decoded['ipdid'],
@@ -1859,17 +1869,11 @@ Future<Map<String, dynamic>> uploadDocument({
         try {
           final errorBody = jsonDecode(response.body);
           if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ??
-                errorBody['error'] ??
-                errorMessage;
+            errorMessage = errorBody['message'] ?? errorBody['error'] ?? errorMessage;
           }
         } catch (_) {
-          errorMessage = response.body.isNotEmpty
-              ? response.body
-              : errorMessage;
+          errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
         }
-
-        debugPrint('Day-to-Day Notes API Error: $errorMessage');
 
         return {
           'success': false,
@@ -1890,21 +1894,6 @@ Future<Map<String, dynamic>> uploadDocument({
     }
   }
 
-  /// Saves a day-to-day note for an admitted IPD patient.
-  ///
-  /// [ipdid]         - The IPD record ID (e.g. 12129).
-  /// [admissiondate] - The admission date-time string in the format
-  ///                   "dd-MM-yyyy HH:mm:ss" (e.g. "07-01-2026 10:27:59").
-  /// [notes]         - The note content to save.
-  /// [day]           - The day number for the note.
-  /// [id]            - The note ID (use 0 for new notes).
-  /// [createdByUserId] - The user ID of the person creating the note.
-  ///
-  /// Returns a [Map] with:
-  ///   - `success`  (bool)   – whether the call succeeded.
-  ///   - `data`     (dynamic) – response data from the API.
-  ///   - `message`  (String) – human-readable status.
-  ///   - `error`    (String) – error detail when `success` is false.
   Future<Map<String, dynamic>> saveDayToDayNote({
     required String ipdid,
     required String admissiondate,
@@ -1926,9 +1915,8 @@ Future<Map<String, dynamic>> uploadDocument({
       final token = getPrefAsString('auth_token');
       final clinicId = getPrefAsString('clinicId');
       final userId = getPrefAsString('userId');
-      final branchId = getPrefAsString('branchId').isNotEmpty
-          ? getPrefAsString('branchId')
-          : '1';
+      final branchId =
+          getPrefAsString('branchId').isNotEmpty ? getPrefAsString('branchId') : '1';
 
       if (token.isEmpty || clinicId.isEmpty || userId.isEmpty) {
         return {
@@ -1949,13 +1937,11 @@ Future<Map<String, dynamic>> uploadDocument({
         'Access-Control-Allow-Origin': '*',
       };
 
-      // Parse ipdid to integer
       int ipdidInt;
       try {
         ipdidInt = int.parse(ipdid);
       } catch (e) {
         ipdidInt = 0;
-        debugPrint('⚠️ Error parsing ipdid: $e, using 0');
       }
 
       final body = {
@@ -1969,7 +1955,6 @@ Future<Map<String, dynamic>> uploadDocument({
 
       debugPrint('--DAY TO DAY NOTES SAVE API--');
       debugPrint('URL     : $_saveDayToDayNotesUrl');
-      debugPrint('Headers : $headers');
       debugPrint('Body    : ${jsonEncode(body)}');
 
       final response = await http.post(
@@ -1983,7 +1968,6 @@ Future<Map<String, dynamic>> uploadDocument({
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
-
         return {
           'success': true,
           'message': 'Day-to-day note saved successfully',
@@ -1994,17 +1978,11 @@ Future<Map<String, dynamic>> uploadDocument({
         try {
           final errorBody = jsonDecode(response.body);
           if (errorBody is Map<String, dynamic>) {
-            errorMessage = errorBody['message'] ??
-                errorBody['error'] ??
-                errorMessage;
+            errorMessage = errorBody['message'] ?? errorBody['error'] ?? errorMessage;
           }
         } catch (_) {
-          errorMessage = response.body.isNotEmpty
-              ? response.body
-              : errorMessage;
+          errorMessage = response.body.isNotEmpty ? response.body : errorMessage;
         }
-
-        debugPrint('Save Day-to-Day Notes API Error: $errorMessage');
 
         return {
           'success': false,

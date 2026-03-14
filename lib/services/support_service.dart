@@ -7,14 +7,14 @@ import 'package:mime_type/mime_type.dart';
 import 'package:http_parser/http_parser.dart';
 
 class SupportService {
-  static const String _physicalDeviceUrl = 'http://192.168.1.38:9091';
+  static const String _physicalDeviceUrl = 'https://test.smartcarehis.com:8443';
   static const String _createTicketEndpoint = '/support/ticket/create';
   static const String _getTicketsEndpoint = '/support/ticket/get/list'; 
   static const String _updateTicketEndpoint = '/support/ticket/update';
   static const String _viewImageBase64Endpoint = '/support/ticket/view/base64';
 
   static const String _supportClinicIdKey = 'support_clinic_id';
-  static const String _defaultSupportClinicId = 'pcsadmin';
+  // static const String _defaultSupportClinicId = 'pcsadmin'; 
 
   static Future<void> saveSupportClinicId(String clinicId) async {
     final prefs = await SharedPreferences.getInstance();
@@ -24,7 +24,19 @@ class SupportService {
 
   static Future<String> getSupportClinicId() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_supportClinicIdKey) ?? _defaultSupportClinicId;
+    // First try to get from support_clinic_id key
+    String? clinicId = prefs.getString(_supportClinicIdKey);
+    
+    // If not found, try to get from clinicId key (from login)
+    if (clinicId == null || clinicId.isEmpty) {
+      clinicId = prefs.getString('clinicId');
+      if (clinicId != null && clinicId.isNotEmpty) {
+        // Save it to support_clinic_id for future use
+        await saveSupportClinicId(clinicId);
+      }
+    }
+    
+    return clinicId ?? ''; // Return empty string if not found
   }
 
   static Future<void> clearSupportClinicId() async {
@@ -33,146 +45,185 @@ class SupportService {
     debugPrint('✅ Support Clinic ID cleared');
   }
 
-  static Future<Map<String, dynamic>> createTicket({
-    required String title,
-    required String description,
-    required String priority,
-    required String userId,
-    String? clinicId,
-    String? zoneId,
-    List<File>? images,
-  }) async {
-    final stopwatch = Stopwatch()..start();
-    debugPrint('SupportService Base URL: $_physicalDeviceUrl');
+  // CREATE TICKET - Updated with correct field names
+// CREATE TICKET - Updated with correct field names and backward compatibility
+static Future<Map<String, dynamic>> createTicket({
+  String? title,  // Keep for backward compatibility
+  String? queryType, // New parameter for dropdown
+  required String description,
+  required String priority,
+  required String userId,
+  String? mobileNumber,
+  String? clinicId,
+  String? zoneId,
+  List<File>? images, // KEEP THIS - your attachment parameter
+}) async {
+  final stopwatch = Stopwatch()..start();
+  debugPrint('SupportService Base URL: $_physicalDeviceUrl');
+  
+  try {
+    final prefs = await SharedPreferences.getInstance();
     
-    try {
-      final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('auth_token') ?? '';
+    // Get clinic ID - try parameter first, then from SharedPreferences
+    final supportClinicId = clinicId ?? await getSupportClinicId();
+    final userIdFromPrefs = prefs.getString('userId') ?? userId;
+    final branchId = prefs.getString('branchId') ?? '';
+    final zoneIdFromPrefs = prefs.getString('zoneId') ?? zoneId ?? 'Asia/Kolkata';
+    final userMobile = mobileNumber ?? prefs.getString('mobileNumber') ?? '';
+
+    if (token.isEmpty) throw Exception('Authentication token missing');
+    if (supportClinicId.isEmpty) throw Exception('Support Clinic ID missing - please ensure clinic ID is set');
+    if (userIdFromPrefs.isEmpty) throw Exception('User ID missing');
+    
+    // Use queryType if provided, otherwise fall back to title
+    final finalQueryType = queryType ?? title ?? '';
+    if (finalQueryType.isEmpty) throw Exception('Query type is required');
+    if (description.isEmpty) throw Exception('Description is required');
+    if (priority.isEmpty) throw Exception('Priority is required');
+
+    final headers = {
+      'Accept': '*/*',
+      'Authorization': 'SmartCare $token',
+      'clinicid': supportClinicId,
+      'userid': userIdFromPrefs,
+      'ZONEID': zoneIdFromPrefs,
+      'branchId': branchId,
+      'Access-Control-Allow-Origin': '*',
+    };
+
+    final url = '$_physicalDeviceUrl$_createTicketEndpoint';
+    
+    debugPrint('\n=== CREATE SUPPORT TICKET API REQUEST DEBUG ===');
+    debugPrint('URL: $url');
+    debugPrint('Headers:');
+    debugPrint('  - Authorization: SmartCare $token');
+    debugPrint('  - clinicid: $supportClinicId');
+    debugPrint('  - userid: $userIdFromPrefs');
+    debugPrint('  - ZONEID: $zoneIdFromPrefs');
+    debugPrint('  - branchId: ${branchId.isNotEmpty ? branchId : "Not provided"}');
+    debugPrint('Ticket Data:');
+    debugPrint('  - QueryType: $finalQueryType');
+    debugPrint('  - Description: $description');
+    debugPrint('  - Priority: $priority');
+    debugPrint('  - UserID: $userIdFromPrefs');
+    debugPrint('  - Mobile Number: $userMobile');
+    debugPrint('  - Images count: ${images?.length ?? 0}'); // This shows attachments
+
+    var request = http.MultipartRequest('POST', Uri.parse(url));
+    request.headers.addAll(headers);
+    
+    // Updated to match server's expected DTO fields
+    final Map<String, dynamic> ticketData = {
+      'queryType': finalQueryType,
+      'description': description,
+      'priority': priority.toUpperCase(),
+      'userid': userIdFromPrefs,
+      'clinicid': supportClinicId,
+    };
+
+    // Add optional fields if available
+    if (userMobile.isNotEmpty) {
+      ticketData['mobileNumber'] = userMobile;
+    }
+
+    // Add fileType if sending files
+    if (images != null && images.isNotEmpty) {
+      ticketData['fileType'] = 'USER';
+    }
+    
+    request.fields['ticket'] = jsonEncode(ticketData);
+    debugPrint('  - Encoded Ticket JSON: ${jsonEncode(ticketData)}');
+
+    // KEEP THIS - Your image attachment code
+    if (images != null && images.isNotEmpty) {
+      debugPrint('\n📸 Processing images:');
       
-      final token = prefs.getString('auth_token') ?? '';
-      final supportClinicId = await getSupportClinicId();
-      final userIdFromPrefs = prefs.getString('userId') ?? userId;
-      final branchId = prefs.getString('branchId') ?? '';
-      final zoneIdFromPrefs = prefs.getString('zoneId') ?? zoneId ?? 'Asia/Kolkata';
-
-      if (token.isEmpty) throw Exception('Authentication token missing');
-      if (supportClinicId.isEmpty) throw Exception('Support Clinic ID missing');
-      if (userIdFromPrefs.isEmpty) throw Exception('User ID missing');
-      if (title.isEmpty) throw Exception('Title is required');
-      if (description.isEmpty) throw Exception('Description is required');
-      if (priority.isEmpty) throw Exception('Priority is required');
-
-      final headers = {
-        'Accept': '*/*',
-        'Authorization': 'SmartCare $token',
-        'clinicid': supportClinicId,
-        'userid': userIdFromPrefs,
-        'ZONEID': zoneIdFromPrefs,
-        'branchId': branchId,
-        'Access-Control-Allow-Origin': '*',
-      };
-
-      final url = '$_physicalDeviceUrl$_createTicketEndpoint';
-      
-      debugPrint('\n=== CREATE SUPPORT TICKET API REQUEST DEBUG ===');
-      debugPrint('URL: $url');
-      debugPrint('Headers:');
-      debugPrint('  - Authorization: SmartCare $token');
-      debugPrint('  - clinicid: $supportClinicId');
-      debugPrint('  - userid: $userIdFromPrefs');
-      debugPrint('  - ZONEID: $zoneIdFromPrefs');
-      debugPrint('  - branchId: ${branchId.isNotEmpty ? branchId : "Not provided"}');
-      debugPrint('Ticket Data:');
-      debugPrint('  - Title: $title');
-      debugPrint('  - Description: $description');
-      debugPrint('  - Priority: $priority');
-      debugPrint('  - UserID: $userIdFromPrefs');
-      debugPrint('  - Images count: ${images?.length ?? 0}');
-
-      var request = http.MultipartRequest('POST', Uri.parse(url));
-      request.headers.addAll(headers);
-      
-      final ticketData = {
-        'title': title,
-        'description': description,
-        'priority': priority.toUpperCase(),
-        'userid': userIdFromPrefs,
-      };
-      
-      request.fields['ticket'] = jsonEncode(ticketData);
-      debugPrint('  - Encoded Ticket JSON: ${jsonEncode(ticketData)}');
-
-      if (images != null && images.isNotEmpty) {
-        debugPrint('\n📸 Processing images:');
-        
-        for (var i = 0; i < images.length; i++) {
-          final image = images[i];
-          if (await image.exists()) {
-            final fileSize = await image.length();
-            const maxSize = 5 * 1024 * 1024;
-            if (fileSize > maxSize) {
-              debugPrint('⚠️ Warning: File ${image.path} exceeds 5MB, skipping');
-              continue;
-            }
-
-            final mimeType = _getMimeType(image.path);
-            if (mimeType == null || !mimeType.startsWith('image/')) {
-              debugPrint('⚠️ Warning: File ${image.path} is not a valid image, skipping');
-              continue;
-            }
-
-            request.files.add(
-              await http.MultipartFile.fromPath(
-                'file',
-                image.path,
-                contentType: MediaType.parse(mimeType),
-              ),
-            );
-            
-            debugPrint('  - Image $i added: ${image.path} (${_formatFileSize(fileSize)})');
+      for (var i = 0; i < images.length; i++) {
+        final image = images[i];
+        if (await image.exists()) {
+          final fileSize = await image.length();
+          const maxSize = 5 * 1024 * 1024;
+          if (fileSize > maxSize) {
+            debugPrint('⚠️ Warning: File ${image.path} exceeds 5MB, skipping');
+            continue;
           }
+
+          final mimeType = _getMimeType(image.path);
+          if (mimeType == null || !mimeType.startsWith('image/')) {
+            debugPrint('⚠️ Warning: File ${image.path} is not a valid image, skipping');
+            continue;
+          }
+
+          request.files.add(
+            await http.MultipartFile.fromPath(
+              'file',
+              image.path,
+              contentType: MediaType.parse(mimeType),
+            ),
+          );
+          
+          debugPrint('  - Image $i added: ${image.path} (${_formatFileSize(fileSize)})');
         }
       }
+    }
 
-      debugPrint('\n📤 Sending multipart request with ${request.files.length} file(s)...');
+    debugPrint('\n📤 Sending multipart request with ${request.files.length} file(s)...');
+    
+    final streamedResponse = await request.send().timeout(
+      const Duration(seconds: 60),
+      onTimeout: () {
+        throw Exception('Connection timeout. Server not responding');
+      },
+    );
+
+    final response = await http.Response.fromStream(streamedResponse);
+    
+    stopwatch.stop();
+    debugPrint('\n=== CREATE SUPPORT TICKET API RESPONSE DEBUG ===');
+    debugPrint('Status Code: ${response.statusCode}');
+    debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+    debugPrint('Response Body: ${response.body}');
+
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final decoded = jsonDecode(response.body);
+      debugPrint('✅ Ticket created successfully!');
       
-      final streamedResponse = await request.send().timeout(
-        const Duration(seconds: 60),
-        onTimeout: () {
-          throw Exception('Connection timeout. Server not responding');
-        },
-      );
-
-      final response = await http.Response.fromStream(streamedResponse);
-      
-      stopwatch.stop();
-      debugPrint('\n=== CREATE SUPPORT TICKET API RESPONSE DEBUG ===');
-      debugPrint('Status Code: ${response.statusCode}');
-      debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
-      debugPrint('Response Body: ${response.body}');
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final decoded = jsonDecode(response.body);
-        debugPrint('✅ Ticket created successfully!');
-        
-        return {
-          'success': true,
-          'message': 'Support ticket created successfully',
-          'status_code': response.statusCode,
-          'data': decoded,
-        };
-      } else {
+      return {
+        'success': true,
+        'message': 'Support ticket created successfully',
+        'status_code': response.statusCode,
+        'data': decoded,
+      };
+    } else {
+      // Try to parse error message from response
+      try {
+        final errorResponse = jsonDecode(response.body);
+        String errorMessage = 'Server returned status code: ${response.statusCode}';
+        if (errorResponse['message'] != null) {
+          errorMessage = errorResponse['message'];
+        } else if (errorResponse['error'] != null) {
+          if (errorResponse['error'] is Map && errorResponse['error']['cause'] != null) {
+            errorMessage = errorResponse['error']['cause'];
+          } else {
+            errorMessage = errorResponse['error'].toString();
+          }
+        }
+        throw Exception(errorMessage);
+      } catch (e) {
         throw Exception('Server returned status code: ${response.statusCode}');
       }
-    } catch (e) {
-      debugPrint('\n❌ SupportService Error (createTicket): $e');
-      rethrow;
     }
+  } catch (e) {
+    debugPrint('\n❌ SupportService Error (createTicket): $e');
+    rethrow;
   }
+}
 
-  // Update a ticket using PUT /support/ticket/update
+  // UPDATE TICKET - Updated with correct field names
   static Future<Map<String, dynamic>> updateTicket({
     required int ticketId,
-    required String title,
+    required String queryType, // Changed from title to queryType
     required String description,
     required String priority,
     required String status,
@@ -180,6 +231,7 @@ class SupportService {
     String? userId,
     String? clinicId,
     String? zoneId,
+    String? mobileNumber,
   }) async {
     final stopwatch = Stopwatch()..start();
     debugPrint('\n📝 Updating ticket #$ticketId via /support/ticket/update');
@@ -188,15 +240,17 @@ class SupportService {
       final prefs = await SharedPreferences.getInstance();
       
       final token = prefs.getString('auth_token') ?? '';
-      final supportClinicId = await getSupportClinicId();
+      // Get clinic ID - try parameter first, then from SharedPreferences
+      final supportClinicId = clinicId ?? await getSupportClinicId();
       final userIdFromPrefs = prefs.getString('userId') ?? userId ?? '';
       final branchId = prefs.getString('branchId') ?? '';
       final zoneIdFromPrefs = prefs.getString('zoneId') ?? zoneId ?? 'Asia/Kolkata';
+      final userMobile = mobileNumber ?? prefs.getString('mobileNumber') ?? '';
 
       if (token.isEmpty) throw Exception('Authentication token missing');
-      if (supportClinicId.isEmpty) throw Exception('Support Clinic ID missing');
+      if (supportClinicId.isEmpty) throw Exception('Support Clinic ID missing - please ensure clinic ID is set');
       if (userIdFromPrefs.isEmpty) throw Exception('User ID missing');
-      if (title.isEmpty) throw Exception('Title is required');
+      if (queryType.isEmpty) throw Exception('Query type is required');
       if (description.isEmpty) throw Exception('Description is required');
       if (priority.isEmpty) throw Exception('Priority is required');
       if (status.isEmpty) throw Exception('Status is required');
@@ -214,10 +268,10 @@ class SupportService {
 
       final url = '$_physicalDeviceUrl$_updateTicketEndpoint';
       
-      // Build request body
+      // Build request body with correct field names
       final Map<String, dynamic> requestBody = {
         'ticketId': ticketId,
-        'title': title,
+        'queryType': queryType,
         'description': description,
         'priority': priority.toUpperCase(),
         'status': status.toUpperCase(),
@@ -228,6 +282,10 @@ class SupportService {
       // Add optional fields if provided
       if (currentResolutionSummary != null && currentResolutionSummary.isNotEmpty) {
         requestBody['currentResolutionSummary'] = currentResolutionSummary;
+      }
+      
+      if (userMobile.isNotEmpty) {
+        requestBody['mobileNumber'] = userMobile;
       }
 
       debugPrint('\n=== UPDATE TICKET API REQUEST DEBUG ===');
@@ -316,7 +374,7 @@ class SupportService {
       final ticketsResult = await getTicketsByUserAndDate(
         userId: userId,
         date: DateTime.now().toIso8601String().split('T')[0],
-        status: status, // Pass status to filter
+        status: status,
       );
       
       if (!ticketsResult['success'] || ticketsResult['data'] == null) {
@@ -345,11 +403,12 @@ class SupportService {
       // Update only the status and resolution summary
       return await updateTicket(
         ticketId: ticketId,
-        title: ticketJson['title'] ?? '',
+        queryType: ticketJson['queryType'] ?? ticketJson['title'] ?? '',
         description: ticketJson['description'] ?? '',
         priority: ticketJson['priority'] ?? 'MEDIUM',
         status: status,
         currentResolutionSummary: currentResolutionSummary ?? ticketJson['currentResolutionSummary'],
+        mobileNumber: ticketJson['mobileNumber'] ?? '',
       );
     } catch (e) {
       debugPrint('❌ Error in updateTicketStatus: $e');
@@ -362,12 +421,11 @@ class SupportService {
     }
   }
 
-  // UPDATED METHOD: Get tickets by user ID and date (using POST with JSON payload)
-  // Status is now required in the payload
+  // GET TICKETS BY USER AND DATE
   static Future<Map<String, dynamic>> getTicketsByUserAndDate({
     required String userId,
     required String date, // Format: YYYY-MM-DD
-    required String status, // Status is now required
+    required String status,
     int page = 0,
     int size = 20,
   }) async {
@@ -377,7 +435,6 @@ class SupportService {
       final prefs = await SharedPreferences.getInstance();
       
       final token = prefs.getString('auth_token') ?? '';
-      // Get clinic ID from SharedPreferences - don't hardcode
       final supportClinicId = await getSupportClinicId();
       final currentUserId = prefs.getString('userId') ?? '';
       final branchId = prefs.getString('branchId') ?? '';
@@ -391,7 +448,7 @@ class SupportService {
       }
 
       if (supportClinicId.isEmpty) {
-        throw Exception('Support Clinic ID missing');
+        throw Exception('Support Clinic ID missing - please ensure clinic ID is set');
       }
 
       if (status.isEmpty) {
@@ -409,17 +466,21 @@ class SupportService {
         'Access-Control-Allow-Origin': '*',
       };
 
-      // Construct URL without userId in path - just the base endpoint
       final url = '$_physicalDeviceUrl$_getTicketsEndpoint';
       
-      // Build request body with required fields
+      // Build request body with correct fields
       final Map<String, dynamic> requestBody = {
         'userid': userId,
         'clinicid': supportClinicId,
-        'status': status, // Status is now required
+        'status': status,
       };
 
-      // Add pagination parameters as query params
+      // Add date filter if needed
+      if (date.isNotEmpty) {
+        requestBody['fromDate'] = date;
+        requestBody['toDate'] = date;
+      }
+
       final queryParams = <String, String>{
         'page': page.toString(),
         'size': size.toString(),
@@ -493,6 +554,7 @@ class SupportService {
     }
   }
 
+  // GET TICKETS BY DATE RANGE
   static Future<Map<String, dynamic>> getTicketsByDateRange({
     required String userId,
     required String fromDate,
@@ -520,7 +582,7 @@ class SupportService {
       }
 
       if (supportClinicId.isEmpty) {
-        throw Exception('Support Clinic ID missing');
+        throw Exception('Support Clinic ID missing - please ensure clinic ID is set');
       }
 
       if (status.isEmpty) {
@@ -621,6 +683,7 @@ class SupportService {
     }
   }
 
+  // GET TODAY'S TICKETS
   static Future<Map<String, dynamic>> getTodayTickets({required String status}) async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('userId') ?? '';
@@ -633,6 +696,7 @@ class SupportService {
     );
   }
 
+  // GET TODAY'S TICKETS BY USER
   static Future<Map<String, dynamic>> getTodayTicketsByUser(
     String userId, {
     required String status,
@@ -645,6 +709,7 @@ class SupportService {
     );
   }
 
+  // GET THIS WEEK'S TICKETS
   static Future<Map<String, dynamic>> getThisWeekTickets({required String status}) async {
     final prefs = await SharedPreferences.getInstance();
     final userId = prefs.getString('userId') ?? '';
@@ -662,6 +727,7 @@ class SupportService {
     );
   }
 
+  // GET THIS WEEK'S TICKETS BY USER
   static Future<Map<String, dynamic>> getThisWeekTicketsByUser(
     String userId, {
     required String status,
@@ -680,105 +746,109 @@ class SupportService {
     );
   }
 
-static Future<Map<String, dynamic>> viewTicketImageBase64({
-  required int ticketId,
-  required String fileType,
-}) async {
-  debugPrint('\n🖼️ Fetching base64 image for ticket #$ticketId with fileType: $fileType');
-  
-  try {
-    final prefs = await SharedPreferences.getInstance();
+  // VIEW TICKET IMAGE BASE64
+  static Future<Map<String, dynamic>> viewTicketImageBase64({
+    required int ticketId,
+    required String fileType,
+  }) async {
+    debugPrint('\n🖼️ Fetching base64 image for ticket #$ticketId with fileType: $fileType');
     
-    final token = prefs.getString('auth_token') ?? '';
-    final supportClinicId = await getSupportClinicId();
-    final userId = prefs.getString('userId') ?? '';
-    final branchId = prefs.getString('branchId') ?? '';
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final token = prefs.getString('auth_token') ?? '';
+      final supportClinicId = await getSupportClinicId();
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
 
-    if (token.isEmpty) {
-      throw Exception('Authentication token missing');
-    }
-    
-    if (userId.isEmpty) {
-      throw Exception('User ID missing');
-    }
+      if (token.isEmpty) {
+        throw Exception('Authentication token missing');
+      }
+      
+      if (userId.isEmpty) {
+        throw Exception('User ID missing');
+      }
 
-    final headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'Authorization': 'SmartCare $token',
-      'clinicid': supportClinicId,
-      'userid': userId,
-      'ZONEID': 'Asia/Kolkata',
-      if (branchId.isNotEmpty) 'branchId': branchId,
-    };
+      if (supportClinicId.isEmpty) {
+        throw Exception('Support Clinic ID missing - please ensure clinic ID is set');
+      }
 
-    final url = '$_physicalDeviceUrl$_viewImageBase64Endpoint';
-    
-    final Map<String, dynamic> requestBody = {
-      'ticketId': ticketId,
-      'fileType': fileType.toUpperCase(),
-    };
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': 'SmartCare $token',
+        'clinicid': supportClinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
 
-    debugPrint('\n=== VIEW BASE64 IMAGE API REQUEST ===');
-    debugPrint('URL: $url');
-    debugPrint('Request Body: ${jsonEncode(requestBody)}');
+      final url = '$_physicalDeviceUrl$_viewImageBase64Endpoint';
+      
+      final Map<String, dynamic> requestBody = {
+        'ticketId': ticketId,
+        'fileType': fileType.toUpperCase(),
+      };
 
-    final response = await http.post(
-      Uri.parse(url),
-      headers: headers,
-      body: jsonEncode(requestBody),
-    ).timeout(const Duration(seconds: 30));
+      debugPrint('\n=== VIEW BASE64 IMAGE API REQUEST ===');
+      debugPrint('URL: $url');
+      debugPrint('Request Body: ${jsonEncode(requestBody)}');
 
-    debugPrint('Status Code: ${response.statusCode}');
-    
- // WITH THIS:
-if (response.statusCode == 200) {
-  final decoded = jsonDecode(response.body);
-  
-  final innerData = (decoded['data'] ?? decoded) as Map<String, dynamic>;
-  
-  // Strip data URL prefix right here, so callers always get pure base64
-  if (innerData['imageBase64'] != null) {
-    final raw = innerData['imageBase64'].toString();
-    if (raw.contains(',')) {
-      innerData['imageBase64'] = raw.split(',').last;
-    }
-  }
-  
-  debugPrint('✅ imageBase64 cleaned, length: ${innerData['imageBase64']?.length ?? 0}');
-  
-  return {
-    'success': true,
-    'message': 'Image fetched successfully',
-    'status_code': response.statusCode,
-    'data': innerData,
-  };
-    } else if (response.statusCode == 404 || response.statusCode == 400) {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: headers,
+        body: jsonEncode(requestBody),
+      ).timeout(const Duration(seconds: 30));
+
+      debugPrint('Status Code: ${response.statusCode}');
+      
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        
+        final innerData = (decoded['data'] ?? decoded) as Map<String, dynamic>;
+        
+        // Strip data URL prefix right here, so callers always get pure base64
+        if (innerData['imageBase64'] != null) {
+          final raw = innerData['imageBase64'].toString();
+          if (raw.contains(',')) {
+            innerData['imageBase64'] = raw.split(',').last;
+          }
+        }
+        
+        debugPrint('✅ imageBase64 cleaned, length: ${innerData['imageBase64']?.length ?? 0}');
+        
+        return {
+          'success': true,
+          'message': 'Image fetched successfully',
+          'status_code': response.statusCode,
+          'data': innerData,
+        };
+      } else if (response.statusCode == 404 || response.statusCode == 400) {
+        return {
+          'success': false,
+          'message': 'No image found for this ticket',
+          'status_code': response.statusCode,
+          'data': null,
+        };
+      } else {
+        return {
+          'success': false,
+          'message': 'Failed with status ${response.statusCode}',
+          'status_code': response.statusCode,
+          'data': null,
+        };
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Error: $e');
       return {
         'success': false,
-        'message': 'No image found for this ticket',
-        'status_code': response.statusCode,
-        'data': null,
-      };
-    } else {
-      return {
-        'success': false,
-        'message': 'Failed with status ${response.statusCode}',
-        'status_code': response.statusCode,
+        'message': e.toString(),
+        'status_code': 500,
         'data': null,
       };
     }
-    
-  } catch (e) {
-    debugPrint('❌ Error: $e');
-    return {
-      'success': false,
-      'message': e.toString(),
-      'status_code': 500,
-      'data': null,
-    };
   }
-}
 
   // Helper method to determine content type from base64 string
   static String _getImageContentType(String base64String) {
@@ -786,10 +856,6 @@ if (response.statusCode == 200) {
       return 'image/jpeg';
     } else if (base64String.startsWith('iVBOR')) {
       return 'image/png';
-    // } else if (base64String.startsWith('R0lGOD')) {
-    //   return 'image/gif';
-    // } else if (base64String.startsWith('UklGR')) {
-    //   return 'image/webp';
     }
     return 'image/jpeg'; // Default to JPEG
   }
@@ -799,6 +865,7 @@ if (response.statusCode == 200) {
     return viewTicketImageBase64(ticketId: ticketId, fileType: 'USER');
   }
 
+  // Convenience method to view resolution user image (returns base64)
   static Future<Map<String, dynamic>> viewResUserImageBase64(int ticketId) {
     return viewTicketImageBase64(ticketId: ticketId, fileType: 'RESUSER');
   }
@@ -826,11 +893,17 @@ if (response.statusCode == 200) {
     final prefs = await SharedPreferences.getInstance();
     final existingId = prefs.getString(_supportClinicIdKey);
     
-    if (existingId == null) {
-      await prefs.setString(_supportClinicIdKey, _defaultSupportClinicId);
-      debugPrint('✅ Support Clinic ID initialized to: $_defaultSupportClinicId');
+    // Also check for clinicId from login
+    final loginClinicId = prefs.getString('clinicId');
+    
+    if (loginClinicId != null && loginClinicId.isNotEmpty) {
+      // If login clinic ID exists but support clinic ID doesn't, save it
+      if (existingId == null || existingId.isEmpty) {
+        await saveSupportClinicId(loginClinicId);
+        debugPrint('✅ Support Clinic ID initialized from login: $loginClinicId');
+      }
     } else {
-      debugPrint('✅ Support Clinic ID already exists: $existingId');
+      debugPrint('ℹ️ Support Clinic ID not set in SharedPreferences');
     }
   }
 

@@ -57,6 +57,7 @@ class SessionManager {
     required String zoneid,
     required String expiryTime,
     required int branchId,
+    String email = '',
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -68,6 +69,7 @@ class SessionManager {
     await prefs.setString('zoneid', zoneid);
     await prefs.setString('expiryTime', expiryTime);
     await prefs.setInt('branchId', branchId);
+    await prefs.setString('email', email);
 
     _dynamicData.addAll({
       'bearer': bearer,
@@ -93,6 +95,7 @@ class SessionManager {
       zoneid: (data['zoneid'] ?? data['ZONEID'] ?? '').toString(),
       expiryTime: (data['expirytime'] ?? data['expiryTime'] ?? '').toString(),
       branchId: int.tryParse((data['branch_id'] ?? 0).toString()) ?? 0,
+      email: (data['email'] ?? data['emailId'] ?? data['userEmail'] ?? '').toString(),
     );
   }
 
@@ -161,11 +164,14 @@ class SessionManager {
     // Preserve these across soft logout
     final biometricEnabled = prefs.getBool('biometric_enabled') ?? false;
     final lastUsername = prefs.getString('last_username') ?? '';
+final savedEmail = prefs.getString('email') ?? '';
 
     await prefs.clear();
 
     if (biometricEnabled) await prefs.setBool('biometric_enabled', true);
-    if (lastUsername.isNotEmpty) {
+    if (lastUsername.isNotEmpty)await prefs.setString('last_username', lastUsername) ;
+    if (savedEmail.isEmpty) await prefs.setString('email', savedEmail);
+    {
       await prefs.setString('last_username', lastUsername);
     }
 

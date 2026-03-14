@@ -154,7 +154,7 @@ class _WelcomePageState extends State<WelcomePage> with TickerProviderStateMixin
                           FadeTransition(
                             opacity: _logoScaleAnimation,
                             child: Text(
-                              "StaffMate",
+                              "SmartMate",
                               style: GoogleFonts.poppins(
                                 fontSize: size.width * 0.08, // Dynamic font size
                                 fontWeight: FontWeight.w700,

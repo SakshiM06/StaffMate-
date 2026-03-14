@@ -6,6 +6,7 @@ class TicketModel {
   // Core Properties from API
   final String id;
   final String title;
+  final String? queryType; // Made nullable and final
   final String description;
   final DateTime createdAt;
   final DateTime? updatedAt;
@@ -24,7 +25,7 @@ class TicketModel {
   final DateTime? resolvedAt;
   final DateTime? closedDate;
   
-  // Image fields from API - ADD THESE
+  // Image fields from API
   final String? userFileName;
   final String? developerFileName;
   
@@ -37,11 +38,15 @@ class TicketModel {
   final DateTime? dueDate;
   final int? rating;
   final String? feedback;
+
+  // Computed property for hasUserImage - not a field
+  bool get hasUserImage => userFileName != null && userFileName!.isNotEmpty;
   
-  // Constructor with all API fields
-  const TicketModel({
+  // Constructor with all API fields - REMOVED 'const' keyword
+  TicketModel({
     required this.id,
     required this.title,
+    this.queryType, // Made optional
     required this.description,
     required this.createdAt,
     required this.createdBy,
@@ -53,8 +58,8 @@ class TicketModel {
     this.currentResolutionSummary,
     this.resolvedAt,
     this.closedDate,
-    this.userFileName, // ADD THIS
-    this.developerFileName, // ADD THIS
+    this.userFileName,
+    this.developerFileName,
     this.messages,
     this.attachmentUrls,
     this.customFields,
@@ -69,6 +74,7 @@ class TicketModel {
       // Core fields from your API
       id: json['ticketId']?.toString() ?? json['id']?.toString() ?? '',
       title: json['title'] ?? '',
+      queryType: json['queryType'] ?? json['title'] ?? '', // Map queryType from API
       description: json['description'] ?? '',
       createdBy: json['userid'] ?? json['createdBy'] ?? '',
       
@@ -96,7 +102,7 @@ class TicketModel {
       // Tracking fields
       currentResolutionSummary: json['currentResolutionSummary'],
       
-      // Image fields - ADD THESE
+      // Image fields
       userFileName: json['userFileName'],
       developerFileName: json['developerFileName'],
       
@@ -126,11 +132,11 @@ class TicketModel {
     return {
       'ticketId': int.tryParse(id) ?? 0,
       'title': title,
+      'queryType': queryType ?? title, // Include queryType in JSON
       'description': description,
       'priority': priorityText.toUpperCase(),
       'status': statusText.toUpperCase().replaceAll(' ', '_'),
       'userid': createdBy,
-      'clinicid': 'pcsadmin', // This comes from SupportService
       if (currentResolutionSummary != null) 
         'currentResolutionSummary': currentResolutionSummary,
     };
@@ -145,8 +151,7 @@ class TicketModel {
   bool get isOnHold => status == TicketStatus.onHold;
   bool get isOverdue => dueDate != null && dueDate!.isBefore(DateTime.now());
   
-  // Check if ticket has images
-  bool get hasUserImage => userFileName != null && userFileName!.isNotEmpty;
+  // Check if ticket has images - using the getter
   bool get hasResUserImage => developerFileName != null && developerFileName!.isNotEmpty;
   
   String get statusText {
@@ -294,6 +299,7 @@ class TicketModel {
   // Create a copy with updated fields (for local updates)
   TicketModel copyWith({
     String? title,
+    String? queryType,
     String? description,
     TicketStatus? status,
     TicketPriority? priority,
@@ -311,6 +317,7 @@ class TicketModel {
     return TicketModel(
       id: id,
       title: title ?? this.title,
+      queryType: queryType ?? this.queryType,
       description: description ?? this.description,
       createdAt: createdAt,
       createdBy: createdBy,
