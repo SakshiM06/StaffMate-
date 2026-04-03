@@ -1,4 +1,4 @@
-// chat_screen.dart - Complete version with queryType mapping + inline attachments
+// chat_screen.dart - Complete version with FAQ support
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -399,7 +399,6 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<ChatProvider>().loadChatHistory();
 
-      // Listen for keyboard focus requests from provider
       context.read<ChatProvider>().focusKeyboardStream.listen((event) {
         if (event == 'focus_text') {
           Future.delayed(const Duration(milliseconds: 300), () {
@@ -511,6 +510,7 @@ class _ChatBodyState extends State<_ChatBody> with TickerProviderStateMixin {
                   _buildModernActionChip('📋 View Tickets', Colors.green, context),
                   _buildModernActionChip('🔍 Track Ticket', Colors.orange, context),
                   _buildModernActionChip('🔐 Password Reset', Colors.red, context),
+                  _buildModernActionChip('📚 FAQ', Colors.purple, context),
                 ],
               ),
             ),
@@ -857,7 +857,10 @@ class _ModernMessageBubble extends StatelessWidget {
             ),
 
             // ── Quick Replies ──
-            if (!isUser && message.hasQuickReplies) ...[
+            // Don't show quick replies for FAQ messages to avoid duplicates
+            if (!isUser && message.hasQuickReplies && 
+                message.type != 'faq_answer' && 
+                message.type != 'faq_menu') ...[
               const SizedBox(height: 8),
               Padding(
                 padding: const EdgeInsets.only(left: 52),
@@ -867,6 +870,48 @@ class _ModernMessageBubble extends StatelessWidget {
                   children: message.quickReplies!
                       .map((o) => _buildModernOptionChip(o))
                       .toList(),
+                ),
+              ),
+            ],
+
+            // ── FAQ MENU ──
+            if (!isUser && message.type == 'faq_menu') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: _buildFaqMenu(),
+              ),
+            ],
+
+            // ── FAQ ANSWER ──
+            if (!isUser && message.type == 'faq_answer') ...[
+              const SizedBox(height: 8),
+              Padding(
+                padding: const EdgeInsets.only(left: 52),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.purple.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        message.text,
+                        style: const TextStyle(fontSize: 13, height: 1.4),
+                      ),
+                      const SizedBox(height: 12),
+                      if (message.hasQuickReplies)
+                        Wrap(
+                          spacing: 8,
+                          children: message.quickReplies!
+                              .map((reply) => _buildFaqAnswerFooter(reply))
+                              .toList(),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1005,7 +1050,7 @@ class _ModernMessageBubble extends StatelessWidget {
                 ),
               ),
             ],
-
+            
             // ── Ticket List (View Tickets) ──
             if (!isUser && message.isTicketList && message.tickets != null) ...[
               const SizedBox(height: 8),
@@ -1176,9 +1221,197 @@ class _ModernMessageBubble extends StatelessWidget {
     );
   }
 
+  // ── FAQ Menu Widget ──
+  Widget _buildFaqMenu() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.05),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                  colors: [Color(0xFF9C27B0), Color(0xFF7B1FA2)]),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
+              ),
+            ),
+            child: const Row(
+              children: [
+                Icon(Icons.help_outline, color: Colors.white, size: 16),
+                SizedBox(width: 8),
+                Text('Frequently Asked Questions',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          ..._buildFaqQuestionItems(),
+          const Divider(height: 1),
+          _buildFaqFooterItem('🏠 Main Menu'),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildFaqQuestionItems() {
+    const questions = [
+      '📅 Where can I view my work schedule?',
+      '👥 How can I check the staff rota?',
+      '✅ How can I see my assigned tasks?',
+      '📋 How can I add a new task?',
+      '📌 How can I view today\'s tasks?',
+      '📅 How can I check upcoming tasks?',
+      '✔️ How can I see completed tasks?',
+      '🔄 How can I update the status of a task?',
+    ];
+    
+    return questions.map((question) {
+      IconData? leadingIcon;
+      if (question.startsWith('📅')) {
+        leadingIcon = Icons.calendar_today;
+      } else if (question.startsWith('👥')) {
+        leadingIcon = Icons.people;
+      } else if (question.startsWith('✅')) {
+        leadingIcon = Icons.checklist;
+      } else if (question.startsWith('📋')) {
+        leadingIcon = Icons.add_task;
+      } else if (question.startsWith('📌')) {
+        leadingIcon = Icons.today;
+      } else if (question.startsWith('✔️')) {
+        leadingIcon = Icons.done_all;
+      } else if (question.startsWith('🔄')) {
+        leadingIcon = Icons.sync;
+      } else {
+        leadingIcon = Icons.help_outline;
+      }
+      
+      return Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => onOptionSelected(question),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Colors.grey.shade100),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.purple.shade50,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Icon(leadingIcon, size: 14, color: Colors.purple.shade700),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    question.replaceFirst(RegExp(r'^[📅👥✅📋📌✔️🔄] '), ''),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                  ),
+                ),
+                Icon(Icons.arrow_forward_ios, size: 12, color: Colors.grey.shade400),
+              ],
+            ),
+          ),
+        ),
+      );
+    }).toList();
+  }
+
+  Widget _buildFaqFooterItem(String reply) {
+    return InkWell(
+      onTap: () => onOptionSelected(reply),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              reply == '🏠 Main Menu' ? Icons.home : Icons.help,
+              size: 14,
+              color: Colors.grey.shade700,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              reply.replaceFirst('🏠 ', ''),
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFaqAnswerFooter(String reply) {
+    return Material(
+      elevation: 0,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: () => onOptionSelected(reply),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: reply == '🏠 Main Menu' ? Colors.grey.shade100 : Colors.purple.shade100,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: reply == '🏠 Main Menu' ? Colors.grey.shade300 : Colors.purple.shade200,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                reply == '🏠 Main Menu' ? Icons.home : Icons.help,
+                size: 12,
+                color: reply == '🏠 Main Menu' ? Colors.grey.shade700 : Colors.purple.shade700,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                reply.replaceFirst('🏠 ', '').replaceFirst('📚 ', ''),
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: reply == '🏠 Main Menu' ? Colors.grey.shade700 : Colors.purple.shade700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ── Message content (text + validation error + image) ──
   Widget _buildMessageContent() {
-    // Image message
     if (message.type == 'ticket_image' && message.imageData != null) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1191,8 +1424,7 @@ class _ModernMessageBubble extends StatelessWidget {
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () {
-              // fullscreen handled via Navigator in parent context would need
-              // a BuildContext — use a Builder here
+              // Handled elsewhere
             },
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
@@ -1263,6 +1495,7 @@ class _ModernMessageBubble extends StatelessWidget {
       if (option.contains('Create')) return Colors.indigo;
       if (option.contains('Track')) return Colors.orange;
       if (option.contains('Update')) return Colors.amber;
+      if (option.contains('FAQ')) return Colors.purple;
       return Colors.grey;
     }
 

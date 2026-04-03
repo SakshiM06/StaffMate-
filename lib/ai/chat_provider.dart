@@ -17,7 +17,7 @@ enum ViewState { idle, busy, loading }
 class ChatProvider extends ChangeNotifier {
   final ChatService _chatService = ChatService();
   final ForgetPasswordService _passwordService = ForgetPasswordService();
-    final _navigationController = StreamController<String>.broadcast();
+  final _navigationController = StreamController<String>.broadcast();
   Stream<String> get navigationStream => _navigationController.stream;
   final _focusKeyboardController = StreamController<String>.broadcast();
   Stream<String> get focusKeyboardStream => _focusKeyboardController.stream;
@@ -83,6 +83,22 @@ class ChatProvider extends ChangeNotifier {
   bool? get sortAscending => _sortAscending;
   List<String> get queryTypeOptionsList => queryTypeOptions;
 
+  // List of FAQ questions for detection - UPDATED with 12 questions
+  static const List<String> _faqQuestions = [
+    '📅 Where can I view my work schedule?',
+    '👥 How can I check the staff rota?',
+    '✅ How can I see my assigned tasks?',
+    '📋 How can I add a new task?',
+    '📌 How can I view today\'s tasks?',
+    '📅 How can I check upcoming tasks?',
+    '✔️ How can I see completed tasks?',
+    '🔄 How can I update the status of a task?',
+    '📝 How can I add a handover note?',
+    '👁️ How can I view handover notes?',
+    '🏥 How can I shift a patient to another ward?',
+    '@ How can I tag a colleague in a handover note?',
+  ];
+
   ChatProvider() {
     initializeChat();
   }
@@ -135,13 +151,12 @@ class ChatProvider extends ChangeNotifier {
     await loadChatHistory();
   }
 
-// Add this method to ChatProvider
-Future<void> _loadCurrentEmailFromPrefs() async {
-  if (_currentEmail == null || _currentEmail!.isEmpty) {
-    final prefs = await SharedPreferences.getInstance();
-    _currentEmail = prefs.getString('userEmail') ?? prefs.getString('email') ?? '';
+  Future<void> _loadCurrentEmailFromPrefs() async {
+    if (_currentEmail == null || _currentEmail!.isEmpty) {
+      final prefs = await SharedPreferences.getInstance();
+      _currentEmail = prefs.getString('userEmail') ?? prefs.getString('email') ?? '';
+    }
   }
-}
 
   Future<void> loadChatHistory() async {
     try {
@@ -180,297 +195,506 @@ Future<void> _loadCurrentEmailFromPrefs() async {
     });
   }
 
-  // Method for processing option clicks
-Future<void> processOption(String option) async {
-  // Prevent duplicate processing
-  if (_isProcessingQuickReply) {
-    debugPrint('⚠️ Already processing a quick reply, ignoring: $option');
-    return;
+  // Show FAQ options menu - UPDATED with 12 questions
+  Future<void> showFaqOptions() async {
+    debugPrint('📚 Showing FAQ options');
+    
+    final faqMessage = MessageModel(
+      id: DateTime.now().toString(),
+      text: '📚 **Frequently Asked Questions**\n\nSelect a question to get instant help:',
+      isUser: false,
+      timestamp: DateTime.now(),
+      type: 'faq_menu',
+      quickReplies: const [
+        '📅 Where can I view my work schedule?',
+        '👥 How can I check the staff rota?',
+        '✅ How can I see my assigned tasks?',
+        '📋 How can I add a new task?',
+        '📌 How can I view today\'s tasks?',
+        '📅 How can I check upcoming tasks?',
+        '✔️ How can I see completed tasks?',
+        '🔄 How can I update the status of a task?',
+        '📝 How can I add a handover note?',
+        '👁️ How can I view handover notes?',
+        '🏥 How can I shift a patient to another ward?',
+        '@ How can I tag a colleague in a handover note?',
+        '🏠 Main Menu',
+      ],
+    );
+    
+    _messages.add(faqMessage);
+    notifyListeners();
   }
 
-  try {
-    _isProcessingQuickReply = true;
+  // Get FAQ answer for a question - UPDATED with 12 answers
+  String _getFaqAnswer(String question) {
+    final faqAnswers = {
+      // Scheduling & Rota
+      '📅 Where can I view my work schedule?': 
+          '📅 **View Work Schedule**\n\n'
+          'Navigate to the **Schedule** or **My Roster** section on the home screen or from the main menu.\n\n'
+          'You can view it by:\n'
+          '• 📆 **Day view** - See today\'s schedule\n'
+          '• 📅 **Week view** - View entire week\n'
+          '• 📊 **Month view** - Overview of all shifts',
+      
+      '👥 How can I check the staff rota?': 
+          '👥 **Staff Rota**\n\n'
+          'Go to **Rota** > **Team View**.\n\n'
+          'You can filter by:\n'
+          '• 🏢 **Department** - View specific teams\n'
+          '• 👤 **Role** - Filter by job role\n'
+          '• 📅 **Date range** - Select custom dates\n\n'
+          'The rota shows who is scheduled for each shift.',
+      
+      '✅ How can I see my assigned tasks?': 
+          '✅ **Assigned Tasks**\n\n'
+          'Your assigned tasks appear on the **Dashboard** under "My Tasks" or "Today\'s Duties."\n\n'
+          'You can:\n'
+          '• 👆 Tap any task to view full details\n'
+          '• 📝 Update task status\n'
+          '• 📎 View attachments\n'
+          '• 💬 Add comments',
+      
+      // Tasks & Management
+      '📋 How can I add a new task?': 
+          '📋 **Add New Task**\n\n'
+          '1. Go to **Tasks** > **Add New Task**\n'
+          '2. Fill in the details:\n'
+          '   • 📝 Title and description\n'
+          '   • 👤 Assignee\n'
+          '   • ⚡ Priority (Low/Medium/High)\n'
+          '   • 📅 Due date & time\n'
+          '3. Tap **Save** or **Assign**\n\n'
+          '✅ The assignee will receive a notification.',
+      
+      '📌 How can I view today\'s tasks?': 
+          '📌 **Today\'s Tasks**\n\n'
+          'There are several ways:\n\n'
+          '1️⃣ **Quick View**\n'
+          '   Check the **Dashboard** widget for today\'s tasks\n\n'
+          '2️⃣ **Tasks Module**\n'
+          '   Go to **Tasks** and select the **Today** filter\n\n'
+          '3️⃣ **Notifications**\n'
+          '   Check your notification center for pending tasks\n\n'
+          '📊 Tasks are color-coded by priority and status.',
+      
+      '📅 How can I check upcoming tasks?': 
+          '📅 **Upcoming Tasks**\n\n'
+          'View future tasks:\n\n'
+          '📱 **Via Tasks Section**\n'
+          '• Go to **Tasks** > **Upcoming** filter\n'
+          '• Shows tasks scheduled for future dates\n\n'
+          '🗓️ **Via Calendar View**\n'
+          '• Switch to **Calendar** view\n'
+          '• See tasks spread across dates\n\n'
+          '🔔 You\'ll receive reminders before tasks are due.',
+      
+      '✔️ How can I see completed tasks?': 
+          '✔️ **Completed Tasks**\n\n'
+          'View your task history:\n\n'
+          '• Go to **Tasks** > **History**\n'
+          '• Select the **Completed** filter\n\n'
+          'You can see:\n'
+          '✅ Completed date & time\n'
+          '👤 Who completed the task\n'
+          '📝 Completion notes\n\n'
+          '📊 Use this to track your productivity!',
+      
+      '🔄 How can I update the status of a task?': 
+          '🔄 **Update Task Status**\n\n'
+          '1. Open the task detail page\n'
+          '2. Tap the **Status** dropdown\n'
+          '3. Select new status:\n'
+          '   • ⏳ Pending\n'
+          '   • 🔄 In Progress\n'
+          '   • ✅ Completed\n'
+          '   • ❌ Cancelled\n'
+          '4. Add completion notes (optional)\n'
+          '5. Confirm update\n\n'
+          '📢 Status changes notify the task creator.',
+      
+      // Handover & Communication
+      '📝 How can I add a handover note?': 
+          '📝 **Add Handover Note**\n\n'
+          'Navigate to the **Handover** or **Patient List** section.\n\n'
+          '1. Select the patient\n'
+          '2. Tap **Add Handover Note**\n'
+          '3. Enter the details for the incoming shift\n'
+          '4. Tap **Save**\n\n'
+          'The handover note will be visible to the next shift.',
+      
+      '👁️ How can I view handover notes?': 
+          '👁️ **View Handover Notes**\n\n'
+          'Go to **Handover** > **Shift Summary**.\n\n'
+          'Select the relevant date and shift to view:\n'
+          '• 📋 All handover notes\n'
+          '• ⭐ Priority patients\n'
+          '• ⏰ Pending tasks\n\n'
+          'Notes shared by the outgoing team will appear here.',
+      
+      '🏥 How can I shift a patient to another ward?': 
+          '🏥 **Shift Patient to Another Ward/Bed**\n\n'
+          'If using the bed management module:\n\n'
+          '1. Go to **Bed Management** or **Patient Tracking**\n'
+          '2. Select the patient\n'
+          '3. Choose **Transfer**\n'
+          '4. Select the new ward and bed number\n'
+          '5. Confirm the transfer\n\n'
+          'The patient\'s location will be updated in the system.',
+      
+      '@ How can I tag a colleague in a handover note?': 
+          '@ **Tag a Colleague in Handover Note**\n\n'
+          'While creating or editing a handover note:\n\n'
+          '1. Type **@** followed by the colleague\'s name\n'
+          '2. Select the colleague from the dropdown\n'
+          '3. Continue typing your note\n\n'
+          '✅ They will receive a notification to ensure critical information is directly communicated.',
+    };
+    
+    return faqAnswers[question] ?? 
+        '📚 I don\'t have an answer for that question yet.\n\n'
+        'Please try:\n'
+        '• Rephrasing your question\n'
+        '• Typing "FAQ" to see all options\n'
+        '• Contacting support for more help';
+  }
 
-    // Add user message
-    final userMessage = MessageModel(
-      id: DateTime.now().toString(),
-      text: option,
-      isUser: true,
-      timestamp: DateTime.now(),
-    );
-    _messages.add(userMessage);
-    notifyListeners();
-
-    // Show typing indicator
-    _isBotTyping = true;
-    notifyListeners();
-
-    // ─── PHONE CALL ───────────────────────────────────────────────────────────
-    if (option.startsWith('📞 Call ')) {
-      final number = option.replaceFirst('📞 Call ', '').replaceAll(' ', '');
-      final uri = Uri(scheme: 'tel', path: number);
-      if (await canLaunchUrl(uri)) await launchUrl(uri);
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
+  // Method for processing option clicks
+  Future<void> processOption(String option) async {
+    // Prevent duplicate processing
+    if (_isProcessingQuickReply) {
+      debugPrint('⚠️ Already processing a quick reply, ignoring: $option');
       return;
     }
 
-    // ─── TICKET IMAGE VIEWING ─────────────────────────────────────────────────
-    if (option.startsWith('🖼️ View User Image for #')) {
-      final ticketId = int.tryParse(
-          option.replaceAll('🖼️ View User Image for #', '').trim());
-      if (ticketId != null) {
-        await viewTicketImage(ticketId, 'user');
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
+    try {
+      _isProcessingQuickReply = true;
 
-    if (option.startsWith('🖼️ View Developer Image for #')) {
-      final ticketId = int.tryParse(
-          option.replaceAll('🖼️ View Developer Image for #', '').trim());
-      if (ticketId != null) {
-        await viewTicketImage(ticketId, 'developer');
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
+      // Add user message
+      final userMessage = MessageModel(
+        id: DateTime.now().toString(),
+        text: option,
+        isUser: true,
+        timestamp: DateTime.now(),
+      );
+      _messages.add(userMessage);
+      notifyListeners();
 
-    if (option.startsWith('📋 Back to Ticket #')) {
-      final ticketId = int.tryParse(
-          option.replaceAll('📋 Back to Ticket #', '').trim());
-      if (ticketId != null) {
-        await fetchTicketDetails(ticketId);
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
+      // Show typing indicator
+      _isBotTyping = true;
+      notifyListeners();
 
-    // ─── TRACK TICKET BY STATUS ───────────────────────────────────────────────
-    if ((option.startsWith('🔍 ') && option.contains('Tickets')) ||
-        (option.contains('OPEN Tickets') && option.startsWith('🔍')) ||
-        (option.contains('IN_PROGRESS Tickets') && option.startsWith('🔍')) ||
-        (option.contains('RESOLVED Tickets') && option.startsWith('🔍')) ||
-        (option.contains('CLOSED Tickets') && option.startsWith('🔍'))) {
-      debugPrint('🎯 Track status selected: $option');
-
-      String status = option
-          .replaceAll('🔍 ', '')
-          .replaceAll(' Tickets', '')
-          .trim();
-
-      debugPrint('📋 Extracted track status: "$status"');
-
-      if (['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].contains(status)) {
-        await fetchTicketsForTracking(status);
-      } else {
-        debugPrint('⚠️ Invalid status: $status');
-        _showError('Invalid status selected');
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── TRACK SPECIFIC TICKET ────────────────────────────────────────────────
-    if (option.startsWith('🔍 Track #')) {
-      final ticketId = option.replaceAll('🔍 Track #', '').trim();
-      final id = int.tryParse(ticketId);
-      if (id != null) {
-        await fetchTicketDetails(id);
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── VIEW MY TICKETS (must come before status selection) ──────────────────
-    if (option == '📋 View My Tickets' ||
-        option == 'View My Tickets' ||
-        option.toLowerCase().contains('view my tickets') ||
-        option.toLowerCase().contains('view tickets') ||
-        option.toLowerCase().contains('my tickets')) {
-      debugPrint('🔍 DEBUG: View My Tickets detected - showing status options');
-      await showTicketStatusOptions();
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── VIEW TICKETS BY STATUS ───────────────────────────────────────────────
-    if ((option.startsWith('📋 ') && option.contains('Tickets')) ||
-        option.contains('OPEN Tickets') ||
-        option.contains('IN_PROGRESS Tickets') ||
-        option.contains('RESOLVED Tickets') ||
-        option.contains('CLOSED Tickets')) {
-      debugPrint('🎯 Status selected: $option');
-
-      String status = option
-          .replaceAll('📋 ', '')
-          .replaceAll(' Tickets', '')
-          .trim();
-
-      debugPrint('📋 Extracted status: "$status"');
-
-      if (['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].contains(status)) {
-        await fetchTicketsByStatus(status);
-      } else {
-        debugPrint('⚠️ Invalid status: $status');
-        _showError('Invalid status selected');
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── BACK TO LIST ─────────────────────────────────────────────────────────
-    if (option == '📋 Back to List' || option == 'Back to List') {
-      await showTicketStatusOptions();
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── MAIN MENU ────────────────────────────────────────────────────────────
-    if (option == '🏠 Main Menu' || option == 'Main Menu') {
-      clearSession();
-      final botResponse = await _chatService.processOption('Main Menu');
-      if (botResponse != null) {
+      // ─── FAQ QUESTIONS ───────────────────────────────────────────────────────────
+      // Check if the selected option matches any FAQ question - UPDATED with 12 questions
+      final faqQuestions = [
+        '📅 Where can I view my work schedule?',
+        '👥 How can I check the staff rota?',
+        '✅ How can I see my assigned tasks?',
+        '📋 How can I add a new task?',
+        '📌 How can I view today\'s tasks?',
+        '📅 How can I check upcoming tasks?',
+        '✔️ How can I see completed tasks?',
+        '🔄 How can I update the status of a task?',
+        '📝 How can I add a handover note?',
+        '👁️ How can I view handover notes?',
+        '🏥 How can I shift a patient to another ward?',
+        '@ How can I tag a colleague in a handover note?',
+      ];
+      
+      if (faqQuestions.contains(option)) {
+        debugPrint('📚 FAQ selected: $option');
+        
+        final answer = _getFaqAnswer(option);
+        
+        final botResponse = MessageModel(
+          id: DateTime.now().toString(),
+          text: answer,
+          isUser: false,
+          timestamp: DateTime.now(),
+          type: 'faq_answer',
+          quickReplies: const [
+            '📚 More FAQs',
+            '🏠 Main Menu',
+          ],
+        );
+        
         _messages.add(botResponse);
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
         notifyListeners();
+        return;
       }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
 
-    // ─── TRY AGAIN ────────────────────────────────────────────────────────────
-    if (option == '🔄 Try Again' || option == 'Try Again') {
-      if (_otpSent && !_otpVerified) {
-        _currentInputType = 'otp';
-      } else {
+      // ─── SHOW FAQ MENU ───────────────────────────────────────────────────────────
+      if (option == '📚 More FAQs' || 
+          option == 'More FAQs' || 
+          option.toLowerCase() == 'faq' ||
+          option.toLowerCase() == 'faqs') {
+        await showFaqOptions();
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+      
+      // ─── PHONE CALL ───────────────────────────────────────────────────────────
+      if (option.startsWith('📞 Call ')) {
+        final number = option.replaceFirst('📞 Call ', '').replaceAll(' ', '');
+        final uri = Uri(scheme: 'tel', path: number);
+        if (await canLaunchUrl(uri)) await launchUrl(uri);
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── TICKET IMAGE VIEWING ─────────────────────────────────────────────────
+      if (option.startsWith('🖼️ View User Image for #')) {
+        final ticketId = int.tryParse(
+            option.replaceAll('🖼️ View User Image for #', '').trim());
+        if (ticketId != null) {
+          await viewTicketImage(ticketId, 'user');
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      if (option.startsWith('🖼️ View Developer Image for #')) {
+        final ticketId = int.tryParse(
+            option.replaceAll('🖼️ View Developer Image for #', '').trim());
+        if (ticketId != null) {
+          await viewTicketImage(ticketId, 'developer');
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      if (option.startsWith('📋 Back to Ticket #')) {
+        final ticketId = int.tryParse(
+            option.replaceAll('📋 Back to Ticket #', '').trim());
+        if (ticketId != null) {
+          await fetchTicketDetails(ticketId);
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── TRACK TICKET BY STATUS ───────────────────────────────────────────────
+      if ((option.startsWith('🔍 ') && option.contains('Tickets')) ||
+          (option.contains('OPEN Tickets') && option.startsWith('🔍')) ||
+          (option.contains('IN_PROGRESS Tickets') && option.startsWith('🔍')) ||
+          (option.contains('RESOLVED Tickets') && option.startsWith('🔍')) ||
+          (option.contains('CLOSED Tickets') && option.startsWith('🔍'))) {
+        debugPrint('🎯 Track status selected: $option');
+
+        String status = option
+            .replaceAll('🔍 ', '')
+            .replaceAll(' Tickets', '')
+            .trim();
+
+        debugPrint('📋 Extracted track status: "$status"');
+
+        if (['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].contains(status)) {
+          await fetchTicketsForTracking(status);
+        } else {
+          debugPrint('⚠️ Invalid status: $status');
+          _showError('Invalid status selected');
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── TRACK SPECIFIC TICKET ────────────────────────────────────────────────
+      if (option.startsWith('🔍 Track #')) {
+        final ticketId = option.replaceAll('🔍 Track #', '').trim();
+        final id = int.tryParse(ticketId);
+        if (id != null) {
+          await fetchTicketDetails(id);
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── VIEW MY TICKETS (must come before status selection) ──────────────────
+      if (option == '📋 View My Tickets' ||
+          option == 'View My Tickets' ||
+          option.toLowerCase().contains('view my tickets') ||
+          option.toLowerCase().contains('view tickets') ||
+          option.toLowerCase().contains('my tickets')) {
+        debugPrint('🔍 DEBUG: View My Tickets detected - showing status options');
+        await showTicketStatusOptions();
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── VIEW TICKETS BY STATUS ───────────────────────────────────────────────
+      if ((option.startsWith('📋 ') && option.contains('Tickets')) ||
+          option.contains('OPEN Tickets') ||
+          option.contains('IN_PROGRESS Tickets') ||
+          option.contains('RESOLVED Tickets') ||
+          option.contains('CLOSED Tickets')) {
+        debugPrint('🎯 Status selected: $option');
+
+        String status = option
+            .replaceAll('📋 ', '')
+            .replaceAll(' Tickets', '')
+            .trim();
+
+        debugPrint('📋 Extracted status: "$status"');
+
+        if (['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'].contains(status)) {
+          await fetchTicketsByStatus(status);
+        } else {
+          debugPrint('⚠️ Invalid status: $status');
+          _showError('Invalid status selected');
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── BACK TO LIST ─────────────────────────────────────────────────────────
+      if (option == '📋 Back to List' || option == 'Back to List') {
+        await showTicketStatusOptions();
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── MAIN MENU ────────────────────────────────────────────────────────────
+      if (option == '🏠 Main Menu' || option == 'Main Menu') {
+        clearSession();
         final botResponse = await _chatService.processOption('Main Menu');
         if (botResponse != null) {
           _messages.add(botResponse);
           notifyListeners();
         }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
       }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
 
-    // ─── RESEND OTP ───────────────────────────────────────────────────────────
-    if (option == '🔄 Resend OTP' || option == 'Resend OTP') {
-      await handleResendOtp();
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── CANCEL ───────────────────────────────────────────────────────────────
-    if (option == '❌ Cancel' || option == 'Cancel') {
-      clearSession();
-      final botResponse = await _chatService.processOption('Main Menu');
-      if (botResponse != null) {
-        _messages.add(botResponse);
-        notifyListeners();
-      }
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      return;
-    }
-
-    // ─── TEXT INPUT DURING ACTIVE FLOW ───────────────────────────────────────
-    // (covers OTP entry and new password entry)
-    if (_currentInputType != null) {
-      _isBotTyping = false;
-      _isProcessingQuickReply = false;
-      await processTextInput(option);
-      return;
-    }
-
-    // ─── ALL OTHER OPTIONS → CHAT SERVICE ────────────────────────────────────
-    final botResponse = await _chatService.processOption(
-      option,
-      sessionId: _currentSessionId,
-    );
-
-    _isBotTyping = false;
-
-    if (botResponse != null) {
-      // If the service returns a password_reset step, update session state
-      // and show the new-password prompt with validation hints directly
-      if (botResponse.type == 'password_reset' && botResponse.inputType != null) {
-        _currentInputType = botResponse.inputType;
-        _currentSessionId = botResponse.tempData?['sessionId'];
-        _sessionData = botResponse.tempData ?? {};
-
-        if (botResponse.tempData != null) {
-          _currentUserId = botResponse.tempData!['userId'];
-          _currentEmail = botResponse.tempData!['email'];
+      // ─── TRY AGAIN ────────────────────────────────────────────────────────────
+      if (option == '🔄 Try Again' || option == 'Try Again') {
+        if (_otpSent && !_otpVerified) {
+          _currentInputType = 'otp';
+        } else {
+          final botResponse = await _chatService.processOption('Main Menu');
+          if (botResponse != null) {
+            _messages.add(botResponse);
+            notifyListeners();
+          }
         }
-        await _loadCurrentEmailFromPrefs();
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
 
-        // If we just moved into the "enter new password" step, replace the
-        // bot message with one that shows validation rules and no Generate/Type
-        // options — just focus the text keyboard and let the user type.
-        if (_currentInputType == 'new_password_input') {
-          final passwordPrompt = MessageModel(
-            id: DateTime.now().toString(),
-            text: '🔐 OTP verified! Please type your new password:\n\n'
-                '• Min 8 characters\n'
-                '• A–Z  (uppercase)\n'
-                '• a–z  (lowercase)\n'
-                '• 0–9  (number)\n'
-                '• Special char  e.g. !@#\$%^&*',
-            isUser: false,
-            timestamp: DateTime.now(),
-            type: 'password_reset',
-            inputType: 'new_password_input',
-            tempData: botResponse.tempData,
-            quickReplies: const ['❌ Cancel', '🏠 Main Menu'],
-          );
-          _messages.add(passwordPrompt);
+      // ─── RESEND OTP ───────────────────────────────────────────────────────────
+      if (option == '🔄 Resend OTP' || option == 'Resend OTP') {
+        await handleResendOtp();
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
+
+      // ─── CANCEL ───────────────────────────────────────────────────────────────
+      if (option == '❌ Cancel' || option == 'Cancel') {
+        clearSession();
+        final botResponse = await _chatService.processOption('Main Menu');
+        if (botResponse != null) {
+          _messages.add(botResponse);
           notifyListeners();
+        }
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        return;
+      }
 
-          // Signal the UI to open the alpha keyboard (not number pad)
-          _focusKeyboardController.add('focus_text');
-          return;
+      // ─── TEXT INPUT DURING ACTIVE FLOW ───────────────────────────────────────
+      if (_currentInputType != null) {
+        _isBotTyping = false;
+        _isProcessingQuickReply = false;
+        await processTextInput(option);
+        return;
+      }
+
+      // ─── ALL OTHER OPTIONS → CHAT SERVICE ────────────────────────────────────
+      final botResponse = await _chatService.processOption(
+        option,
+        sessionId: _currentSessionId,
+      );
+
+      _isBotTyping = false;
+
+      if (botResponse != null) {
+        if (botResponse.type == 'password_reset' && botResponse.inputType != null) {
+          _currentInputType = botResponse.inputType;
+          _currentSessionId = botResponse.tempData?['sessionId'];
+          _sessionData = botResponse.tempData ?? {};
+
+          if (botResponse.tempData != null) {
+            _currentUserId = botResponse.tempData!['userId'];
+            _currentEmail = botResponse.tempData!['email'];
+          }
+          await _loadCurrentEmailFromPrefs();
+
+          if (_currentInputType == 'new_password_input') {
+            final passwordPrompt = MessageModel(
+              id: DateTime.now().toString(),
+              text: '🔐 OTP verified! Please type your new password:\n\n'
+                  '• Min 8 characters\n'
+                  '• A–Z  (uppercase)\n'
+                  '• a–z  (lowercase)\n'
+                  '• 0–9  (number)\n'
+                  '• Special char  e.g. !@#\$%^&*',
+              isUser: false,
+              timestamp: DateTime.now(),
+              type: 'password_reset',
+              inputType: 'new_password_input',
+              tempData: botResponse.tempData,
+              quickReplies: const ['❌ Cancel', '🏠 Main Menu'],
+            );
+            _messages.add(passwordPrompt);
+            notifyListeners();
+
+            _focusKeyboardController.add('focus_text');
+            return;
+          }
+        }
+
+        if (botResponse.type == 'redirect' &&
+            botResponse.formField == 'ticket_creation') {
+          _messages.add(botResponse);
+          notifyListeners();
+          Future.delayed(const Duration(milliseconds: 500), () {
+            _navigationController.add('create_ticket');
+          });
+        } else {
+          _messages.add(botResponse);
+          notifyListeners();
         }
       }
-
-      // Redirect to ticket creation screen
-      if (botResponse.type == 'redirect' &&
-          botResponse.formField == 'ticket_creation') {
-        _messages.add(botResponse);
-        notifyListeners();
-        Future.delayed(const Duration(milliseconds: 500), () {
-          _navigationController.add('create_ticket');
-        });
-      } else {
-        _messages.add(botResponse);
-        notifyListeners();
-      }
+    } catch (e) {
+      _isBotTyping = false;
+      _messages.add(MessageModel(
+        id: DateTime.now().toString(),
+        text: 'Sorry, an error occurred. Please try again.',
+        isUser: false,
+        timestamp: DateTime.now(),
+        type: 'error',
+        quickReplies: const ['🏠 Main Menu'],
+      ));
+      notifyListeners();
+    } finally {
+      _isProcessingQuickReply = false;
     }
-  } catch (e) {
-    _isBotTyping = false;
-    _messages.add(MessageModel(
-      id: DateTime.now().toString(),
-      text: 'Sorry, an error occurred. Please try again.',
-      isUser: false,
-      timestamp: DateTime.now(),
-      type: 'error',
-      quickReplies: const ['🏠 Main Menu'],
-    ));
-    notifyListeners();
-  } finally {
-    _isProcessingQuickReply = false;
   }
-}
 
   // Show ticket status options for View Tickets
   Future<void> showTicketStatusOptions() async {
@@ -538,11 +762,9 @@ Future<void> processOption(String option) async {
       
       debugPrint('👤 User ID: $userId');
       
-      // Get today's date
       final today = DateTime.now().toIso8601String().split('T')[0];
       debugPrint('📅 Date: $today');
       
-      // Call API with status
       final result = await SupportService.getTicketsByUserAndDate(
         userId: userId,
         date: today,
@@ -557,7 +779,6 @@ Future<void> processOption(String option) async {
         final data = result['data'];
         debugPrint('📦 Data type: ${data.runtimeType}');
         
-        // Extract tickets from response
         if (data['data'] != null && data['data'] is List) {
           debugPrint('📋 Found tickets in data["data"] as List');
           final List<dynamic> ticketsData = data['data'];
@@ -591,7 +812,6 @@ Future<void> processOption(String option) async {
               .toList();
         }
         
-        // Limit to 10 tickets
         if (tickets.length > 10) {
           tickets = tickets.sublist(0, 10);
         }
@@ -638,7 +858,7 @@ Future<void> processOption(String option) async {
     }
   }
 
-  // NEW METHOD: Fetch tickets for tracking
+  // Fetch tickets for tracking
   Future<void> fetchTicketsForTracking(String status) async {
     debugPrint('📋 Fetching tickets for tracking with status: $status');
     
@@ -654,10 +874,8 @@ Future<void> processOption(String option) async {
         return;
       }
       
-      // Get today's date
       final today = DateTime.now().toIso8601String().split('T')[0];
       
-      // Call API with status
       final result = await SupportService.getTicketsByUserAndDate(
         userId: userId,
         date: today,
@@ -669,7 +887,6 @@ Future<void> processOption(String option) async {
       if (result['success'] == true && result['data'] != null) {
         final data = result['data'];
         
-        // Extract tickets from response
         if (data['data'] != null && data['data'] is List) {
           final List<dynamic> ticketsData = data['data'];
           
@@ -746,7 +963,6 @@ Future<void> processOption(String option) async {
     }
 
     try {
-      // Add user's text input to chat
       final userMessage = MessageModel(
         id: DateTime.now().toString(),
         text: text,
@@ -758,11 +974,9 @@ Future<void> processOption(String option) async {
       _messages.add(userMessage);
       notifyListeners();
 
-      // Show typing indicator
       _isBotTyping = true;
       notifyListeners();
 
-      // Process based on input type
       if (_currentInputType == 'otp') {
         debugPrint('📱 Processing OTP input: $text');
         
@@ -773,7 +987,6 @@ Future<void> processOption(String option) async {
           return;
         }
 
-        // Use the service's validation method
         if (!_chatService.isValidOTP(text.trim())) {
           _otpError = "OTP must be 6 digits";
           _showError(_otpError!);
@@ -787,12 +1000,10 @@ Future<void> processOption(String option) async {
           return;
         }
 
-        // Show loading state
         _isApiCallInProgress = true;
         _currentApiOperation = 'Verifying OTP...';
         notifyListeners();
 
-        // Call verifyOTP API
         final result = await _passwordService.verifyOTP(
           userOtp: text.trim(),
           userId: _currentUserId!,
@@ -802,7 +1013,6 @@ Future<void> processOption(String option) async {
         _currentApiOperation = null;
 
         if (result['success'] == true) {
-          // Save reset data with OTP
           await _passwordService.saveResetData(
             email: _currentEmail!,
             userId: _currentUserId!,
@@ -839,7 +1049,6 @@ Future<void> processOption(String option) async {
         }
       }
       
-      // Handle New Password input
       else if (_currentInputType == 'new_password' || _currentInputType == 'new_password_input') {
         debugPrint('📱 Processing Password input: $text');
         
@@ -862,12 +1071,10 @@ Future<void> processOption(String option) async {
           return;
         }
 
-        // Show loading state
         _isApiCallInProgress = true;
         _currentApiOperation = 'Updating password...';
         notifyListeners();
 
-        // Call updatePassword API
         final result = await _passwordService.updatePassword(
           password: text.trim(),
           email: _currentEmail!,
@@ -930,12 +1137,10 @@ Future<void> processOption(String option) async {
     _otpError = null;
     _startTimer();
 
-    // Show loading
     _isApiCallInProgress = true;
     _currentApiOperation = 'Resending OTP...';
     notifyListeners();
 
-    // Call sendEmailOTP API again
     final result = await _passwordService.sendEmailOTP(
       email: _currentEmail!,
       userId: _currentUserId!,
@@ -976,7 +1181,6 @@ Future<void> processOption(String option) async {
     final strongPassword = _chatService.generateStrongPassword();
     final validation = _passwordService.validatePassword(strongPassword);
     
-    // Store the generated password in session data
     _sessionData['generatedPassword'] = strongPassword;
     
     final response = MessageModel(
@@ -1014,7 +1218,6 @@ Future<void> processOption(String option) async {
       return;
     }
 
-    // Validate the generated password
     final validation = _passwordService.validatePassword(password);
     if (!validation['isValid']) {
       _showError("Generated password doesn't meet requirements. Please generate another.");
@@ -1063,12 +1266,12 @@ Future<void> processOption(String option) async {
     }
   }
 
-  // UPDATED: Fetch user tickets - now shows status options instead
+  // Fetch user tickets - shows status options
   Future<void> fetchUserTickets() async {
     await showTicketStatusOptions();
   }
 
-  // UPDATED: Fetch ticket details by ID - shows queryType/title properly
+  // Fetch ticket details by ID
   Future<void> fetchTicketDetails(int ticketId) async {
     try {
       setState(ViewState.busy);
@@ -1079,14 +1282,12 @@ Future<void> processOption(String option) async {
         final data = result['data'];
         List<dynamic> ticketsData = [];
         
-        // Extract tickets from response
         if (data['data'] != null && data['data'] is List) {
           ticketsData = data['data'];
         } else if (data is List) {
           ticketsData = data;
         }
         
-        // Find the specific ticket
         final ticketJson = ticketsData.firstWhere(
           (t) => t['ticketId'] == ticketId || t['id'] == ticketId,
           orElse: () => null,
@@ -1095,10 +1296,8 @@ Future<void> processOption(String option) async {
         if (ticketJson != null) {
           final ticket = TicketModel.fromJson(ticketJson);
           
-          // Get the queryType/title - try both fields
           String ticketTitle = ticket.queryType ?? ticket.title ?? 'No Title';
           
-          // Create quick replies based on available images
           List<String> quickReplies = [];
           if (ticket.hasUserImage) {
             quickReplies.add('🖼️ View User Image for #${ticket.id}');
@@ -1126,7 +1325,6 @@ Future<void> processOption(String option) async {
           
           _messages.add(detailMessage);
         } else {
-          // Ticket not found
           _messages.add(MessageModel(
             id: DateTime.now().toString(),
             text: '❌ Ticket #$ticketId not found.',
@@ -1157,7 +1355,7 @@ Future<void> processOption(String option) async {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
 
-  // UPDATED: View ticket image method with proper base64 handling - KEPT YOUR ORIGINAL CODE
+  // View ticket image
   Future<void> viewTicketImage(int ticketId, String fileType) async {
     try {
       setState(ViewState.busy);
@@ -1180,7 +1378,6 @@ Future<void> processOption(String option) async {
         fileType: fileType.toUpperCase(),
       );
 
-      // Remove loading message
       _messages.removeLast();
 
       if (result['success'] != true || result['data'] == null) {
@@ -1215,7 +1412,6 @@ Future<void> processOption(String option) async {
         return;
       }
 
-      // Service already stripped the prefix — decode directly
       final Uint8List imageBytes;
       try {
         imageBytes = base64Decode(rawBase64.toString());
@@ -1269,13 +1465,13 @@ Future<void> processOption(String option) async {
     }
   }
 
-  // UPDATED: Create a new ticket with queryType dropdown support
+  // Create a new ticket
   Future<void> createTicket({
-    required String queryType, // Changed from title to queryType
+    required String queryType,
     required String description,
     required String priority,
     List<String>? attachments,
-    List<File>? imageFiles, // KEPT YOUR ATTACHMENT PARAMETER
+    List<File>? imageFiles,
   }) async {
     try {
       _isLoading = true;
@@ -1287,24 +1483,21 @@ Future<void> processOption(String option) async {
       debugPrint('  Query Type: $queryType');
       debugPrint('  Description: $description');
       debugPrint('  Priority: $priority');
-      debugPrint('  Images count: ${imageFiles?.length ?? 0}'); // Shows attachments
+      debugPrint('  Images count: ${imageFiles?.length ?? 0}');
 
-      // Get user ID from SharedPreferences
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId') ?? '';
 
-      // Call SupportService with queryType parameter
       final result = await SupportService.createTicket(
-        queryType: queryType, // Use queryType
+        queryType: queryType,
         description: description,
         priority: priority.toUpperCase(),
         userId: userId,
-        images: imageFiles, // KEPT YOUR ATTACHMENTS
+        images: imageFiles,
       );
 
       debugPrint('✅ API Response in ChatProvider: $result');
 
-      // Parse the response
       final ticketData = result['data'] ?? {};
       String ticketId = 'N/A';
       
@@ -1316,21 +1509,18 @@ Future<void> processOption(String option) async {
         ticketId = ticketData['id'].toString();
       }
 
-      // Create TicketModel from response
       final ticket = TicketModel(
         id: ticketId,
-        title: queryType, // Use queryType as title
-        queryType: queryType, // Also set queryType
+        title: queryType,
+        queryType: queryType,
         description: description,
         createdAt: DateTime.now(),
         createdBy: userId,
         status: TicketStatus.open,
         priority: _parsePriority(priority),
         attachmentUrls: attachments,
-        // hasUserImage: imageFiles != null && imageFiles.isNotEmpty,
       );
 
-      // Add success message to chat
       _messages.add(MessageModel(
         id: DateTime.now().toString(),
         text: '✅ **Ticket #$ticketId created successfully!**\n\n'
@@ -1453,7 +1643,6 @@ Future<void> processOption(String option) async {
     _showResendOption = false;
     _timer?.cancel();
     
-    // Clear sorting and filtering
     _currentTicketFilter = null;
     _currentSortBy = null;
     _sortAscending = null;

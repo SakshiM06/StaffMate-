@@ -240,7 +240,6 @@ static Future<Map<String, dynamic>> createTicket({
       final prefs = await SharedPreferences.getInstance();
       
       final token = prefs.getString('auth_token') ?? '';
-      // Get clinic ID - try parameter first, then from SharedPreferences
       final supportClinicId = clinicId ?? await getSupportClinicId();
       final userIdFromPrefs = prefs.getString('userId') ?? userId ?? '';
       final branchId = prefs.getString('branchId') ?? '';
@@ -267,8 +266,6 @@ static Future<Map<String, dynamic>> createTicket({
       };
 
       final url = '$_physicalDeviceUrl$_updateTicketEndpoint';
-      
-      // Build request body with correct field names
       final Map<String, dynamic> requestBody = {
         'ticketId': ticketId,
         'queryType': queryType,
@@ -760,7 +757,7 @@ static Future<Map<String, dynamic>> createTicket({
       final supportClinicId = await getSupportClinicId();
       final userId = prefs.getString('userId') ?? '';
       final branchId = prefs.getString('branchId') ?? '';
-
+final zoneIdFromPref = prefs.getString('zoneId') ?? 'Asia/Kolkata';
       if (token.isEmpty) {
         throw Exception('Authentication token missing');
       }

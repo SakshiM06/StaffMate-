@@ -6,6 +6,8 @@ import 'package:pinput/pinput.dart';
 import 'package:http/http.dart' as http;
 import 'package:staff_mate/pages/login_page.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:staff_mate/api/api_service.dart'; // Added for activity tracking
+import 'package:staff_mate/services/session_manger.dart'; // Added for activity tracking
 
 class OTPVerificationDialog extends StatefulWidget {
   final String userId;
@@ -301,288 +303,309 @@ await prefs.setString('otp_email', _currentEmail);
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      elevation: 0,
-      backgroundColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.grey.withOpacity(0.3),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Header with icon
-              Container(
-                width: 60,
-                height: 60,
-                decoration: BoxDecoration(
-                  color: AppColors.primaryDarkBlue.withOpacity(0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  _showOTPInput ? Icons.mark_email_read_rounded : Icons.verified_user_rounded,
-                  color: AppColors.primaryDarkBlue,
-                  size: 30,
-                ),
+    return GestureDetector(
+      onTap: () {
+        // Track activity during OTP verification
+        SessionManager.updateUserActivity();
+        ApiService.updateUserActivity();
+      },
+      onPanUpdate: (details) {
+        SessionManager.updateUserActivity();
+        ApiService.updateUserActivity();
+      },
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.3),
+                blurRadius: 20,
+                offset: const Offset(0, 10),
               ),
-              const SizedBox(height: 16),
-              
-              // Title
-              Text(
-                _showOTPInput ? "Verify OTP" : "Verify Identity",
-                style: GoogleFonts.poppins(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
-                ),
-              ),
-              const SizedBox(height: 8),
-              
-              // Subtitle
-              Text(
-                _showOTPInput 
-                    ? "Enter the 6-digit code sent to your email"
-                    : "Please provide your contact details",
-                textAlign: TextAlign.center,
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: AppColors.textBodyColor,
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              // Input fields based on state
-              if (!_showOTPInput) ...[
-                // Email field
+            ],
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Header with icon
                 Container(
+                  width: 60,
+                  height: 60,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.grey.shade200),
+                    color: AppColors.primaryDarkBlue.withOpacity(0.1),
+                    shape: BoxShape.circle,
                   ),
-                  child: TextField(
-                    controller: _emailController,
-                    keyboardType: TextInputType.emailAddress,
-                    style: GoogleFonts.poppins(fontSize: 14),
-                    decoration: InputDecoration(
-                      hintText: "Email Address",
-                      hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
-                      prefixIcon: Icon(Icons.email_outlined, color: AppColors.primaryDarkBlue, size: 20),
-                      border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 15),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                
-                // OR divider
-                Row(
-                  children: [
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        "OR",
-                        style: GoogleFonts.poppins(
-                          color: Colors.grey.shade500,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    Expanded(child: Divider(color: Colors.grey.shade300)),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                
-                // Phone field
-                // Container(
-                //   decoration: BoxDecoration(
-                //     color: Colors.grey.shade50,
-                //     borderRadius: BorderRadius.circular(12),
-                //     border: Border.all(color: Colors.grey.shade200),
-                //   ),
-                //   child: TextField(
-                //     controller: _phoneController,
-                //     keyboardType: TextInputType.phone,
-                //     style: GoogleFonts.poppins(fontSize: 14),
-                //     decoration: InputDecoration(
-                //       hintText: "Phone Number",
-                //       hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
-                //       prefixIcon: Icon(Icons.phone_outlined, color: AppColors.primaryDarkBlue, size: 20),
-                //       border: InputBorder.none,
-                //       contentPadding: const EdgeInsets.symmetric(vertical: 15),
-                //     ),
-                //   ),
-                // ),
-              ] else ...[
-                // OTP Input
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Pinput(
-                    controller: _otpController,
-                    focusNode: _pinFocusNode,
-                    length: 6,
-                    defaultPinTheme: PinTheme(
-                      width: 45,
-                      height: 50,
-                      textStyle: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primaryDarkBlue,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade300),
-                      ),
-                    ),
-                    focusedPinTheme: PinTheme(
-                      width: 45,
-                      height: 50,
-                      textStyle: GoogleFonts.poppins(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primaryDarkBlue,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.primaryDarkBlue, width: 2),
-                      ),
-                    ),
-                    onCompleted: (pin) {
-                      _verifyOTP();
-                    },
+                  child: Icon(
+                    _showOTPInput ? Icons.mark_email_read_rounded : Icons.verified_user_rounded,
+                    color: AppColors.primaryDarkBlue,
+                    size: 30,
                   ),
                 ),
                 const SizedBox(height: 16),
                 
-                // Resend option
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      "Didn't receive code? ",
-                      style: GoogleFonts.poppins(
-                        color: AppColors.textBodyColor,
-                        fontSize: 13,
+                // Title
+                Text(
+                  _showOTPInput ? "Verify OTP" : "Verify Identity",
+                  style: GoogleFonts.poppins(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.textDark,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                
+                // Subtitle
+                Text(
+                  _showOTPInput 
+                      ? "Enter the 6-digit code sent to your email"
+                      : "Please provide your contact details",
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    color: AppColors.textBodyColor,
+                  ),
+                ),
+                const SizedBox(height: 24),
+
+                // Input fields based on state
+                if (!_showOTPInput) ...[
+                  // Email field
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: TextField(
+                      controller: _emailController,
+                      keyboardType: TextInputType.emailAddress,
+                      style: GoogleFonts.poppins(fontSize: 14),
+                      onTap: () {
+                        // Track activity on text field tap
+                        SessionManager.updateUserActivity();
+                        ApiService.updateUserActivity();
+                      },
+                      decoration: InputDecoration(
+                        hintText: "Email Address",
+                        hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
+                        prefixIcon: Icon(Icons.email_outlined, color: AppColors.primaryDarkBlue, size: 20),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 15),
                       ),
                     ),
-                    GestureDetector(
-                      onTap: _isResendEnabled ? _resendOTP : null,
-                      child: Text(
-                        _isResendEnabled ? "Resend" : "Resend in $_resendTimer sec",
-                        style: GoogleFonts.poppins(
-                          color: _isResendEnabled ? AppColors.primaryDarkBlue : Colors.grey,
-                          fontSize: 13,
+                  ),
+                  const SizedBox(height: 12),
+                  
+                  // OR divider (commented out)
+                  // Row(
+                  //   children: [
+                  //     Expanded(child: Divider(color: Colors.grey.shade300)),
+                  //     Padding(
+                  //       padding: const EdgeInsets.symmetric(horizontal: 8),
+                  //       child: Text(
+                  //         "OR",
+                  //         style: GoogleFonts.poppins(
+                  //           color: Colors.grey.shade500,
+                  //           fontSize: 12,
+                  //         ),
+                  //       ),
+                  //     ),
+                  //     Expanded(child: Divider(color: Colors.grey.shade300)),
+                  //   ],
+                  // ),
+                  const SizedBox(height: 12),
+                  
+                  // Phone field (commented out)
+                  // Container(
+                  //   decoration: BoxDecoration(
+                  //     color: Colors.grey.shade50,
+                  //     borderRadius: BorderRadius.circular(12),
+                  //     border: Border.all(color: Colors.grey.shade200),
+                  //   ),
+                  //   child: TextField(
+                  //     controller: _phoneController,
+                  //     keyboardType: TextInputType.phone,
+                  //     style: GoogleFonts.poppins(fontSize: 14),
+                  //     decoration: InputDecoration(
+                  //       hintText: "Phone Number",
+                  //       hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
+                  //       prefixIcon: Icon(Icons.phone_outlined, color: AppColors.primaryDarkBlue, size: 20),
+                  //       border: InputBorder.none,
+                  //       contentPadding: const EdgeInsets.symmetric(vertical: 15),
+                  //     ),
+                  //   ),
+                  // ),
+                ] else ...[
+                  // OTP Input
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Pinput(
+                      controller: _otpController,
+                      focusNode: _pinFocusNode,
+                      length: 6,
+                      defaultPinTheme: PinTheme(
+                        width: 45,
+                        height: 50,
+                        textStyle: GoogleFonts.poppins(
+                          fontSize: 20,
                           fontWeight: FontWeight.w600,
-                          decoration: _isResendEnabled ? TextDecoration.underline : TextDecoration.none,
+                          color: AppColors.primaryDarkBlue,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300),
                         ),
                       ),
+                      focusedPinTheme: PinTheme(
+                        width: 45,
+                        height: 50,
+                        textStyle: GoogleFonts.poppins(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.primaryDarkBlue,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.primaryDarkBlue, width: 2),
+                        ),
+                      ),
+                      onTap: () {
+                        // Track activity on OTP input tap
+                        SessionManager.updateUserActivity();
+                        ApiService.updateUserActivity();
+                      },
+                      onCompleted: (pin) {
+                        _verifyOTP();
+                      },
                     ),
-                  ],
+                  ),
+                  const SizedBox(height: 16),
+                  
+                  // Resend option
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        "Didn't receive code? ",
+                        style: GoogleFonts.poppins(
+                          color: AppColors.textBodyColor,
+                          fontSize: 13,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _isResendEnabled ? _resendOTP : null,
+                        child: Text(
+                          _isResendEnabled ? "Resend" : "Resend in $_resendTimer sec",
+                          style: GoogleFonts.poppins(
+                            color: _isResendEnabled ? AppColors.primaryDarkBlue : Colors.grey,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            decoration: _isResendEnabled ? TextDecoration.underline : TextDecoration.none,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+
+                const SizedBox(height: 24),
+
+                // Action buttons
+                if (!_showOTPInput) ...[
+                  // Send OTP button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _sendOTP,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryDarkBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              "Send OTP",
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ] else ...[
+                  // Verify OTP button
+                  SizedBox(
+                    width: double.infinity,
+                    height: 50,
+                    child: ElevatedButton(
+                      onPressed: _isLoading ? null : _verifyOTP,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primaryDarkBlue,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Text(
+                              "Verify & Continue",
+                              style: GoogleFonts.poppins(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 12),
+
+                // Cancel button
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                    widget.onVerificationFailed();
+                  },
+                  child: Text(
+                    "Cancel",
+                    style: GoogleFonts.poppins(
+                      color: Colors.grey.shade600,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
               ],
-
-              const SizedBox(height: 24),
-
-              // Action buttons
-              if (!_showOTPInput) ...[
-                // Send OTP button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _sendOTP,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryDarkBlue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            "Send OTP",
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-              ] else ...[
-                // Verify OTP button
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: _isLoading ? null : _verifyOTP,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primaryDarkBlue,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      elevation: 2,
-                    ),
-                    child: _isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : Text(
-                            "Verify & Continue",
-                            style: GoogleFonts.poppins(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 12),
-
-              // Cancel button
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop();
-                  widget.onVerificationFailed();
-                },
-                child: Text(
-                  "Cancel",
-                  style: GoogleFonts.poppins(
-                    color: Colors.grey.shade600,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),

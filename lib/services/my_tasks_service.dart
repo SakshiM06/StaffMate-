@@ -7,13 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 class MyTasksService {
   static String get _baseUrl {
     if (kIsWeb) {
-      return 'http://192.168.1.14:8089';
+      return 'http://192.168.1.13:9090';
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8089'; // Android emulator
+      return 'http://10.0.2.2:8089';
     } else if (Platform.isIOS) {
-      return 'http://127.0.0.1:8089'; // iOS simulator
+      return 'http://127.0.0.1:8089';
     } else {
-      return 'http://192.168.1.14:8089'; // Your computer's IP
+      return 'http://192.168.1.14:8089';
     }
   }
   
@@ -21,9 +21,12 @@ class MyTasksService {
   
   static const String _masterCategoryEndpoint = '/master/category/master/getAll';
   static const String _saveMasterCategoryEndpoint = '/master/category/master/save';
+  static const String _subCategoryEndpoint = '/master/subcategory/master/getAll';
+  static const String _saveSubCategoryEndpoint = '/master/subcategory/master/save';
   static const String _saveTaskEndpoint = '/master/task/master/save';
   static const String _fetchTasksEndpoint = '/master/task/master/fetch';
   static const String _updateTaskEndpoint = '/master/task/master/update';
+  static const String _taskHistoryEndpoint = '/master/task/master/history';
 
   static Future<Map<String, dynamic>> getAllMasterCategories() async {
     final stopwatch = Stopwatch()..start();
@@ -129,6 +132,124 @@ class MyTasksService {
   }
 
   static Future<Map<String, dynamic>> getMasterCategories() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final token = prefs.getString('auth_token') ?? '';
+    final clinicId = prefs.getString('clinicId') ?? '';
+    final userId = prefs.getString('userId') ?? '';
+    final branchId = prefs.getString('branchId') ?? '';
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Authorization': 'SmartCare $token',
+      'clinicid': clinicId,
+      'userid': userId,
+      'ZONEID': 'Asia/Kolkata',
+      if (branchId.isNotEmpty) 'branchId': branchId,
+    };
+
+    final url = '$_physicalDeviceUrl$_masterCategoryEndpoint';
+    
+    debugPrint('=== GET MASTER CATEGORIES API REQUEST ===');
+    debugPrint('URL: $url');
+    debugPrint('Platform: ${Platform.operatingSystem}');
+
+    final response = await http
+        .get(
+          Uri.parse(url),
+          headers: headers,
+        )
+        .timeout(const Duration(seconds: 10));
+
+    debugPrint('Response Status: ${response.statusCode}');
+    debugPrint('Response Body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}...');
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      
+      List<dynamic> categories = [];
+      
+      if (decoded is Map<String, dynamic>) {
+        if (decoded.containsKey('data')) {
+          final dataObj = decoded['data'];
+          if (dataObj is List) {
+            categories = dataObj;
+          } else if (dataObj is Map && dataObj.containsKey('list')) {
+            categories = dataObj['list'] as List;
+          }
+        }
+      } else if (decoded is List) {
+        categories = decoded;
+      }
+      
+      // First, get all subcategories at once
+      Map<int, List<Map<String, dynamic>>> subCategoriesByCategory = {};
+      
+      try {
+        final allSubCategoriesResponse = await getAllSubCategories();
+        if (allSubCategoriesResponse['data'] != null && allSubCategoriesResponse['data'] is List) {
+          final allSubs = allSubCategoriesResponse['data'] as List;
+          
+          for (var sub in allSubs) {
+            if (sub is Map<String, dynamic>) {
+              final categoryId = sub['categoryId'] ?? sub['category_id'] ?? sub['masterCategoryId'];
+              if (categoryId != null) {
+                final catIdInt = int.tryParse(categoryId.toString());
+                if (catIdInt != null) {
+                  if (!subCategoriesByCategory.containsKey(catIdInt)) {
+                    subCategoriesByCategory[catIdInt] = [];
+                  }
+                  subCategoriesByCategory[catIdInt]!.add(sub);
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        debugPrint('Error fetching subcategories: $e');
+      }
+      
+      final List<Map<String, dynamic>> categoriesWithSubs = [];
+      for (var category in categories) {
+        if (category is Map<String, dynamic>) {
+          final categoryId = category['id'] ?? category['categoryId'];
+          final catIdInt = int.tryParse(categoryId.toString());
+          
+          if (catIdInt != null && subCategoriesByCategory.containsKey(catIdInt)) {
+            category['subCategories'] = subCategoriesByCategory[catIdInt] ?? [];
+          } else {
+            category['subCategories'] = [];
+          }
+          
+          categoriesWithSubs.add(category);
+        }
+      }
+      
+      debugPrint('Categories with subcategories count: ${categoriesWithSubs.length}');
+      
+      return {
+        'data': categoriesWithSubs,
+        'message': 'Success',
+        'status_code': 200
+      };
+    } else if (response.statusCode == 401) {
+      throw Exception('Authentication failed. Please login again.');
+    } else if (response.statusCode == 403) {
+      throw Exception('Access forbidden. Check your permissions.');
+    } else {
+      throw Exception('Failed to fetch categories. Status code: ${response.statusCode}');
+    }
+  } catch (e) {
+    debugPrint('Get master categories failed: $e');
+    rethrow;
+  }
+}
+
+  static Future<Map<String, dynamic>> getAllSubCategories() async {
+    final stopwatch = Stopwatch()..start();
+    
     try {
       final prefs = await SharedPreferences.getInstance();
       
@@ -137,9 +258,14 @@ class MyTasksService {
       final userId = prefs.getString('userId') ?? '';
       final branchId = prefs.getString('branchId') ?? '';
 
+      if (token.isEmpty) throw Exception('Authentication token missing');
+      if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+      if (userId.isEmpty) throw Exception('User ID missing');
+
       final headers = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
+        'Access-Control-Allow-Origin': '*',
         'Authorization': 'SmartCare $token',
         'clinicid': clinicId,
         'userid': userId,
@@ -147,59 +273,332 @@ class MyTasksService {
         if (branchId.isNotEmpty) 'branchId': branchId,
       };
 
-      final url = '$_physicalDeviceUrl$_masterCategoryEndpoint';
+      final url = '$_physicalDeviceUrl$_subCategoryEndpoint';
       
-      debugPrint('=== GET MASTER CATEGORIES API REQUEST ===');
+      debugPrint('=== GET ALL SUBCATEGORIES API REQUEST DEBUG ===');
       debugPrint('URL: $url');
       debugPrint('Platform: ${Platform.operatingSystem}');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
 
-      final response = await http
-          .get(
-            Uri.parse(url),
-            headers: headers,
-          )
-          .timeout(const Duration(seconds: 10));
+      final client = http.Client();
+      
+      try {
+        final response = await client
+            .get(
+              Uri.parse(url),
+              headers: headers,
+            )
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () {
+                client.close();
+                throw Exception('Connection timeout. Server not responding');
+              },
+            );
 
-      debugPrint('Response Status: ${response.statusCode}');
-      debugPrint('Response Body: ${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}...');
+        stopwatch.stop();
+        debugPrint('=== GET ALL SUBCATEGORIES API RESPONSE DEBUG ===');
+        debugPrint('Status Code: ${response.statusCode}');
+        debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint('Response Body: ${response.body}');
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        
-        List<dynamic> categories = [];
-        
-        if (decoded is Map<String, dynamic>) {
-          if (decoded.containsKey('data')) {
-            final dataObj = decoded['data'];
-            if (dataObj is List) {
-              categories = dataObj;
-            } else if (dataObj is Map && dataObj.containsKey('list')) {
-              categories = dataObj['list'] as List;
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          
+          List<dynamic> subCategories = [];
+          
+          if (decoded is List) {
+            subCategories = decoded;
+          } else if (decoded is Map<String, dynamic>) {
+            if (decoded.containsKey('data')) {
+              final dataObj = decoded['data'];
+              if (dataObj is List) {
+                subCategories = dataObj;
+              } else if (dataObj is Map && dataObj.containsKey('list')) {
+                subCategories = dataObj['list'] as List;
+              }
             }
           }
-        } else if (decoded is List) {
-          categories = decoded;
+          
+          await _cacheSubCategoriesResponse({
+            'data': subCategories,
+            'message': 'Success',
+            'status_code': 200
+          });
+          
+          return {
+            'data': subCategories,
+            'message': 'Success',
+            'status_code': 200
+          };
+        } else if (response.statusCode == 401) {
+          throw Exception('Authentication failed. Please login again.');
+        } else if (response.statusCode == 403) {
+          throw Exception('Access forbidden. Check your permissions.');
+        } else {
+          throw Exception('Server returned status code: ${response.statusCode}');
         }
-        
-        return {
-          'data': categories,
-          'message': 'Success',
-          'status_code': 200
-        };
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('MyTasksService Error (getAllSubCategories): $e');
+      rethrow;
+    }
+  }
+
+static Future<Map<String, dynamic>> getSubCategoriesByCategoryId({
+  required int categoryId,
+}) async {
+  final stopwatch = Stopwatch()..start();
+  
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final token = prefs.getString('auth_token') ?? '';
+    final clinicId = prefs.getString('clinicId') ?? '';
+    final userId = prefs.getString('userId') ?? '';
+    final branchId = prefs.getString('branchId') ?? '';
+
+    if (token.isEmpty) throw Exception('Authentication token missing');
+    if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+    if (userId.isEmpty) throw Exception('User ID missing');
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Authorization': 'SmartCare $token',
+      'clinicid': clinicId,
+      'userid': userId,
+      'ZONEID': 'Asia/Kolkata',
+      if (branchId.isNotEmpty) 'branchId': branchId,
+    };
+
+    // First, get all subcategories
+    final url = '$_physicalDeviceUrl$_subCategoryEndpoint';
+    
+    debugPrint('=== GET ALL SUBCATEGORIES API REQUEST DEBUG ===');
+    debugPrint('URL: $url');
+    debugPrint('Category ID to filter: $categoryId');
+    
+    final response = await http
+        .get(
+          Uri.parse(url),
+          headers: headers,
+        )
+        .timeout(const Duration(seconds: 30));
+
+    stopwatch.stop();
+    debugPrint('=== GET SUBCATEGORIES API RESPONSE DEBUG ===');
+    debugPrint('Status Code: ${response.statusCode}');
+    debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+    debugPrint('Response Body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
+      
+      List<dynamic> allSubCategories = [];
+      
+      // Parse response
+      if (decoded is List) {
+        allSubCategories = decoded;
+      } else if (decoded is Map<String, dynamic>) {
+        if (decoded.containsKey('data')) {
+          final dataObj = decoded['data'];
+          if (dataObj is List) {
+            allSubCategories = dataObj;
+          } else if (dataObj is Map && dataObj.containsKey('list')) {
+            allSubCategories = dataObj['list'] as List;
+          }
+        } else if (decoded.containsKey('list')) {
+          allSubCategories = decoded['list'] as List;
+        }
+      }
+      
+      // Filter subcategories by categoryId
+      final filteredSubCategories = allSubCategories.where((item) {
+        if (item is Map<String, dynamic>) {
+          final itemCategoryId = item['categoryId'] ?? item['category_id'] ?? item['masterCategoryId'];
+          if (itemCategoryId != null) {
+            return int.tryParse(itemCategoryId.toString()) == categoryId;
+          }
+        }
+        return false;
+      }).toList();
+      
+      debugPrint('Total subcategories: ${allSubCategories.length}');
+      debugPrint('Filtered subcategories for category $categoryId: ${filteredSubCategories.length}');
+      
+      return {
+        'data': filteredSubCategories,
+        'message': 'Success',
+        'status_code': 200
+      };
+    } else if (response.statusCode == 401) {
+      throw Exception('Authentication failed. Please login again.');
+    } else if (response.statusCode == 403) {
+      throw Exception('Access forbidden. Check your permissions.');
+    } else if (response.statusCode == 404) {
+      return {
+        'data': [],
+        'message': 'No subcategories found for category ID: $categoryId',
+        'status_code': 200
+      };
+    } else {
+      throw Exception('Server returned status code: ${response.statusCode}');
+    }
+  } catch (e) {
+    debugPrint('MyTasksService Error (getSubCategoriesByCategoryId): $e');
+    return {
+      'data': [],
+      'message': 'Error fetching subcategories: ${e.toString()}',
+      'status_code': 500
+    };
+  }
+}
+
+  static Future<Map<String, dynamic>> saveSubCategory({
+  required String subCategoryName,
+  required int categoryId,
+}) async {
+  final stopwatch = Stopwatch()..start();
+  
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final token = prefs.getString('auth_token') ?? '';
+    final clinicId = prefs.getString('clinicId') ?? '';
+    final userId = prefs.getString('userId') ?? '';
+    final branchId = prefs.getString('branchId') ?? '';
+
+    if (token.isEmpty) throw Exception('Authentication token missing');
+    if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+    if (userId.isEmpty) throw Exception('User ID missing');
+    if (subCategoryName.isEmpty) throw Exception('Subcategory name is required');
+    if (categoryId <= 0) throw Exception('Valid category ID is required');
+
+    final headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Authorization': 'SmartCare $token',
+      'clinicid': clinicId,
+      'userid': userId,
+      'ZONEID': 'Asia/Kolkata',
+      if (branchId.isNotEmpty) 'branchId': branchId,
+    };
+
+    final url = '$_physicalDeviceUrl$_saveSubCategoryEndpoint';
+    
+    // Try multiple field name variations
+    final Map<String, dynamic> requestBody = {
+      'subCategoryName': subCategoryName,
+      'categoryId': categoryId,
+      'masterCategoryId': categoryId,  // Alternative field name
+      'category_id': categoryId,        // Alternative field name
+    };
+
+    debugPrint('=== SAVE SUBCATEGORY API REQUEST DEBUG ===');
+    debugPrint('URL: $url');
+    debugPrint('Category ID: $categoryId');
+    debugPrint('Subcategory Name: $subCategoryName');
+    debugPrint('Request Body: ${jsonEncode(requestBody)}');
+
+    final client = http.Client();
+    
+    try {
+      final response = await client
+          .post(
+            Uri.parse(url),
+            headers: headers,
+            body: jsonEncode(requestBody),
+          )
+          .timeout(const Duration(seconds: 45));
+
+      stopwatch.stop();
+      debugPrint('=== SAVE SUBCATEGORY API RESPONSE DEBUG ===');
+      debugPrint('Status Code: ${response.statusCode}');
+      debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+      debugPrint('Response Body: ${response.body}');
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        try {
+          final decoded = jsonDecode(response.body);
+          String? subCategoryId;
+          
+          if (decoded is Map<String, dynamic>) {
+            if (decoded.containsKey('data') && decoded['data'] is Map) {
+              final data = decoded['data'] as Map;
+              if (data.containsKey('id')) {
+                subCategoryId = data['id'].toString();
+              }
+            } else if (decoded.containsKey('id')) {
+              subCategoryId = decoded['id'].toString();
+            } else if (decoded.containsKey('subCategoryId')) {
+              subCategoryId = decoded['subCategoryId'].toString();
+            }
+            
+            debugPrint('✅ Subcategory saved with ID: $subCategoryId');
+            
+            await clearSubCategoriesCache();
+            
+            return {
+              'success': true,
+              'message': 'Subcategory saved successfully',
+              'status_code': response.statusCode,
+              'data': decoded,
+              'subCategoryId': subCategoryId,
+            };
+          } else {
+            return {
+              'success': true,
+              'message': 'Subcategory saved successfully',
+              'status_code': response.statusCode,
+              'subCategoryId': null,
+            };
+          }
+        } catch (e) {
+          return {
+            'success': true,
+            'message': 'Subcategory saved successfully',
+            'status_code': response.statusCode,
+            'subCategoryId': null,
+          };
+        }
+      } else if (response.statusCode == 400) {
+        try {
+          final errorResponse = jsonDecode(response.body);
+          String errorMessage = 'Failed to save subcategory: ';
+          if (errorResponse is Map) {
+            if (errorResponse['message'] != null) {
+              errorMessage = errorResponse['message'];
+            } else if (errorResponse['error'] != null) {
+              final error = errorResponse['error'];
+              if (error is Map && error['cause'] != null) {
+                errorMessage = error['cause'].toString();
+              }
+            }
+          }
+          throw Exception(errorMessage);
+        } catch (e) {
+          throw Exception('Failed to save subcategory. Database error occurred.');
+        }
       } else if (response.statusCode == 401) {
         throw Exception('Authentication failed. Please login again.');
       } else if (response.statusCode == 403) {
         throw Exception('Access forbidden. Check your permissions.');
       } else {
-        throw Exception('Failed to fetch categories. Status code: ${response.statusCode}');
+        throw Exception('Server returned status code: ${response.statusCode}');
       }
-    } catch (e) {
-      debugPrint('Get master categories failed: $e');
-      rethrow;
+    } finally {
+      client.close();
     }
+  } catch (e) {
+    debugPrint('MyTasksService Error (saveSubCategory): $e');
+    rethrow;
   }
-
-  // NEW: Save Master Category API
+}
   static Future<Map<String, dynamic>> saveMasterCategory({
     required String name,
     String? description,
@@ -288,7 +687,6 @@ class MyTasksService {
               
               debugPrint('✅ Category saved with ID: $categoryId');
               
-              // Clear cache to refresh categories
               await clearMasterCategoriesCache();
               
               return {
@@ -303,7 +701,6 @@ class MyTasksService {
                 'success': true,
                 'message': 'Category saved successfully',
                 'status_code': response.statusCode,
-                'data': decoded,
                 'categoryId': null,
               };
             }
@@ -360,7 +757,11 @@ class MyTasksService {
     String? repeatType,            
     int? repeatInterval,             
     String? repeatUnit,             
-    String? repeatEndDate,        
+    String? repeatEndDate,
+    String? dueDate,    
+    String? assignedTo,
+    String? assignedBy,
+    int? taskSubCategoryId,
   }) async {
     final stopwatch = Stopwatch()..start();
     
@@ -393,11 +794,14 @@ class MyTasksService {
         'roleGroupName': roleGroupName,
         'taskCategoryId': taskCategoryId,
         'taskName': taskName,
-        'description': description,
         'discription': description,
         'status': status.toUpperCase(),
         'priority': priority.toUpperCase(),
       };
+      
+      if (taskSubCategoryId != null && taskSubCategoryId > 0) {
+        requestBody['taskSubCategoryId'] = taskSubCategoryId;
+      }
 
       if (reminderDatetime != null && reminderDatetime.isNotEmpty) {
         requestBody['reminderDatetime'] = reminderDatetime;
@@ -419,6 +823,18 @@ class MyTasksService {
         requestBody['repeatEndDate'] = repeatEndDate;
       }
 
+      if (dueDate != null && dueDate.isNotEmpty) {
+        requestBody['dueDate'] = dueDate;
+      }
+      
+      if (assignedTo != null && assignedTo.isNotEmpty) {
+        requestBody['assignedTo'] = assignedTo;
+      }
+      
+      if (assignedBy != null && assignedBy.isNotEmpty) {
+        requestBody['assignedBy'] = assignedBy;
+      }
+
       debugPrint('=== SAVE TASK API REQUEST DEBUG ===');
       debugPrint('URL: $url');
       debugPrint('Platform: ${Platform.operatingSystem}');
@@ -438,7 +854,7 @@ class MyTasksService {
               const Duration(seconds: 45),
               onTimeout: () {
                 client.close();
-                throw Exception('Connection timeout. Please check if server is accessible at 192.168.1.14:8089');
+                throw Exception('Connection timeout. Please check if server is accessible');
               },
             );
 
@@ -496,7 +912,6 @@ class MyTasksService {
               
               debugPrint('✅ Task saved with ID: $taskId');
               
-              // Clear cache to refresh task lists
               await clearTasksCache('TODAY');
               await clearTasksCache('UPCOMING');
               await clearTasksCache('COMPLETED');
@@ -513,7 +928,6 @@ class MyTasksService {
                 'success': true,
                 'message': 'Task saved successfully',
                 'status_code': response.statusCode,
-                'data': decoded,
                 'taskId': null,
               };
             }
@@ -548,9 +962,296 @@ class MyTasksService {
     }
   }
   
+  static Future<Map<String, dynamic>> getTaskHistory({
+    required int taskId,
+    required String date,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final token = prefs.getString('auth_token') ?? '';
+      final clinicId = prefs.getString('clinicId') ?? '';
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
+
+      if (token.isEmpty) throw Exception('Authentication token missing');
+      if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+      if (userId.isEmpty) throw Exception('User ID missing');
+      if (taskId <= 0) throw Exception('Invalid task ID: $taskId');
+      if (date.isEmpty) throw Exception('Date is required');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
+
+      final url = '$_physicalDeviceUrl$_taskHistoryEndpoint/$taskId/$date';
+      
+      debugPrint('=== GET TASK HISTORY API REQUEST DEBUG ===');
+      debugPrint('URL: $url');
+      debugPrint('Platform: ${Platform.operatingSystem}');
+      debugPrint('Task ID: $taskId');
+      debugPrint('Date: $date');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
+
+      final client = http.Client();
+      
+      try {
+        final response = await client
+            .get(
+              Uri.parse(url),
+              headers: headers,
+            )
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () {
+                client.close();
+                throw Exception('Connection timeout. Server not responding');
+              },
+            );
+
+        stopwatch.stop();
+        debugPrint('=== GET TASK HISTORY API RESPONSE DEBUG ===');
+        debugPrint('Status Code: ${response.statusCode}');
+        debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint('Response Body: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          
+          Map<String, dynamic> formattedResponse;
+          
+          if (decoded is List) {
+            formattedResponse = {
+              'data': decoded,
+              'message': 'Success',
+              'status_code': 200
+            };
+          } else if (decoded is Map<String, dynamic>) {
+            if (decoded.containsKey('data')) {
+              formattedResponse = decoded;
+            } else {
+              formattedResponse = {
+                'data': [decoded],
+                'message': 'Success',
+                'status_code': 200
+              };
+            }
+          } else {
+            formattedResponse = {
+              'data': [],
+              'message': 'No history found',
+              'status_code': 200
+            };
+          }
+          
+          debugPrint('✅ Task history fetched successfully');
+          
+          return formattedResponse;
+        } else if (response.statusCode == 404) {
+          return {
+            'data': [],
+            'message': 'No history found for this task and date',
+            'status_code': 200
+          };
+        } else if (response.statusCode == 401) {
+          throw Exception('Authentication failed. Please login again.');
+        } else if (response.statusCode == 403) {
+          throw Exception('Access forbidden. Check your permissions.');
+        } else {
+          throw Exception('Server returned status code: ${response.statusCode}');
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('MyTasksService Error (getTaskHistory): $e');
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> addTaskComment({
+    required int taskId,
+    required String comment,
+    String? locationName,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final token = prefs.getString('auth_token') ?? '';
+      final clinicId = prefs.getString('clinicId') ?? '';
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
+
+      if (token.isEmpty) throw Exception('Authentication token missing');
+      if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+      if (userId.isEmpty) throw Exception('User ID missing');
+      if (taskId <= 0) throw Exception('Invalid task ID: $taskId');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
+
+      final url = '$_physicalDeviceUrl$_updateTaskEndpoint';
+      
+      String currentStatus = 'UPCOMING';
+      String currentTaskName = '';
+      String currentDescription = '';
+      int currentCategoryId = 0;
+      String currentPriority = 'MEDIUM';
+      
+      for (var status in ['TODAY', 'UPCOMING', 'COMPLETED']) {
+        try {
+          final taskResponse = await fetchTasksByStatus(status);
+          if (taskResponse.containsKey('data')) {
+            final tasks = taskResponse['data'] as List;
+            for (var task in tasks) {
+              if (task is Map) {
+                final taskIdFromResponse = task['id'] ?? task['taskId'];
+                if (taskIdFromResponse == taskId) {
+                  currentStatus = task['status'] ?? status;
+                  currentTaskName = task['taskName'] ?? task['title'] ?? '';
+                  currentDescription = task['description'] ?? task['discription'] ?? '';
+                  currentCategoryId = task['taskCategoryId'] ?? 0;
+                  currentPriority = task['priority'] ?? 'MEDIUM';
+                  break;
+                }
+              }
+            }
+          }
+        } catch (e) {
+          debugPrint('Error fetching task from $status: $e');
+        }
+      }
+      
+      final Map<String, dynamic> requestBody = {
+        'id': taskId, 
+        'status': currentStatus.toUpperCase(),
+        'taskName': currentTaskName,
+        'discription': currentDescription,
+        'taskCategoryId': currentCategoryId,
+        'priority': currentPriority.toUpperCase(),
+        'comment': comment,
+      };
+      
+      if (locationName != null && locationName.isNotEmpty) {
+        requestBody['locationName'] = locationName;
+      }
+      
+      if (latitude != null && longitude != null) {
+        requestBody['latitude'] = latitude;
+        requestBody['longitude'] = longitude;
+      }
+
+      debugPrint('=== ADD TASK COMMENT API REQUEST DEBUG ===');
+      debugPrint('URL: $url');
+      debugPrint('Platform: ${Platform.operatingSystem}');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
+      debugPrint('Request Body: ${jsonEncode(requestBody)}');
+      debugPrint('User ID being used: $userId');
+
+      final client = http.Client();
+      
+      try {
+        final response = await client
+            .put(
+              Uri.parse(url),
+              headers: headers,
+              body: jsonEncode(requestBody),
+            )
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () {
+                client.close();
+                throw Exception('Connection timeout. Please check if server is accessible');
+              },
+            );
+
+        stopwatch.stop();
+        debugPrint('=== ADD TASK COMMENT API RESPONSE DEBUG ===');
+        debugPrint('Status Code: ${response.statusCode}');
+        debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint('Response Body: ${response.body}');
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          try {
+            final decoded = jsonDecode(response.body);
+            await clearTasksCache('TODAY');
+            await clearTasksCache('UPCOMING');
+            await clearTasksCache('COMPLETED');
+            
+            debugPrint('✅ Task comment added successfully');
+            
+            return {
+              'success': true,
+              'message': 'Comment added successfully',
+              'status_code': response.statusCode,
+              'data': decoded,
+            };
+          } catch (e) {
+            return {
+              'success': true,
+              'message': 'Comment added successfully',
+              'status_code': response.statusCode,
+            };
+          }
+        } else if (response.statusCode == 400) {
+          try {
+            final errorResponse = jsonDecode(response.body);
+            String errorMessage = 'Failed to add comment: ';
+            if (errorResponse is Map) {
+              if (errorResponse['message'] != null) {
+                errorMessage = errorResponse['message'];
+              }
+              if (errorResponse['error'] != null && errorResponse['error']['cause'] != null) {
+                errorMessage = errorResponse['error']['cause'].toString();
+              }
+            }
+            throw Exception(errorMessage);
+          } catch (e) {
+            throw Exception('Failed to add comment. Task ID: $taskId may not exist.');
+          }
+        } else if (response.statusCode == 401) {
+          throw Exception('Authentication failed. Please login again.');
+        } else if (response.statusCode == 403) {
+          throw Exception('Access forbidden. Check your permissions.');
+        } else if (response.statusCode == 404) {
+          throw Exception('Task not found with ID: $taskId');
+        } else {
+          throw Exception('Server returned status code: ${response.statusCode}');
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('MyTasksService Error (addTaskComment): $e');
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> updateTaskStatus({
     required int taskId,
     required String status,
+    
   }) async {
     final stopwatch = Stopwatch()..start();
     
@@ -582,6 +1283,7 @@ class MyTasksService {
       final Map<String, dynamic> requestBody = {
         'id': taskId, 
         'status': status.toUpperCase(),
+        
       };
 
       debugPrint('=== UPDATE TASK STATUS API REQUEST DEBUG ===');
@@ -604,7 +1306,7 @@ class MyTasksService {
               const Duration(seconds: 30),
               onTimeout: () {
                 client.close();
-                throw Exception('Connection timeout. Please check if server is accessible at 192.168.1.14:8089');
+                throw Exception('Connection timeout. Please check if server is accessible');
               },
             );
 
@@ -667,6 +1369,180 @@ class MyTasksService {
     }
   }
 
+  // FULL UPDATE TASK METHOD - Updates all task details
+  static Future<Map<String, dynamic>> updateTask({
+    required int taskId,
+    required String taskName,
+    required String description,
+    required String status,
+    required String priority,
+    String? dueDate,
+    String? reminderDatetime,
+    String? repeatType,
+    int? repeatInterval,
+    String? repeatUnit,
+    String? repeatEndDate,
+    String? assignedTo,
+    String? assignedBy,
+    int? taskSubCategoryId,
+    int? taskCategoryId,
+    String? roleGroupName,
+  }) async {
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final token = prefs.getString('auth_token') ?? '';
+      final clinicId = prefs.getString('clinicId') ?? '';
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
+
+      if (token.isEmpty) throw Exception('Authentication token missing');
+      if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+      if (userId.isEmpty) throw Exception('User ID missing');
+      if (taskId <= 0) throw Exception('Invalid task ID: $taskId');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
+
+      final url = '$_physicalDeviceUrl$_updateTaskEndpoint';
+      
+      final Map<String, dynamic> requestBody = {
+        'id': taskId,
+        'taskName': taskName,
+        'discription': description,
+        'status': status.toUpperCase(),
+        'priority': priority.toUpperCase(),
+      };
+      
+      // Add optional fields if provided
+      if (roleGroupName != null && roleGroupName.isNotEmpty) {
+        requestBody['roleGroupName'] = roleGroupName;
+      }
+      
+      if (taskCategoryId != null && taskCategoryId > 0) {
+        requestBody['taskCategoryId'] = taskCategoryId;
+      }
+      
+      if (taskSubCategoryId != null && taskSubCategoryId > 0) {
+        requestBody['taskSubCategoryId'] = taskSubCategoryId;
+      }
+
+      if (reminderDatetime != null && reminderDatetime.isNotEmpty) {
+        requestBody['reminderDatetime'] = reminderDatetime;
+      }
+      
+      if (repeatType != null && repeatType.isNotEmpty) {
+        requestBody['repeatType'] = repeatType.toUpperCase();
+      }
+      
+      if (repeatInterval != null) {
+        requestBody['repeatInterval'] = repeatInterval;
+      }
+      
+      if (repeatUnit != null && repeatUnit.isNotEmpty) {
+        requestBody['repeatUnit'] = repeatUnit.toUpperCase();
+      }
+      
+      if (repeatEndDate != null && repeatEndDate.isNotEmpty) {
+        requestBody['repeatEndDate'] = repeatEndDate;
+      }
+
+      if (dueDate != null && dueDate.isNotEmpty) {
+        requestBody['dueDate'] = dueDate;
+      }
+      
+      if (assignedTo != null && assignedTo.isNotEmpty) {
+        requestBody['assignedTo'] = assignedTo;
+      }
+      
+      if (assignedBy != null && assignedBy.isNotEmpty) {
+        requestBody['assignedBy'] = assignedBy;
+      }
+
+      debugPrint('=== UPDATE TASK API REQUEST DEBUG ===');
+      debugPrint('URL: $url');
+      debugPrint('Platform: ${Platform.operatingSystem}');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
+      debugPrint('Request Body: ${jsonEncode(requestBody)}');
+
+      final client = http.Client();
+      
+      try {
+        final response = await client
+            .put(
+              Uri.parse(url),
+              headers: headers,
+              body: jsonEncode(requestBody),
+            )
+            .timeout(const Duration(seconds: 45));
+
+        stopwatch.stop();
+        debugPrint('=== UPDATE TASK API RESPONSE DEBUG ===');
+        debugPrint('Status Code: ${response.statusCode}');
+        debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint('Response Body: ${response.body}');
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          final decoded = jsonDecode(response.body);
+          await clearTasksCache('TODAY');
+          await clearTasksCache('UPCOMING');
+          await clearTasksCache('COMPLETED');
+          
+          debugPrint('✅ Task updated successfully with ID: $taskId');
+          
+          return {
+            'success': true,
+            'message': 'Task updated successfully',
+            'status_code': response.statusCode,
+            'data': decoded,
+            'taskId': taskId,
+          };
+        } else if (response.statusCode == 400) {
+          try {
+            final errorResponse = jsonDecode(response.body);
+            String errorMessage = 'Failed to update task: ';
+            if (errorResponse is Map) {
+              if (errorResponse['message'] != null) {
+                errorMessage = errorResponse['message'];
+              }
+              if (errorResponse['error'] != null && errorResponse['error']['cause'] != null) {
+                errorMessage = errorResponse['error']['cause'].toString();
+              }
+            }
+            throw Exception(errorMessage);
+          } catch (e) {
+            throw Exception('Failed to update task. Bad request.');
+          }
+        } else if (response.statusCode == 401) {
+          throw Exception('Authentication failed. Please login again.');
+        } else if (response.statusCode == 403) {
+          throw Exception('Access forbidden. Check your permissions.');
+        } else if (response.statusCode == 404) {
+          throw Exception('Task not found with ID: $taskId');
+        } else if (response.statusCode == 500) {
+          throw Exception('Internal Server Error. Please check backend logs.');
+        } else {
+          throw Exception('Server returned status code: ${response.statusCode}');
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('MyTasksService Error (updateTask): $e');
+      rethrow;
+    }
+  }
+
   static Future<Map<String, dynamic>> markTaskAsCompleted(int taskId) async {
     return updateTaskStatus(
       taskId: taskId,
@@ -710,7 +1586,6 @@ class MyTasksService {
     }
   }
 
-  // UPDATED: Convenience method for saving task with default role
   static Future<Map<String, dynamic>> saveTaskWithDefaultRole({
     required int taskCategoryId,
     required String taskName,
@@ -723,6 +1598,10 @@ class MyTasksService {
     int? repeatInterval,
     String? repeatUnit,
     String? repeatEndDate,
+    String? dueDate,
+    String? assignedTo,
+    String? assignedBy,
+    int? taskSubCategoryId,
   }) async {
     return saveTask(
       roleGroupName: roleGroupName,
@@ -736,6 +1615,10 @@ class MyTasksService {
       repeatInterval: repeatInterval,
       repeatUnit: repeatUnit,
       repeatEndDate: repeatEndDate,
+      dueDate: dueDate,
+      assignedTo: assignedTo,
+      assignedBy: assignedBy,
+      taskSubCategoryId: taskSubCategoryId,
     );
   }
   
@@ -791,7 +1674,7 @@ class MyTasksService {
               const Duration(seconds: 30),
               onTimeout: () {
                 client.close();
-                throw Exception('Connection timeout. Server not responding at 192.168.1.14:8089');
+                throw Exception('Connection timeout. Server not responding');
               },
             );
 
@@ -875,7 +1758,7 @@ class MyTasksService {
       rethrow;
     }
   }
-  
+
   static Future<Map<String, dynamic>> fetchUpcomingTasks() async {
     return fetchTasksByStatus('UPCOMING');
   }
@@ -981,6 +1864,54 @@ class MyTasksService {
     } catch (e) {
       debugPrint('Error getting cached master categories: $e');
       return null;
+    }
+  }
+
+  static Future<void> _cacheSubCategoriesResponse(Map<String, dynamic> response) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        'cached_sub_categories',
+        jsonEncode({
+          'response': response,
+          'timestamp': DateTime.now().toIso8601String(),
+        }),
+      );
+      debugPrint('Subcategories response cached successfully');
+    } catch (e) {
+      debugPrint('Error caching subcategories response: $e');
+    }
+  }
+  
+  static Future<Map<String, dynamic>?> getCachedSubCategories() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final cachedJson = prefs.getString('cached_sub_categories');
+      
+      if (cachedJson != null) {
+        final cached = jsonDecode(cachedJson) as Map<String, dynamic>;
+        final timestamp = DateTime.parse(cached['timestamp'] as String);
+        final now = DateTime.now();
+        
+        if (now.difference(timestamp).inHours < 1) {
+          debugPrint('Returning cached subcategories response');
+          return cached['response'] as Map<String, dynamic>;
+        }
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error getting cached subcategories: $e');
+      return null;
+    }
+  }
+
+  static Future<void> clearSubCategoriesCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cached_sub_categories');
+      debugPrint('Subcategories cache cleared');
+    } catch (e) {
+      debugPrint('Error clearing subcategories cache: $e');
     }
   }
 

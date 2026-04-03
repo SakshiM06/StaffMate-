@@ -1,10 +1,21 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'dart:async'; // Add this for Timer
 
 class SessionManager {
   static final Map<String, dynamic> _dynamicData = {};
+  
+  // Timer for session monitoring
+  static Timer? _sessionMonitorTimer;
+  static DateTime? _lastActivityTime;
+  static Function(bool showDialog)? _onSessionExpiring;
+  static bool _isDialogShowing = false;
+  static const int sessionTimeoutMinutes = 15;
+  static const int warningSeconds = 10;
 
   // Secure storage for sensitive data
   static const FlutterSecureStorage _secureStorage = FlutterSecureStorage(
@@ -31,9 +42,6 @@ class SessionManager {
   }
 
   // ─── Biometric session flag ───────────────────────────────────────────────
-  // This is SEPARATE from the API token session.
-  // It just means "user has logged in before on this device"
-
   static Future<void> setBiometricSessionActive(bool value) async {
     await _secureStorage.write(
       key: 'biometric_session_active',
@@ -46,7 +54,71 @@ class SessionManager {
     return value == 'true';
   }
 
-  // ─── Existing session save (unchanged) ───────────────────────────────────
+  // ─── Token storage methods (new) ───────────────────────────────────────────
+  
+  static Future<void> saveTokens({
+    required String? accessToken,
+    required String? refreshToken,
+    required DateTime? expiryTime,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    if (accessToken != null) {
+      await prefs.setString('access_token', accessToken);
+    }
+    if (refreshToken != null) {
+      await prefs.setString('refresh_token', refreshToken);
+    }
+    if (expiryTime != null) {
+      await prefs.setString('token_expiry', expiryTime.toIso8601String());
+    }
+    
+    // Update dynamic data
+    _dynamicData['access_token'] = accessToken;
+    _dynamicData['refresh_token'] = refreshToken;
+    _dynamicData['token_expiry'] = expiryTime;
+    
+    debugPrint('Tokens saved - Expires at: $expiryTime');
+  }
+  
+  static Future<String?> getAccessToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('access_token');
+  }
+  
+  static Future<String?> getRefreshToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('refresh_token');
+  }
+  
+  static Future<DateTime?> getTokenExpiry() async {
+    final prefs = await SharedPreferences.getInstance();
+    final expiryStr = prefs.getString('token_expiry');
+    if (expiryStr != null && expiryStr.isNotEmpty) {
+      try {
+        return DateTime.parse(expiryStr);
+      } catch (e) {
+        debugPrint('Error parsing token expiry: $e');
+        return null;
+      }
+    }
+    return null;
+  }
+  
+  static Future<bool> isTokenValid() async {
+    final expiry = await getTokenExpiry();
+    if (expiry == null) return false;
+    return DateTime.now().isBefore(expiry);
+  }
+  
+  static Future<bool> isTokenExpiringSoon() async {
+    final expiry = await getTokenExpiry();
+    if (expiry == null) return false;
+    final timeUntilExpiry = expiry.difference(DateTime.now());
+    return timeUntilExpiry.inMinutes < 2; // Less than 2 minutes remaining
+  }
+
+  // ─── Existing session save (updated) ───────────────────────────────────────
 
   static Future<void> saveSession({
     required String bearer,
@@ -58,6 +130,8 @@ class SessionManager {
     required String expiryTime,
     required int branchId,
     String email = '',
+    String? refreshToken, // Add refresh token parameter
+    DateTime? tokenExpiry, // Add token expiry parameter
   }) async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -70,6 +144,15 @@ class SessionManager {
     await prefs.setString('expiryTime', expiryTime);
     await prefs.setInt('branchId', branchId);
     await prefs.setString('email', email);
+    
+    // Save tokens for session management
+    if (refreshToken != null) {
+      await prefs.setString('refresh_token', refreshToken);
+    }
+    if (tokenExpiry != null) {
+      await prefs.setString('token_expiry', tokenExpiry.toIso8601String());
+    }
+    await prefs.setString('access_token', token); // Access token is the same as auth_token
 
     _dynamicData.addAll({
       'bearer': bearer,
@@ -80,14 +163,32 @@ class SessionManager {
       'zoneid': zoneid,
       'expiryTime': expiryTime,
       'branchId': branchId,
+      'access_token': token,
+      'refresh_token': refreshToken,
+      'token_expiry': tokenExpiry,
     });
+    
+    // Start session monitoring after login
+    startSessionMonitoring();
   }
 
   static Future<void> saveFromApi(Map<String, dynamic> data) async {
     if (data.isEmpty) return;
+    
+    // Extract refresh token if present
+    String? refreshToken = data['refreshToken'];
+    DateTime? tokenExpiry;
+    
+    // Calculate token expiry (default 15 minutes from now)
+    if (data['expiresIn'] != null) {
+      tokenExpiry = DateTime.now().add(Duration(seconds: data['expiresIn']));
+    } else {
+      tokenExpiry = DateTime.now().add(const Duration(minutes: sessionTimeoutMinutes));
+    }
+    
     await saveSession(
       bearer: (data['bearer'] ?? '').toString(),
-      token: (data['token'] ?? '').toString(),
+      token: (data['token'] ?? data['accessToken'] ?? '').toString(),
       clinicId: (data['clinicid'] ?? data['clinicId'] ?? '').toString(),
       subscriptionRemainingDays: int.tryParse(
               (data['subscription_remaining_days'] ?? 0).toString()) ?? 0,
@@ -96,10 +197,58 @@ class SessionManager {
       expiryTime: (data['expirytime'] ?? data['expiryTime'] ?? '').toString(),
       branchId: int.tryParse((data['branch_id'] ?? 0).toString()) ?? 0,
       email: (data['email'] ?? data['emailId'] ?? data['userEmail'] ?? '').toString(),
+      refreshToken: refreshToken,
+      tokenExpiry: tokenExpiry,
     );
   }
 
-  // ─── Session validation ───────────────────────────────────────────────────
+  // ─── Session monitoring (new) ───────────────────────────────────────────────
+  
+  static void startSessionMonitoring() {
+    _resetInactivityTimer();
+  }
+  
+  static void _resetInactivityTimer() {
+    _lastActivityTime = DateTime.now();
+    _sessionMonitorTimer?.cancel();
+    
+    // Start new timer to check for inactivity
+    _sessionMonitorTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_lastActivityTime != null) {
+        final timeSinceLastActivity = DateTime.now().difference(_lastActivityTime!);
+        final timeUntilExpiry = sessionTimeoutMinutes * 60 - timeSinceLastActivity.inSeconds;
+        
+        // Show warning 10 seconds before session expires
+        if (timeUntilExpiry <= warningSeconds && timeUntilExpiry > 0 && !_isDialogShowing) {
+          _isDialogShowing = true;
+          if (_onSessionExpiring != null) {
+            _onSessionExpiring!(true);
+          }
+        }
+      }
+    });
+  }
+  
+  static void updateUserActivity() {
+    _lastActivityTime = DateTime.now();
+    _isDialogShowing = false;
+    if (_onSessionExpiring != null) {
+      _onSessionExpiring!(false);
+    }
+  }
+  
+  static void setSessionExpiryCallback(Function(bool showDialog) callback) {
+    _onSessionExpiring = callback;
+  }
+  
+  static void stopSessionMonitoring() {
+    _sessionMonitorTimer?.cancel();
+    _sessionMonitorTimer = null;
+    _lastActivityTime = null;
+    _isDialogShowing = false;
+  }
+
+  // ─── Session validation (updated) ───────────────────────────────────────────
 
   static Future<Map<String, dynamic>> getSession() async {
     final prefs = await SharedPreferences.getInstance();
@@ -122,6 +271,9 @@ class SessionManager {
       'zoneid': prefs.getString('zoneid') ?? '',
       'expiryTime': prefs.getString('expiryTime') ?? '',
       'branchId': getSafeInt('branchId'),
+      'access_token': prefs.getString('access_token') ?? token,
+      'refresh_token': prefs.getString('refresh_token'),
+      'token_expiry': await getTokenExpiry(),
     };
   }
 
@@ -129,6 +281,14 @@ class SessionManager {
     final session = await getSession();
     if (session['auth_token'] == null ||
         session['auth_token'].toString().isEmpty) {
+      return false;
+    }
+
+    // Check token expiry
+    final tokenExpiry = await getTokenExpiry();
+    if (tokenExpiry != null && DateTime.now().isAfter(tokenExpiry)) {
+      debugPrint('Token has expired');
+      await clearSession();
       return false;
     }
 
@@ -154,7 +314,7 @@ class SessionManager {
     return true;
   }
 
-  // ─── Clear methods ────────────────────────────────────────────────────────
+  // ─── Clear methods (updated) ────────────────────────────────────────────────
 
   /// Soft logout: clears API session but keeps biometric credentials.
   /// Next app open → biometric screen shows (user just needs to verify face/finger)
@@ -164,19 +324,19 @@ class SessionManager {
     // Preserve these across soft logout
     final biometricEnabled = prefs.getBool('biometric_enabled') ?? false;
     final lastUsername = prefs.getString('last_username') ?? '';
-final savedEmail = prefs.getString('email') ?? '';
+    final savedEmail = prefs.getString('email') ?? '';
 
     await prefs.clear();
 
     if (biometricEnabled) await prefs.setBool('biometric_enabled', true);
-    if (lastUsername.isNotEmpty)await prefs.setString('last_username', lastUsername) ;
-    if (savedEmail.isEmpty) await prefs.setString('email', savedEmail);
-    {
-      await prefs.setString('last_username', lastUsername);
-    }
+    if (lastUsername.isNotEmpty) await prefs.setString('last_username', lastUsername);
+    if (savedEmail.isNotEmpty) await prefs.setString('email', savedEmail);
 
     // Keep biometric session active so lock screen shows on next open
     await setBiometricSessionActive(true);
+    
+    // Stop session monitoring
+    stopSessionMonitoring();
 
     _dynamicData.clear();
     debugPrint('Session cleared (soft logout).');
@@ -188,6 +348,10 @@ final savedEmail = prefs.getString('email') ?? '';
     final prefs = await SharedPreferences.getInstance();
     await prefs.clear();
     await _secureStorage.deleteAll();
+    
+    // Stop session monitoring
+    stopSessionMonitoring();
+    
     _dynamicData.clear();
     debugPrint('Full logout complete.');
   }
@@ -203,6 +367,13 @@ final savedEmail = prefs.getString('email') ?? '';
     await prefs.remove('zoneid');
     await prefs.remove('expiryTime');
     await prefs.remove('branchId');
+    await prefs.remove('access_token');
+    await prefs.remove('refresh_token');
+    await prefs.remove('token_expiry');
+    
+    // Stop session monitoring
+    stopSessionMonitoring();
+    
     _dynamicData.clear();
   }
 
@@ -245,6 +416,19 @@ final savedEmail = prefs.getString('email') ?? '';
     for (var key in prefs.getKeys()) {
       debugPrint('$key: ${prefs.get(key)}');
     }
+    debugPrint('Access Token: ${await getAccessToken()}');
+    debugPrint('Refresh Token: ${await getRefreshToken()}');
+    debugPrint('Token Expiry: ${await getTokenExpiry()}');
     debugPrint('------ SESSION DEBUG END ------');
   }
+}
+// Add this method to SessionManager to verify token storage
+Future<void> debugTokenStorage() async {
+  final prefs = await SharedPreferences.getInstance();
+  debugPrint("======= TOKEN STORAGE DEBUG =======");
+  debugPrint("Access Token: ${prefs.getString('access_token')?.substring(0, min(20, prefs.getString('access_token')?.length ?? 0)) ?? 'null'}...");
+  debugPrint("Refresh Token: ${prefs.getString('refresh_token') ?? 'null'}");
+  debugPrint("Token Expiry: ${prefs.getString('token_expiry') ?? 'null'}");
+  debugPrint("Auth Token: ${prefs.getString('auth_token')?.substring(0, min(20, prefs.getString('auth_token')?.length ?? 0)) ?? 'null'}...");
+  debugPrint("==================================");
 }

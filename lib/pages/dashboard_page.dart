@@ -6,6 +6,8 @@ import 'package:staff_mate/pages/nurse_page.dart';
 import 'package:staff_mate/pages/smartcarehomescreen.dart';
 import 'package:staff_mate/pages/approval_queue.dart';
 import 'package:staff_mate/pages/day_to_day_notes.dart';
+import 'package:staff_mate/api/api_service.dart';
+import 'package:staff_mate/services/session_manger.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -35,7 +37,104 @@ class _DashboardPageState extends State<DashboardPage> {
     const MyTasksPage(key: PageStorageKey('Page6')),
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    
+    // Set session expiry callback
+    SessionManager.setSessionExpiryCallback((showDialog) {
+      if (showDialog && mounted) {
+        _showSessionExpiryDialog();
+      }
+    });
+  }
+// In dashboard_page.dart, update _showSessionExpiryDialog
+void _showSessionExpiryDialog() {
+  if (!mounted) return; // Add this check
+  
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext dialogContext) {
+      return AlertDialog(
+        title: const Text("Session Expiring Soon"),
+        content: const Text(
+          "Your session will expire in 5 seconds. Do you want to continue?"
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              if (!mounted) return;
+              Navigator.of(dialogContext).pop();
+              await _handleLogout();
+            },
+            child: const Text("Logout", style: TextStyle(color: Colors.red)),
+          ),
+          ElevatedButton(
+            onPressed: () async {
+              if (!mounted) return;
+              Navigator.of(dialogContext).pop();
+              
+              // Show loading indicator
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Refreshing session..."),
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+              
+              final success = await ApiService.refreshUserToken();
+              if (success && mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text("Session refreshed successfully"),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+                // Reset session timer
+                SessionManager.updateUserActivity();
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Failed to refresh session. Please login again."),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                  await _handleLogout();
+                }
+              }
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1A237E),
+            ),
+            child: const Text("Refresh Session"),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+Future<void> _handleLogout() async {
+  await SessionManager.fullLogout();
+  ApiService.clearSession();
+  
+  if (mounted) {
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+  }
+}
+
   void _onItemTapped(int index) {
+    // Update user activity on tab tap
+    SessionManager.updateUserActivity();
+    ApiService.updateUserActivity();
+    
     if (index == 2) { // MY HR tab
       _showComingSoonMessage();
       return;
@@ -93,111 +192,122 @@ class _DashboardPageState extends State<DashboardPage> {
           }
         }
       },
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        body: PageStorage(
-          bucket: _bucket,
-          child: IndexedStack(
-            index: _currentTab,
-            children: [
-              _buildNavigator(0),
-              _buildNavigator(1),
-              _buildNavigator(2),
-              _buildNavigator(3),
+      child: GestureDetector(
+        onTap: () {
+          // Update user activity on any tap in dashboard
+          SessionManager.updateUserActivity();
+          ApiService.updateUserActivity();
+        },
+        onPanUpdate: (details) {
+          SessionManager.updateUserActivity();
+          ApiService.updateUserActivity();
+        },
+        child: Scaffold(
+          resizeToAvoidBottomInset: false,
+          body: PageStorage(
+            bucket: _bucket,
+            child: IndexedStack(
+              index: _currentTab,
+              children: [
+                _buildNavigator(0),
+                _buildNavigator(1),
+                _buildNavigator(2),
+                _buildNavigator(3),
+              ],
+            ),
+          ),
+          bottomNavigationBar: BottomNavigationBar(
+            currentIndex: _currentTab,
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: const Color(0xFF1A237E),
+            unselectedItemColor: Colors.grey,
+            selectedFontSize: 11,
+            unselectedFontSize: 11,
+            elevation: 8,
+            onTap: _onItemTapped,
+            items: [
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.home_outlined),
+                activeIcon: Icon(Icons.home),
+                label: 'Home',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.medical_services_outlined),
+                activeIcon: Icon(Icons.medical_services),
+                label: 'IPD',
+              ),
+              BottomNavigationBarItem(
+                icon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.business_center_outlined),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 16,
+                        ),
+                        child: const Text(
+                          'SOON',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                activeIcon: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    const Icon(Icons.business_center),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: Container(
+                        padding: const EdgeInsets.all(2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 16,
+                        ),
+                        child: const Text(
+                          'SOON',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                label: 'MY HR',
+                backgroundColor: Colors.white,
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.checklist_outlined),
+                activeIcon: Icon(Icons.checklist),
+                label: 'Tasks',
+              ),
             ],
           ),
-        ),
-        bottomNavigationBar: BottomNavigationBar(
-          currentIndex: _currentTab,
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: const Color(0xFF1A237E),
-          unselectedItemColor: Colors.grey,
-          selectedFontSize: 11,
-          unselectedFontSize: 11,
-          elevation: 8,
-          onTap: _onItemTapped,
-          items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.home_outlined),
-              activeIcon: Icon(Icons.home),
-              label: 'Home',
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.medical_services_outlined),
-              activeIcon: Icon(Icons.medical_services),
-              label: 'IPD',
-            ),
-            BottomNavigationBarItem(
-              icon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.business_center_outlined),
-                  Positioned(
-                    top: -8,
-                    right: -8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.orange,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 16,
-                      ),
-                      child: const Text(
-                        'SOON',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              activeIcon: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Icon(Icons.business_center),
-                  Positioned(
-                    top: -8,
-                    right: -8,
-                    child: Container(
-                      padding: const EdgeInsets.all(2),
-                      decoration: BoxDecoration(
-                        color: Colors.orange,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 16,
-                      ),
-                      child: const Text(
-                        'SOON',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 8,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              label: 'MY HR',
-              backgroundColor: Colors.white,
-            ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.checklist_outlined),
-              activeIcon: Icon(Icons.checklist),
-              label: 'Tasks',
-            ),
-          ],
         ),
       ),
     );

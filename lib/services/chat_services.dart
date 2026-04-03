@@ -14,38 +14,55 @@ class ChatService {
   final ForgetPasswordService _passwordService = ForgetPasswordService();
   final Map<String, Map<String, dynamic>> _resetSessions = {};
   
-  /// Get chat history - returns welcome message with options
+  // FAQ questions list for detection - Updated with 12 questions
+  static const List<String> _faqQuestions = [
+    '📅 Where can I view my work schedule?',
+    '👥 How can I check the staff rota?',
+    '✅ How can I see my assigned tasks?',
+    '📋 How can I add a new task?',
+    '📌 How can I view today\'s tasks?',
+    '📅 How can I check upcoming tasks?',
+    '✔️ How can I see completed tasks?',
+    '🔄 How can I update the status of a task?',
+    '📝 How can I add a handover note?',
+    '👁️ How can I view handover notes?',
+    '🏥 How can I shift a patient to another ward?',
+    '@ How can I tag a colleague in a handover note?',
+  ];
+  
+  /// Get chat history - returns welcome message with options including FAQ
   Future<List<MessageModel>> getChatHistory() async {
     debugPrint('📱 Loading chat history');
     
     await Future.delayed(const Duration(milliseconds: 800));
     
-return [
-  MessageModel(
-    id: 'welcome_1',
-    text: '👋 Hello! I\'m your SmartCare support assistant. Please choose an option:',
-    isUser: false,
-    timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
-    type: 'welcome',
-    quickReplies: const [
-      '🎫 Create Ticket',
-      '📋 View My Tickets',
-      '🔍 Track Ticket',
-      '🔐 Forgot Password',
-    ],
-  ),
-  MessageModel(
-    id: 'contact_1',
-    text: '📞 You can also call us at:\n☎️ 94040 22226\n☎️ 94040 22288',
-    isUser: false,
-    timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
-    type: 'contact',
-    quickReplies: const [
-      '📞 Call 94040 22226',
-      '📞 Call 94040 22288',
-    ],
-  ),
-];
+    return [
+      MessageModel(
+        id: 'welcome_1',
+        text: '👋 Hello! I\'m your SmartCare support assistant. Please choose an option:',
+        isUser: false,
+        timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+        type: 'welcome',
+        quickReplies: const [
+          '🎫 Create Ticket',
+          '📋 View My Tickets',
+          '🔍 Track Ticket',
+          '🔐 Forgot Password',
+          '📚 FAQ',
+        ],
+      ),
+      MessageModel(
+        id: 'contact_1',
+        text: '📞 You can also call us at:\n☎️ 94040 22226\n☎️ 94040 22288',
+        isUser: false,
+        timestamp: DateTime.now().subtract(const Duration(minutes: 2)),
+        type: 'contact',
+        quickReplies: const [
+          '📞 Call 94040 22226',
+          '📞 Call 94040 22288',
+        ],
+      ),
+    ];
   }
 
   // ============== PUBLIC METHODS FOR CHAT PROVIDER ==============
@@ -70,6 +87,166 @@ return [
     return _passwordService.validatePassword(password);
   }
 
+  /// Get FAQ answer for a question - Updated with 12 StaffMate answers
+  String _getFaqAnswer(String question) {
+    final faqAnswers = {
+      // Scheduling & Rota
+      '📅 Where can I view my work schedule?': 
+          '📅 **View Work Schedule**\n\n'
+          'Navigate to the **Schedule** or **My Roster** section on the home screen or from the main menu.\n\n'
+          'You can view it by:\n'
+          '• 📆 **Day view** - See today\'s schedule\n'
+          '• 📅 **Week view** - View entire week\n'
+          '• 📊 **Month view** - Overview of all shifts',
+      
+      '👥 How can I check the staff rota?': 
+          '👥 **Staff Rota**\n\n'
+          'Go to **Rota** > **Team View**.\n\n'
+          'You can filter by:\n'
+          '• 🏢 **Department** - View specific teams\n'
+          '• 👤 **Role** - Filter by job role\n'
+          '• 📅 **Date range** - Select custom dates\n\n'
+          'The rota shows who is scheduled for each shift.',
+      
+      '✅ How can I see my assigned tasks?': 
+          '✅ **Assigned Tasks**\n\n'
+          'Your assigned tasks appear on the **Dashboard** under "My Tasks" or "Today\'s Duties."\n\n'
+          'You can:\n'
+          '• 👆 Tap any task to view full details\n'
+          '• 📝 Update task status\n'
+          '• 📎 View attachments\n'
+          '• 💬 Add comments',
+      
+      // Tasks & Management
+      '📋 How can I add a new task?': 
+          '📋 **Add New Task**\n\n'
+          '1. Go to **Tasks** > **Add New Task**\n'
+          '2. Fill in the details:\n'
+          '   • 📝 Title and description\n'
+          '   • 👤 Assignee\n'
+          '   • ⚡ Priority (Low/Medium/High)\n'
+          '   • 📅 Due date & time\n'
+          '3. Tap **Save** or **Assign**\n\n'
+          '✅ The assignee will receive a notification.',
+      
+      '📌 How can I view today\'s tasks?': 
+          '📌 **Today\'s Tasks**\n\n'
+          'There are several ways:\n\n'
+          '1️⃣ **Quick View**\n'
+          '   Check the **Dashboard** widget for today\'s tasks\n\n'
+          '2️⃣ **Tasks Module**\n'
+          '   Go to **Tasks** and select the **Today** filter\n\n'
+          '3️⃣ **Notifications**\n'
+          '   Check your notification center for pending tasks\n\n'
+          '📊 Tasks are color-coded by priority and status.',
+      
+      '📅 How can I check upcoming tasks?': 
+          '📅 **Upcoming Tasks**\n\n'
+          'View future tasks:\n\n'
+          '📱 **Via Tasks Section**\n'
+          '• Go to **Tasks** > **Upcoming** filter\n'
+          '• Shows tasks scheduled for future dates\n\n'
+          '🗓️ **Via Calendar View**\n'
+          '• Switch to **Calendar** view\n'
+          '• See tasks spread across dates\n\n'
+          '🔔 You\'ll receive reminders before tasks are due.',
+      
+      '✔️ How can I see completed tasks?': 
+          '✔️ **Completed Tasks**\n\n'
+          'View your task history:\n\n'
+          '• Go to **Tasks** > **History**\n'
+          '• Select the **Completed** filter\n\n'
+          'You can see:\n'
+          '✅ Completed date & time\n'
+          '👤 Who completed the task\n'
+          '📝 Completion notes\n\n'
+          '📊 Use this to track your productivity!',
+      
+      '🔄 How can I update the status of a task?': 
+          '🔄 **Update Task Status**\n\n'
+          '1. Open the task detail page\n'
+          '2. Tap the **Status** dropdown\n'
+          '3. Select new status:\n'
+          '   • ⏳ Pending\n'
+          '   • 🔄 In Progress\n'
+          '   • ✅ Completed\n'
+          '   • ❌ Cancelled\n'
+          '4. Add completion notes (optional)\n'
+          '5. Confirm update\n\n'
+          '📢 Status changes notify the task creator.',
+      
+      // Handover & Communication
+      '📝 How can I add a handover note?': 
+          '📝 **Add Handover Note**\n\n'
+          'Navigate to the **Handover** or **Patient List** section.\n\n'
+          '1. Select the patient\n'
+          '2. Tap **Add Handover Note**\n'
+          '3. Enter the details for the incoming shift\n'
+          '4. Tap **Save**\n\n'
+          'The handover note will be visible to the next shift.',
+      
+      '👁️ How can I view handover notes?': 
+          '👁️ **View Handover Notes**\n\n'
+          'Go to **Handover** > **Shift Summary**.\n\n'
+          'Select the relevant date and shift to view:\n'
+          '• 📋 All handover notes\n'
+          '• ⭐ Priority patients\n'
+          '• ⏰ Pending tasks\n\n'
+          'Notes shared by the outgoing team will appear here.',
+      
+      '🏥 How can I shift a patient to another ward?': 
+          '🏥 **Shift Patient to Another Ward/Bed**\n\n'
+          'If using the bed management module:\n\n'
+          '1. Go to **Bed Management** or **Patient Tracking**\n'
+          '2. Select the patient\n'
+          '3. Choose **Transfer**\n'
+          '4. Select the new ward and bed number\n'
+          '5. Confirm the transfer\n\n'
+          'The patient\'s location will be updated in the system.',
+      
+      '@ How can I tag a colleague in a handover note?': 
+          '@ **Tag a Colleague in Handover Note**\n\n'
+          'While creating or editing a handover note:\n\n'
+          '1. Type **@** followed by the colleague\'s name\n'
+          '2. Select the colleague from the dropdown\n'
+          '3. Continue typing your note\n\n'
+          '✅ They will receive a notification to ensure critical information is directly communicated.',
+    };
+    
+    return faqAnswers[question] ?? 
+        '📚 I don\'t have an answer for that question yet.\n\n'
+        'Please try:\n'
+        '• Rephrasing your question\n'
+        '• Typing "FAQ" to see all options\n'
+        '• Contacting support for more help';
+  }
+
+  /// Show FAQ menu - Updated with 12 questions
+  MessageModel _getFaqMenu() {
+    return MessageModel(
+      id: DateTime.now().toString(),
+      text: '📚 **Frequently Asked Questions**\n\nSelect a question to get instant help:',
+      isUser: false,
+      timestamp: DateTime.now(),
+      type: 'faq_menu',
+      quickReplies: const [
+        '📅 Where can I view my work schedule?',
+        '👥 How can I check the staff rota?',
+        '✅ How can I see my assigned tasks?',
+        '📋 How can I add a new task?',
+        '📌 How can I view today\'s tasks?',
+        '📅 How can I check upcoming tasks?',
+        '✔️ How can I see completed tasks?',
+        '🔄 How can I update the status of a task?',
+        '📝 How can I add a handover note?',
+        '👁️ How can I view handover notes?',
+        '🏥 How can I shift a patient to another ward?',
+        '@ How can I tag a colleague in a handover note?',
+        '🏠 Main Menu',
+      ],
+    );
+  }
+
   /// Process selected option
   Future<MessageModel?> processOption(String option, {String? sessionId}) async {
     debugPrint('📱 Option selected: "$option"');
@@ -78,7 +255,37 @@ return [
     
     final cleanOption = option.replaceAll(RegExp(r'[^\w\s]'), '').trim().toLowerCase();
     
-    // MAIN MENU OPTIONS
+    // ─── FAQ HANDLING ─────────────────────────────────────────────────────────
+    // Handle FAQ menu request
+    if (option == '📚 FAQ' || 
+        option == 'FAQ' || 
+        cleanOption == 'faq' ||
+        cleanOption == 'faqs') {
+      return _getFaqMenu();
+    }
+    
+    // Handle More FAQs
+    if (option == '📚 More FAQs' || option == 'More FAQs') {
+      return _getFaqMenu();
+    }
+    
+    // Handle individual FAQ questions
+    if (_faqQuestions.contains(option)) {
+      final answer = _getFaqAnswer(option);
+      return MessageModel(
+        id: DateTime.now().toString(),
+        text: answer,
+        isUser: false,
+        timestamp: DateTime.now(),
+        type: 'faq_answer',
+        quickReplies: const [
+          '📚 More FAQs',
+          '🏠 Main Menu',
+        ],
+      );
+    }
+    
+    // ─── MAIN MENU OPTIONS ────────────────────────────────────────────────────
     if (cleanOption.contains('create ticket') || option == '🎫 Create Ticket') {
       return MessageModel(
         id: DateTime.now().toString(),
@@ -112,7 +319,6 @@ return [
              cleanOption.contains('view tickets') ||
              cleanOption.contains('my tickets')) {
       
-      // Return status selection message
       return MessageModel(
         id: DateTime.now().toString(),
         text: '📋 **View Tickets by Status**\n\nPlease select a status to view tickets:',
@@ -187,7 +393,6 @@ return [
              option.startsWith('🔒 Set Status:') || 
              option.startsWith('🔄 Set Status:')) {
       
-      // Parse status and ticket ID
       final parts = option.split(' for #');
       if (parts.length == 2) {
         String status = parts[0]
@@ -236,16 +441,14 @@ return [
              option == '🔐 Forgot Password') {
       
       try {
-        // Get user credentials from SharedPreferences
         final prefs = await SharedPreferences.getInstance();
         final userId = prefs.getString('userId') ?? '';
         final email = prefs.getString('otp_email')?.isNotEmpty == true
-    ? prefs.getString('otp_email')!
-    : prefs.getString('email') ?? '';
+            ? prefs.getString('otp_email')!
+            : prefs.getString('email') ?? '';
         
         debugPrint('📱 Retrieved from SharedPreferences - UserId: $userId, Email: $email');
         
-        // Validate if we have both userId and email
         if (userId.isEmpty || email.isEmpty) {
           return MessageModel(
             id: DateTime.now().toString(),
@@ -259,7 +462,6 @@ return [
           );
         }
 
-        // Create new session
         final newSessionId = DateTime.now().millisecondsSinceEpoch.toString();
         debugPrint('📱 Creating new session: $newSessionId');
         
@@ -271,14 +473,12 @@ return [
           'createdAt': DateTime.now().toString(),
         };
         
-        // Send OTP immediately
         final result = await _passwordService.sendEmailOTP(
           email: email,
           userId: userId,
         );
         
         if (result['success'] == true) {
-          // Update session to OTP entry step
           _resetSessions[newSessionId] = {
             ..._resetSessions[newSessionId]!,
             'step': 'enter_otp',
@@ -408,6 +608,7 @@ return [
           '📋 View My Tickets',
           '🔍 Track Ticket',
           '🔐 Forgot Password',
+          '📚 FAQ',
         ],
       );
     }
@@ -424,6 +625,7 @@ return [
           '📋 View My Tickets',
           '🔍 Track Ticket',
           '🔐 Forgot Password',
+          '📚 FAQ',
         ],
       );
     }
@@ -446,6 +648,7 @@ return [
           '📋 View My Tickets',
           '🔍 Track Ticket',
           '🔐 Forgot Password',
+          '📚 FAQ',
         ],
       );
     }
@@ -477,6 +680,7 @@ return [
           '📋 View My Tickets',
           '🔍 Track Ticket',
           '🔐 Forgot Password',
+          '📚 FAQ',
         ],
       );
     }
@@ -495,10 +699,8 @@ return [
         throw Exception('User ID not found');
       }
       
-      // Get today's date
       final today = DateTime.now().toIso8601String().split('T')[0];
       
-      // Call the API with the selected status
       final result = await SupportService.getTicketsByUserAndDate(
         userId: userId,
         date: today,
@@ -521,10 +723,8 @@ return [
           tickets = data.map((json) => _parseTicketFromJson(json)).toList();
         }
         
-        // Filter to ensure only tickets with the selected status are shown
         tickets = tickets.where((t) => t.statusText == status).toList();
         
-        // Limit to 10 tickets
         if (tickets.length > 10) {
           tickets = tickets.sublist(0, 10);
         }
@@ -580,7 +780,6 @@ return [
       
       final ticket = await getTicketDetails(ticketId);
       
-      // Check if ticket has images
       final hasUserImage = ticket.userFileName != null && ticket.userFileName!.isNotEmpty;
       final hasDevImage = ticket.developerFileName != null && ticket.developerFileName!.isNotEmpty;
       
@@ -589,7 +788,6 @@ return [
         '🏠 Main Menu',
       ];
       
-      // Add image view options if available
       if (hasUserImage) {
         quickReplies.insert(0, '🖼️ View Image for #${ticket.id}:user');
       }
@@ -628,54 +826,67 @@ return [
   }
 
   /// Handle viewing ticket image - GET API call
-// In chat_service.dart - Update the _handleViewImage method
-
-/// Handle viewing ticket image - GET API call (now using base64)
-// In chat_service.dart - Updated _handleViewImage method with better error handling
-
-/// Handle viewing ticket image - GET API call (now using base64)
-Future<MessageModel> _handleViewImage(String ticketId, String fileType) async {
-  try {
-    debugPrint('🖼️ ===== VIEW IMAGE =====');
-    debugPrint('Ticket ID: $ticketId, Type: $fileType');
-    
-    final result = await SupportService.viewTicketImageBase64(
-      ticketId: int.tryParse(ticketId) ?? 0,
-      fileType: fileType.toUpperCase(),
-    );
-    
-    if (result['success'] == true && result['data'] != null && result['data']['imageBase64'] != null) {
-      final base64String = result['data']['imageBase64'];
-      final imageBytes = base64Decode(base64String);
-      final fileName = result['data']['fileName'] ?? 'image.jpg';
-      final fileType_response = result['data']['fileType'] ?? fileType;
+  Future<MessageModel> _handleViewImage(String ticketId, String fileType) async {
+    try {
+      debugPrint('🖼️ ===== VIEW IMAGE =====');
+      debugPrint('Ticket ID: $ticketId, Type: $fileType');
       
-      debugPrint('✅ Image fetched successfully: ${imageBytes.length} bytes');
-      
-      return MessageModel(
-        id: DateTime.now().toString(),
-        text: '🖼️ **Ticket Image**\n\nTicket #$ticketId - ${fileType_response.toUpperCase()} Image\nFile: $fileName',
-        isUser: false,
-        timestamp: DateTime.now(),
-        type: 'ticket_image',
-        imageData: imageBytes,
-        imageMimeType: _getImageContentType(base64String),
-        quickReplies: [
-          '🔍 View Ticket #$ticketId',
-          '📋 View My Tickets',
-          '🏠 Main Menu',
-        ],
+      final result = await SupportService.viewTicketImageBase64(
+        ticketId: int.tryParse(ticketId) ?? 0,
+        fileType: fileType.toUpperCase(),
       );
-    } else {
-      // Handle specific error messages
-      String errorMessage = result['message'] ?? 'Failed to load image';
       
-      // Check for specific error cases
-      if (errorMessage.contains('File not found') || 
-          errorMessage.contains('No image') ||
-          result['status_code'] == 404 ||
-          result['status_code'] == 400) {
+      if (result['success'] == true && result['data'] != null && result['data']['imageBase64'] != null) {
+        final base64String = result['data']['imageBase64'];
+        final imageBytes = base64Decode(base64String);
+        final fileName = result['data']['fileName'] ?? 'image.jpg';
+        final fileType_response = result['data']['fileType'] ?? fileType;
         
+        debugPrint('✅ Image fetched successfully: ${imageBytes.length} bytes');
+        
+        return MessageModel(
+          id: DateTime.now().toString(),
+          text: '🖼️ **Ticket Image**\n\nTicket #$ticketId - ${fileType_response.toUpperCase()} Image\nFile: $fileName',
+          isUser: false,
+          timestamp: DateTime.now(),
+          type: 'ticket_image',
+          imageData: imageBytes,
+          imageMimeType: _getImageContentType(base64String),
+          quickReplies: [
+            '🔍 View Ticket #$ticketId',
+            '📋 View My Tickets',
+            '🏠 Main Menu',
+          ],
+        );
+      } else {
+        String errorMessage = result['message'] ?? 'Failed to load image';
+        
+        if (errorMessage.contains('File not found') || 
+            errorMessage.contains('No image') ||
+            result['status_code'] == 404 ||
+            result['status_code'] == 400) {
+          
+          return MessageModel(
+            id: DateTime.now().toString(),
+            text: '📷 **No Image Available**\n\nNo ${fileType.toUpperCase()} image found for ticket #$ticketId.\n\nThis ticket may not have any attachments or the image may have been removed.',
+            isUser: false,
+            timestamp: DateTime.now(),
+            type: 'info',
+            quickReplies: [
+              '🔍 View Ticket #$ticketId',
+              '📋 View My Tickets',
+              '🏠 Main Menu',
+            ],
+          );
+        }
+        
+        throw Exception(errorMessage);
+      }
+    } catch (e) {
+      debugPrint('❌ Error loading image: $e');
+      
+      final errorMsg = e.toString();
+      if (errorMsg.contains('File not found') || errorMsg.contains('404')) {
         return MessageModel(
           id: DateTime.now().toString(),
           text: '📷 **No Image Available**\n\nNo ${fileType.toUpperCase()} image found for ticket #$ticketId.\n\nThis ticket may not have any attachments or the image may have been removed.',
@@ -690,20 +901,12 @@ Future<MessageModel> _handleViewImage(String ticketId, String fileType) async {
         );
       }
       
-      throw Exception(errorMessage);
-    }
-  } catch (e) {
-    debugPrint('❌ Error loading image: $e');
-    
-    // Check if error message indicates file not found
-    final errorMsg = e.toString();
-    if (errorMsg.contains('File not found') || errorMsg.contains('404')) {
       return MessageModel(
         id: DateTime.now().toString(),
-        text: '📷 **No Image Available**\n\nNo ${fileType.toUpperCase()} image found for ticket #$ticketId.\n\nThis ticket may not have any attachments or the image may have been removed.',
+        text: '❌ Failed to load image: ${e.toString().replaceAll('Exception:', '')}',
         isUser: false,
         timestamp: DateTime.now(),
-        type: 'info',
+        type: 'error',
         quickReplies: [
           '🔍 View Ticket #$ticketId',
           '📋 View My Tickets',
@@ -711,35 +914,20 @@ Future<MessageModel> _handleViewImage(String ticketId, String fileType) async {
         ],
       );
     }
-    
-    return MessageModel(
-      id: DateTime.now().toString(),
-      text: '❌ Failed to load image: ${e.toString().replaceAll('Exception:', '')}',
-      isUser: false,
-      timestamp: DateTime.now(),
-      type: 'error',
-      quickReplies: [
-        '🔍 View Ticket #$ticketId',
-        '📋 View My Tickets',
-        '🏠 Main Menu',
-      ],
-    );
   }
-}
 
-// Add this helper method to chat_service.dart
-String _getImageContentType(String base64String) {
-  if (base64String.startsWith('/9j/')) {
+  String _getImageContentType(String base64String) {
+    if (base64String.startsWith('/9j/')) {
+      return 'image/jpeg';
+    } else if (base64String.startsWith('iVBOR')) {
+      return 'image/png';
+    } else if (base64String.startsWith('R0lGOD')) {
+      return 'image/gif';
+    } else if (base64String.startsWith('UklGR')) {
+      return 'image/webp';
+    }
     return 'image/jpeg';
-  } else if (base64String.startsWith('iVBOR')) {
-    return 'image/png';
-  } else if (base64String.startsWith('R0lGOD')) {
-    return 'image/gif';
-  } else if (base64String.startsWith('UklGR')) {
-    return 'image/webp';
   }
-  return 'image/jpeg'; // Default to JPEG
-}
 
   /// Handle tracking a specific ticket
   Future<MessageModel> _handleTrackTicket(String ticketId) async {
@@ -749,7 +937,6 @@ String _getImageContentType(String base64String) {
       
       final ticket = await getTicketDetails(ticketId);
       
-      // Create detailed track info message with all tracking fields
       String trackInfo = '🔍 **Ticket Tracking**\n\n';
       trackInfo += '**Ticket ID:** #${ticket.id}\n';
       trackInfo += '**Title:** ${ticket.title}\n';
@@ -827,42 +1014,28 @@ String _getImageContentType(String base64String) {
       debugPrint('Ticket ID: $ticketId');
       debugPrint('New Status: $newStatus');
       
-      // First get current ticket details
       final ticket = await getTicketDetails(ticketId);
       
       debugPrint('Current ticket: ${ticket.title} (${ticket.statusText})');
       
-      // Parse ticket ID to int
       final intTicketId = int.tryParse(ticketId) ?? 0;
       if (intTicketId == 0) {
         throw Exception('Invalid ticket ID: $ticketId');
       }
       
-      debugPrint('📝 Calling SupportService.updateTicket() with:');
-      debugPrint('  - ticketId: $intTicketId');
-      debugPrint('  - title: ${ticket.title}');
-      debugPrint('  - description: ${ticket.description}');
-      debugPrint('  - priority: ${ticket.priorityText}');
-      debugPrint('  - status: $newStatus');
-      
-      // Call update API
       final result = await SupportService.updateTicket(
         ticketId: intTicketId,
-        // title: ticket.title,
         description: ticket.description,
         priority: ticket.priorityText,
         status: newStatus,
-        currentResolutionSummary: ticket.currentResolutionSummary, 
+        currentResolutionSummary: ticket.currentResolutionSummary,
         queryType: '',
       );
       
       debugPrint('✅ Update API Response: $result');
       
       if (result['success'] == true) {
-        // Fetch updated ticket details
         final updatedTicket = await getTicketDetails(ticketId);
-        
-        debugPrint('✅ Status updated successfully from ${ticket.statusText} to $newStatus');
         
         return MessageModel(
           id: DateTime.now().toString(),
@@ -909,12 +1082,11 @@ String _getImageContentType(String base64String) {
       
       final result = await SupportService.updateTicket(
         ticketId: int.tryParse(ticketId) ?? 0,
-        // title: ticket.title,
         description: ticket.description,
         priority: ticket.priorityText,
         status: ticket.statusText,
-        currentResolutionSummary: summary, queryType: '',
-        
+        currentResolutionSummary: summary,
+        queryType: '',
       );
       
       debugPrint('✅ Update API Response: $result');
@@ -970,7 +1142,6 @@ String _getImageContentType(String base64String) {
     
     final sessionId = sessionData['sessionId'];
     
-    // Check if session exists
     if (sessionId == null || !_resetSessions.containsKey(sessionId)) {
       debugPrint('📱 Session expired or not found: $sessionId');
       return MessageModel(
@@ -995,7 +1166,6 @@ String _getImageContentType(String base64String) {
         return await _handlePasswordInput(text, sessionId);
         
       case 'resolution_summary':
-        // Handle resolution summary input - PUT API call
         final ticketId = sessionData['ticketId'];
         if (ticketId != null) {
           return await _handleUpdateResolutionSummary(ticketId.toString(), text, sessionId);
@@ -1052,7 +1222,6 @@ String _getImageContentType(String base64String) {
       );
     }
     
-    // Show loading while verifying OTP
     return MessageModel(
       id: DateTime.now().toString(),
       text: '✅ OTP validated. Verifying...',
@@ -1526,12 +1695,11 @@ String _getImageContentType(String base64String) {
       }
       
       final result = await SupportService.createTicket(
-       queryType: title,
+        queryType: title,
         description: description,
         priority: priority.toUpperCase(),
         userId: userId,
         images: imageFiles,
-        
       );
       
       debugPrint('✅ Ticket created successfully via API: $result');
@@ -1576,62 +1744,57 @@ String _getImageContentType(String base64String) {
     }
   }
 
-  /// Get user tickets - Using the API endpoint with proper parsing
-// In chat_service.dart - Fix the getUserTickets method
-
-/// Get user tickets - Using the API endpoint with proper parsing
-Future<List<TicketModel>> getUserTickets() async {
-  debugPrint('📱 Fetching user tickets from API');
-  
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final userId = prefs.getString('userId') ?? '';
-    final token = prefs.getString('auth_token') ?? '';
+  /// Get user tickets
+  Future<List<TicketModel>> getUserTickets() async {
+    debugPrint('📱 Fetching user tickets from API');
     
-    if (userId.isEmpty || token.isEmpty) {
-      debugPrint('⚠️ User ID or token not found');
-      return [];
-    }
-    
-    debugPrint('📋 Calling SupportService.getTodayTickets() for user: $userId');
-    
-    // FIXED: Added the required status parameter with correct named parameter syntax
-    final result = await SupportService.getTodayTickets(status: 'OPEN');
-    
-    debugPrint('📊 API Response received: $result');
-    
-    if (result['success'] == true && result['data'] != null) {
-      final data = result['data'];
-      List<TicketModel> tickets = [];
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userId = prefs.getString('userId') ?? '';
+      final token = prefs.getString('auth_token') ?? '';
       
-      if (data['data'] != null && data['data'] is List) {
-        debugPrint('📋 Found tickets in data["data"] as List');
-        final List<dynamic> ticketsData = data['data'];
-        tickets = ticketsData.map((json) => _parseTicketFromJson(json)).toList();
-      } else if (data is List) {
-        debugPrint('📋 Data is a direct List');
-        tickets = data.map((json) => _parseTicketFromJson(json)).toList();
+      if (userId.isEmpty || token.isEmpty) {
+        debugPrint('⚠️ User ID or token not found');
+        return [];
       }
       
-      debugPrint('✅ Successfully parsed ${tickets.length} tickets');
-      return tickets;
-    } else {
-      debugPrint('⚠️ API returned success=false or no data: ${result['message']}');
+      debugPrint('📋 Calling SupportService.getTodayTickets() for user: $userId');
+      
+      final result = await SupportService.getTodayTickets(status: 'OPEN');
+      
+      debugPrint('📊 API Response received: $result');
+      
+      if (result['success'] == true && result['data'] != null) {
+        final data = result['data'];
+        List<TicketModel> tickets = [];
+        
+        if (data['data'] != null && data['data'] is List) {
+          debugPrint('📋 Found tickets in data["data"] as List');
+          final List<dynamic> ticketsData = data['data'];
+          tickets = ticketsData.map((json) => _parseTicketFromJson(json)).toList();
+        } else if (data is List) {
+          debugPrint('📋 Data is a direct List');
+          tickets = data.map((json) => _parseTicketFromJson(json)).toList();
+        }
+        
+        debugPrint('✅ Successfully parsed ${tickets.length} tickets');
+        return tickets;
+      } else {
+        debugPrint('⚠️ API returned success=false or no data: ${result['message']}');
+        return [];
+      }
+      
+    } catch (e, stackTrace) {
+      debugPrint('❌ Error fetching tickets from API: $e');
+      debugPrint('📚 Stack trace: $stackTrace');
       return [];
     }
-    
-  } catch (e, stackTrace) {
-    debugPrint('❌ Error fetching tickets from API: $e');
-    debugPrint('📚 Stack trace: $stackTrace');
-    return [];
   }
-}
 
   /// Helper method to parse ticket from JSON
   TicketModel _parseTicketFromJson(Map<String, dynamic> json) {
     debugPrint('🔍 Parsing ticket JSON: ${json['ticketId']} - ${json['title']}');
     
-    // Parse status
     TicketStatus status = TicketStatus.open;
     if (json['status'] != null) {
       switch (json['status'].toString().toUpperCase()) {
@@ -1646,7 +1809,6 @@ Future<List<TicketModel>> getUserTickets() async {
       }
     }
     
-    // Parse priority
     TicketPriority priority = TicketPriority.medium;
     if (json['priority'] != null) {
       switch (json['priority'].toString().toUpperCase()) {
@@ -1657,7 +1819,6 @@ Future<List<TicketModel>> getUserTickets() async {
       }
     }
     
-    // Parse dates
     DateTime createdAt = DateTime.now();
     if (json['createdDate'] != null) {
       try {

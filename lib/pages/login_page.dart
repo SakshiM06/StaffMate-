@@ -6,16 +6,19 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:staff_mate/services/clinic_service.dart';
+import 'package:staff_mate/services/session_manger.dart';
 import 'package:staff_mate/services/user_information_service.dart';
 import 'package:staff_mate/services/session_manger.dart';
 import 'package:staff_mate/services/biometric_auth_service.dart';
 import 'package:staff_mate/pages/forget_password.dart';
-import 'package:staff_mate/widgets/otp_verification_dialog.dart'; // New dialog widget
+import 'package:staff_mate/widgets/otp_verification_dialog.dart';
+import 'package:staff_mate/api/api_service.dart';
+import 'package:staff_mate/pages/biometric_setup_page.dart ';
+import '../services/session_manger.dart'; // Import the ApiService
 
-// Unified Color Palette
 class AppColors {
-  static const Color primaryDarkBlue = Color(0xFF1A237E); // Deep Indigo
-  static const Color bgGrey = Color(0xFFF5F7FA); // Light Grey for sheet
+  static const Color primaryDarkBlue = Color(0xFF1A237E);
+  static const Color bgGrey = Color(0xFFF5F7FA);
   static const Color whiteColor = Colors.white;
   static const Color textDark = Color(0xFF1A237E);
   static final Color textBodyColor = Colors.grey.shade600;
@@ -31,18 +34,22 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  // --- EXISTING LOGIC VARIABLES ---
   bool _obscurePassword = true;
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
   
-  // Store login response data
   Map<String, dynamic>? _loginResponseData;
 
   @override
   void initState() {
     super.initState();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    final reason = ModalRoute.of(context)?.settings.arguments as String?;
+    if (reason != null && reason.isNotEmpty) {
+      _showErrorDialog(reason);
+    }
+   });
     _loadLastUsername();
   }
 
@@ -56,11 +63,9 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  // --- UPDATED BACKEND LOGIC ---
   Future<void> _login() async {
     if (_isLoading) return;
-    
-    // Validation
+  
     if (_usernameController.text.trim().isEmpty) {
       _showErrorDialog("Please enter your username");
       return;
@@ -73,30 +78,18 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
 
-    const String apiUrl = "https://test.smartcarehis.com:8443/security/auth/login";
-    final headers = {
-      "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*",
-    };
-    
-    final body = jsonEncode({
-      "userName": _usernameController.text.trim(),
-      "password": _passwordController.text.trim(),
-      "forceLogin": false
-    });
-
     try {
-      final response = await http.post(
-        Uri.parse(apiUrl), 
-        headers: headers, 
-        body: body
+      // Use the updated ApiService with IPHost and token management
+      final response = await ApiService.loginUser(
+        _usernameController.text.trim(),
+        _passwordController.text.trim(),
       ).timeout(const Duration(seconds: 30));
 
       if (!mounted) return;
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        final innerData = decoded['data'];
+      if (response != null) {
+        // Extract data from the response
+        final innerData = response['data'];
         
         if (innerData == null) {
           _showErrorDialog("Invalid response from server");
@@ -111,24 +104,23 @@ class _LoginPageState extends State<LoginPage> {
           return;
         }
 
-        // Store the login response data
         _loginResponseData = Map<String, dynamic>.from(innerData);
         
-        // Save username for future
+        // Store tokens from ApiService
+        if (ApiService.accessToken != null) {
+          _loginResponseData!['token'] = ApiService.accessToken;
+        }
+        if (ApiService.refreshToken != null) {
+          _loginResponseData!['refreshToken'] = ApiService.refreshToken;
+        }
+        
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('last_username', _usernameController.text.trim());
 
-        // Show OTP verification dialog instead of proceeding directly
         _showOTPVerificationDialog();
         
-      } else if (response.statusCode == 401) {
-        _showErrorDialog("Invalid username or password");
-        setState(() => _isLoading = false);
-      } else if (response.statusCode == 409) {
-        _showErrorDialog("You are already logged in on another device. Please logout there first.");
-        setState(() => _isLoading = false);
       } else {
-        _showErrorDialog("Login failed (Status ${response.statusCode}). Please try again.");
+        _showErrorDialog("Login failed. Please check your credentials and try again.");
         setState(() => _isLoading = false);
       }
     } catch (e) {
@@ -138,33 +130,34 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-void _showOTPVerificationDialog() {
-  showDialog(
-    context: context,
-    barrierDismissible: false, // Prevent dismissing by tapping outside
-    builder: (BuildContext context) {
-      return OTPVerificationDialog(
-        userId: _loginResponseData?['userId'] ?? 
-                _loginResponseData?['userid'] ?? 
-                _loginResponseData?['user_id'] ?? '',
-        clinicId: _loginResponseData?['clinicid'] ?? 
-                  _loginResponseData?['clinicId'] ?? 
-                  _loginResponseData?['clinic_id'] ?? '',
-        token: _loginResponseData?['token'] ?? '',
-        onVerificationSuccess: () {
-          // After OTP verification is successful, complete the login process
-          _completeLogin();
-        },
-        onVerificationFailed: () {
-          // If verification fails, go back to login
-          setState(() {
-            _isLoading = false;
-          });
-        },
-      );
-    },
-  );
-}
+  void _showOTPVerificationDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return OTPVerificationDialog(
+          userId: _loginResponseData?['userId'] ?? 
+                  _loginResponseData?['userid'] ?? 
+                  _loginResponseData?['user_id'] ?? '',
+          clinicId: _loginResponseData?['clinicid'] ?? 
+                    _loginResponseData?['clinicId'] ?? 
+                    _loginResponseData?['clinic_id'] ?? '',
+          token: _loginResponseData?['token'] ?? '',
+          onVerificationSuccess: () {
+            _completeLogin();
+          },
+          onVerificationFailed: () {
+            setState(() {
+              _isLoading = false;
+            });
+          },
+        );
+      },
+    );
+  }
+
+// In _completeLogin method, after saving session, add:
+// In _completeLogin method, after saving session, replace the biometric enable section:
 
 Future<void> _completeLogin() async {
   if (_loginResponseData == null) {
@@ -173,11 +166,14 @@ Future<void> _completeLogin() async {
   }
 
   await SessionManager.saveFromApi(_loginResponseData!);
+  
   await SessionManager.saveCredentialsSecurely(
     username: _usernameController.text.trim(),
     password: _passwordController.text.trim(),
   );
   await SessionManager.setBiometricSessionActive(true);
+  
+  SessionManager.startSessionMonitoring();
 
   try {
     final clinicService = ClinicService();
@@ -207,83 +203,86 @@ Future<void> _completeLogin() async {
 
   if (!mounted) return;
 
-  // ✅ Save navigator BEFORE any async operations below
-  final navigator = Navigator.of(context);
-
-  // Close OTP dialog
-  navigator.popUntil((route) => route.isFirst);
-
-  // Check biometric availability
+  // Check if biometric is available and not yet enabled
   final biometricAvailable = await BiometricAuthService.isBiometricAvailable();
   final biometricEnabled = await BiometricAuthService.isBiometricEnabled();
 
   if (biometricAvailable && !biometricEnabled && mounted) {
-    _showEnableBiometricDialog();
+    // Use the new BiometricSetupPage instead of the old dialog
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => BiometricSetupPage(
+          onContinue: () {
+            // This will be called after user enables or skips
+            Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
+          },
+          isFromSettings: false,
+        ),
+      ),
+    );
   } else {
-    navigator.pushReplacementNamed('/dashboard');
+    // If biometric already enabled or not available, go directly to dashboard
+    Navigator.pushReplacementNamed(context, '/dashboard');
   }
 }
 
-// ── Add this method too ──────────────────────────────────────────────────────
+  // void _showEnableBiometricDialog() async {
+  //   final label = await BiometricAuthService.getBiometricLabel();
+  //   if (!mounted) return;
+  //   final navigator = Navigator.of(context);
 
-void _showEnableBiometricDialog() async {
-  final label = await BiometricAuthService.getBiometricLabel();
-  if (!mounted) return;
-
-  // ✅ Use a local navigator key reference BEFORE async gap
-  final navigator = Navigator.of(context);
-
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Text(
-        'Enable $label?',
-        style: GoogleFonts.poppins(
-          fontWeight: FontWeight.bold,
-          color: AppColors.textDark,
-        ),
-      ),
-      content: Text(
-        'Next time you open the app, use $label instead of your password for faster access.',
-        style: GoogleFonts.poppins(
-          fontSize: 14,
-          color: AppColors.textBodyColor,
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () {
-            Navigator.of(ctx).pop(); // ✅ close dialog using ctx
-            navigator.pushReplacementNamed('/dashboard'); // ✅ use saved navigator
-          },
-          child: Text(
-            'Not Now',
-            style: GoogleFonts.poppins(color: Colors.grey),
-          ),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primaryDarkBlue,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          onPressed: () async {
-            await BiometricAuthService.enableBiometric();
-            Navigator.of(ctx).pop(); // ✅ close dialog using ctx
-            navigator.pushReplacementNamed('/dashboard'); // ✅ use saved navigator
-          },
-          child: Text(
-            'Enable',
-            style: GoogleFonts.poppins(color: Colors.white),
-          ),
-        ),
-      ],
-    ),
-  );
-}
+  //   showDialog(
+  //     context: context,
+  //     barrierDismissible: false,
+  //     builder: (ctx) => AlertDialog(
+  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+  //       title: Text(
+  //         'Enable $label?',
+  //         style: GoogleFonts.poppins(
+  //           fontWeight: FontWeight.bold,
+  //           color: AppColors.textDark,
+  //         ),
+  //       ),
+  //       content: Text(
+  //         'Next time you open the app, use $label instead of your password for faster access.',
+  //         style: GoogleFonts.poppins(
+  //           fontSize: 14,
+  //           color: AppColors.textBodyColor,
+  //         ),
+  //       ),
+  //       actions: [
+  //         TextButton(
+  //           onPressed: () {
+  //             Navigator.of(ctx).pop();
+  //             navigator.pushReplacementNamed('/dashboard'); 
+  //           },
+  //           child: Text(
+  //             'Not Now',
+  //             style: GoogleFonts.poppins(color: Colors.grey),
+  //           ),
+  //         ),
+  //         ElevatedButton(
+  //           style: ElevatedButton.styleFrom(
+  //             backgroundColor: AppColors.primaryDarkBlue,
+  //             shape: RoundedRectangleBorder(
+  //               borderRadius: BorderRadius.circular(12),
+  //             ),
+  //           ),
+  //           onPressed: () async {
+  //             await BiometricAuthService.enableBiometric();
+  //             Navigator.of(ctx).pop(); 
+  //             navigator.pushReplacementNamed('/dashboard');
+  //           },
+  //           child: Text(
+  //             'Enable',
+  //             style: GoogleFonts.poppins(color: Colors.white),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
   void _showErrorDialog(String message) {
     showDialog(
@@ -323,8 +322,7 @@ void _showEnableBiometricDialog() async {
     _passwordController.dispose();
     super.dispose();
   }
-
-  // --- UI IMPLEMENTATION (Remains the same) ---
+  
   @override
   Widget build(BuildContext context) {
     final Size size = MediaQuery.of(context).size;

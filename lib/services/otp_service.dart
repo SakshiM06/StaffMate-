@@ -66,7 +66,7 @@ class OTPService {
         url,
         headers: headers,
         body: body,
-      ).timeout(const Duration(seconds: 30));
+      ).timeout(const Duration(seconds: 120));
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
