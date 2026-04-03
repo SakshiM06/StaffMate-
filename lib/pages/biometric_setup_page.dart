@@ -78,12 +78,9 @@ class _BiometricSetupPageState extends State<BiometricSetupPage>
       });
     }
   }
-
-Future<void> _handleEnable() async {
+  Future<void> _handleEnable() async {
   setState(() => _isLoading = true);
-
   final result = await BiometricAuthService.enableBiometric();
-
   if (!mounted) return;
   setState(() => _isLoading = false);
 
@@ -92,16 +89,35 @@ Future<void> _handleEnable() async {
       setState(() => _isEnabled = true);
       _showSuccessAndContinue();
       break;
-
     case BiometricResult.cancelled:
-      // User dismissed the prompt — do nothing, no snackbar
+      // User dismissed — do nothing
       break;
-
+    case BiometricResult.lockedOut:
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Too many attempts. Please use your PIN or password first, then try again.',
+          style: GoogleFonts.poppins(),
+        ),
+        backgroundColor: const Color(0xFFE53935),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+      break;
+    case BiometricResult.notAvailable:
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+          'Biometric sensor not available. Make sure a fingerprint or face is enrolled in your device Settings.',
+          style: GoogleFonts.poppins(),
+        ),
+        backgroundColor: Colors.orange[800],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        duration: const Duration(seconds: 5),
+      ));
+      break;
     case BiometricResult.failed:
-      // Genuine failure (locked out, hardware error) — show error
       _showFailureSnackbar();
       break;
-
     default:
       break;
   }

@@ -113,36 +113,41 @@ Future<void> _authenticate() async {
         _failCount++;
       });
       break;
+    case BiometricResult.lockedOut:
+      // TODO: Handle this case.
+      throw UnimplementedError();
+    case BiometricResult.notAvailable:
+      // TODO: Handle this case.
+      throw UnimplementedError();
   }
 }
-
-  Future<void> _onAuthSuccess() async {
-    // Try to refresh token silently — no re-login needed
-    try {
-      final refreshed = await ApiService.refreshUserToken();
-      if (!refreshed) {
-        // Refresh token also expired — need full re-login (rare: >24h no use)
-        debugPrint("⚠️ Refresh token expired — forcing re-login");
-        _forceFullLogin(reason: 'Your session has expired. Please login again.');
-        return;
-      }
-    } catch (e) {
-      debugPrint("Token refresh error: $e");
-      // Even if refresh fails, allow entry if token is still valid
+Future<void> _onAuthSuccess() async {
+  try {
+    final refreshed = await ApiService.refreshUserToken();
+    if (!refreshed) {
+      // Only force re-login if there is truly no valid token at all
       final isValid = await SessionManager.hasValidSession();
       if (!isValid) {
         _forceFullLogin(reason: 'Your session has expired. Please login again.');
         return;
       }
+      // Token exists but refresh failed (e.g. server offline) — allow entry
     }
-
-    // Session is good — resume app
-    SessionManager.updateUserActivity();
-    SessionManager.startSessionMonitoring();
-
-    if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed('/dashboard');
+  } catch (e) {
+    debugPrint("Token refresh error: $e — checking local session");
+    final isValid = await SessionManager.hasValidSession();
+    if (!isValid) {
+      _forceFullLogin(reason: 'Your session has expired. Please login again.');
+      return;
+    }
   }
+
+  SessionManager.updateUserActivity();
+  SessionManager.startSessionMonitoring();
+
+  if (!mounted) return;
+  Navigator.of(context).pushReplacementNamed('/dashboard');
+}
 
   void _showEnrollmentChangedAlert() {
     showDialog(

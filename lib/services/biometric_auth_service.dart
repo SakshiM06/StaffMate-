@@ -55,61 +55,70 @@ class BiometricAuthService {
   // ─── Enable ───────────────────────────────────────────────────────────────
 
   /// NOW returns BiometricResult (not bool)
-  static Future<BiometricResult> enableBiometric() async {
-    // Use _promptBiometricResult to distinguish cancel vs failure
-    final result = await _promptBiometricResult(
-      reason: 'Verify your identity to enable biometric login',
-    );
-
-    // If not success (cancelled or failed), return immediately
-    if (result != BiometricResult.success) return result;
-
-    try {
-      final token = _generateToken();
-      await _secureStorage.write(key: _biometricKeyKey, value: token);
-
-      final biometrics = await _auth.getAvailableBiometrics();
-      await _secureStorage.write(
-        key: _enrollmentCheckKey,
-        value: biometrics.length.toString(),
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('biometric_enabled', true);
-
-      debugPrint("✅ Biometric enabled. Enrolled count: ${biometrics.length}");
-      return BiometricResult.success;
-    } catch (e) {
-      debugPrint("❌ Error storing biometric key: $e");
-      return BiometricResult.failed;
-    }
+ static Future<BiometricResult> enableBiometric() async {
+  // Guard: make sure hardware is actually ready before prompting
+  final available = await isBiometricAvailable();
+  if (!available) {
+    debugPrint("❌ Biometric hardware not available");
+    return BiometricResult.notAvailable;
   }
+
+  final result = await _promptBiometricResult(
+    reason: 'Verify your identity to enable biometric login',
+  );
+  if (result != BiometricResult.success) return result;
+
+  try {
+    final token = _generateToken();
+    await _secureStorage.write(key: _biometricKeyKey, value: token);
+    final biometrics = await _auth.getAvailableBiometrics();
+    await _secureStorage.write(
+      key: _enrollmentCheckKey,
+      value: biometrics.length.toString(),
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('biometric_enabled', true);
+    debugPrint("✅ Biometric enabled. Enrolled count: ${biometrics.length}");
+    return BiometricResult.success;
+  } catch (e) {
+    debugPrint("❌ Error storing biometric key: $e");
+    return BiometricResult.failed;
+  }
+}
 
   // ─── Core prompt (returns BiometricResult) ────────────────────────────────
 
-  static Future<BiometricResult> _promptBiometricResult({
-    required String reason,
-  }) async {
-    try {
-      final authenticated = await _auth.authenticate(
-        localizedReason: reason,
-        options: const AuthenticationOptions(
-          stickyAuth: true,
-          biometricOnly: true,
-        ),
-      );
-      // authenticated=false means user cancelled (dismissed bottom sheet)
-      return authenticated ? BiometricResult.success : BiometricResult.cancelled;
-    } on PlatformException catch (e) {
-      debugPrint("Biometric prompt error: ${e.code} - ${e.message}");
-      if (e.code == 'LockedOut' || e.code == 'PermanentlyLockedOut') {
+ static Future<BiometricResult> _promptBiometricResult({
+  required String reason,
+}) async {
+  try {
+    final authenticated = await _auth.authenticate(
+      localizedReason: reason,
+      options: const AuthenticationOptions(
+        stickyAuth: true,
+        biometricOnly: false, // ← KEY FIX: allows PIN fallback that Android requires
+        useErrorDialogs: true,
+      ),
+    );
+    return authenticated ? BiometricResult.success : BiometricResult.cancelled;
+  } on PlatformException catch (e) {
+    debugPrint("Biometric prompt error: ${e.code} - ${e.message}");
+    switch (e.code) {
+      case 'LockedOut':
+      case 'PermanentlyLockedOut':
+        return BiometricResult.lockedOut; // new enum value — see below
+      case 'NotAvailable':
+      case 'NotEnrolled':
+      case 'OtherOperatingSystem':
+        return BiometricResult.notAvailable; // new enum value
+      case 'auth_in_progress':
+        return BiometricResult.cancelled;
+      default:
+        debugPrint("Unhandled biometric error code: ${e.code}");
         return BiometricResult.failed;
-      }
-      // NotAvailable, NotEnrolled, OtherOperatingSystem etc = cancelled
-      return BiometricResult.cancelled;
     }
   }
-
+}
   /// Bool wrapper — used internally by disableBiometric & authenticateSecure
   static Future<bool> _promptBiometric({required String reason}) async {
     final result = await _promptBiometricResult(reason: reason);
@@ -263,4 +272,6 @@ enum BiometricResult {
   cancelled,       // User dismissed the prompt
   enrollmentChanged,
   keyInvalidated,
+  lockedOut,
+  notAvailable,
 }

@@ -209,18 +209,17 @@ Future<void> _completeLogin() async {
 
   if (biometricAvailable && !biometricEnabled && mounted) {
     // Use the new BiometricSetupPage instead of the old dialog
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => BiometricSetupPage(
-          onContinue: () {
-            // This will be called after user enables or skips
-            Navigator.of(context).pushNamedAndRemoveUntil('/dashboard', (route) => false);
-          },
-          isFromSettings: false,
-        ),
-      ),
-    );
+   final navigator = Navigator.of(context);
+navigator.push(
+  MaterialPageRoute(
+    builder: (_) => BiometricSetupPage(
+      onContinue: () {
+        navigator.pushNamedAndRemoveUntil('/dashboard', (route) => false);
+      },
+      isFromSettings: false,
+    ),
+  ),
+);
   } else {
     // If biometric already enabled or not available, go directly to dashboard
     Navigator.pushReplacementNamed(context, '/dashboard');
