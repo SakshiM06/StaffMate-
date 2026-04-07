@@ -4,12 +4,6 @@ import 'package:staff_mate/services/biometric_auth_service.dart';
 import 'package:staff_mate/services/session_manger.dart';
 import 'package:staff_mate/api/api_service.dart';
 
-/// This screen appears every time the app is opened (if biometric is enabled).
-/// It:
-///  1. Auto-triggers the biometric prompt on load.
-///  2. On success → refreshes the token (no full re-login needed).
-///  3. On enrollment change → forces full re-login with a security alert.
-///  4. On repeated failure → offers "Use Password" fallback.
 class BiometricLockScreen extends StatefulWidget {
   final bool isFromSettings;
   final VoidCallback onContinue;

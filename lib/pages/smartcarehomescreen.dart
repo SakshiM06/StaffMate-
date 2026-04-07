@@ -15,7 +15,7 @@ import 'package:staff_mate/services/home_service.dart';
 import 'package:staff_mate/models/staff_dob.dart';
 import 'package:staff_mate/pages/training_page.dart';
 import 'package:staff_mate/pages/rota.dart';
-
+import 'package:staff_mate/pages/mytasks.dart';
 // Import chatbot files
 import 'package:staff_mate/ai/chat_screen.dart';
 import 'package:staff_mate/ai/chat_provider.dart';
@@ -108,12 +108,12 @@ class _SmartCareHomeScreenState extends State<SmartCareHomeScreen> {
       RotaShift(date: 'Mar 15', shift: 'Morning (7 AM - 3 PM)', location: 'OPD'),
     ];
 
-    quickTasks = [
-      QuickTask(title: 'Patient Rounds', priority: 'High', time: '9:00 AM', completed: false),
-      QuickTask(title: 'Documentation', priority: 'Medium', time: '2:00 PM', completed: false),
-      QuickTask(title: 'Team Meeting', priority: 'Low', time: '4:00 PM', completed: true),
-      QuickTask(title: 'Lab Reports Review', priority: 'High', time: '11:00 AM', completed: false),
-    ];
+    // quickTasks = [
+    //   QuickTask(title: 'Patient Rounds', priority: 'High', time: '9:00 AM', completed: false),
+    //   QuickTask(title: 'Documentation', priority: 'Medium', time: '2:00 PM', completed: false),
+    //   QuickTask(title: 'Team Meeting', priority: 'Low', time: '4:00 PM', completed: true),
+    //   QuickTask(title: 'Lab Reports Review', priority: 'High', time: '11:00 AM', completed: false),
+    // ];
 
     pendingApprovals = [
       PendingApproval(type: 'Leave Request', name: 'Dr. Lisa Park', days: '3 days', status: 'Pending'),
@@ -737,8 +737,14 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
         trailing: rota.date,
         color: AppColors.purple,
       )).toList();
-
+return;
     } else if (title == "My Tasks") {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => MyTasksPage(),
+        ),
+      );
       content = quickTasks.map((task) => _buildDetailCard(
         icon: task.completed ? Icons.check_circle : Icons.assignment,
         title: task.title,
@@ -746,6 +752,7 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
         trailing: task.completed ? "Completed" : "Pending",
         color: task.completed ? AppColors.successGreen : _getPriorityColor(task.priority),
       )).toList();
+      return;
     } else if (title == "Approvals") {
       content = pendingApprovals.map((approval) => _buildDetailCard(
         icon: Icons.pending_actions,
@@ -1169,20 +1176,33 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
                                   return Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _buildCompactSectionHeader(
-                                        title: "My Tasks",
-                                        icon: Icons.task_alt,
-                                        context: context,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      ...quickTasks.take(2).map((task) => 
-                                        _buildCompactTaskItem(task, context)
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _buildSeeAllButton(
-                                        onTap: () => _showEventDetails("My Tasks"),
-                                        context: context,
-                                      ),
+                            _buildCompactSectionHeader(
+  title: "My Tasks",
+  icon: Icons.task_alt,
+  context: context,
+),
+const SizedBox(height: 12),
+...quickTasks.take(2).map((task) => 
+  GestureDetector(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const MyTasksPage()),
+      );
+    },
+    child: _buildCompactTaskItem(task, context),
+  )
+),
+const SizedBox(height: 12),
+_buildSeeAllButton(
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const MyTasksPage()),
+    );
+  },
+  context: context,
+),
                                       
                                       const SizedBox(height: 20),
                                       
@@ -2283,7 +2303,7 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
   bool _hrExpanded = false;
   // bool _ticketExpanded = false; // Commented out - will be handled by chatbot
   bool _trainingExpanded = false; // Add this for Training section
-  
+  bool _myTasksExpanded = false;
   bool _isLogoutHovering = false;
   final Map<String, bool> _hoverStates = {};
 
@@ -2535,94 +2555,94 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
                     const SizedBox(height: 16),
 
                     // My HR Section
-                    _buildMenuSection(
-                      title: "My HR",
-                      isExpanded: _hrExpanded,
-                      onTap: () => setState(() => _hrExpanded = !_hrExpanded),
-                      icon: Icons.work_outline,
-                      iconColor: AppColors.iconGreen,
-                      children: [
-                        const SizedBox(height: 8),
-                        _buildSubSection(
-                          title: "Leave Management",
-                          children: [
-                            _buildMenuItem(
-                              label: "Leave Balance",
-                              onTap: () => _navigateToMyHR(context, section: 1),
-                              icon: Icons.beach_access_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Apply Leave",
-                              onTap: () => _navigateToMyHR(context, section: 1, openDialog: 'apply_leave'),
-                              icon: Icons.add_circle_outline,
-                            ),
-                            _buildMenuItem(
-                              label: "Leave History",
-                              onTap: () => _navigateToMyHR(context, section: 1),
-                              icon: Icons.history_outlined,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildSubSection(
-                          title: " OT / OD",
-                          children: [
-                            _buildMenuItem(
-                              label: "Apply OT",
-                              onTap: () => _navigateToMyHR(context, section: 2, openDialog: 'apply_ot'),
-                              icon: Icons.timer_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Apply OD",
-                              onTap: () => _navigateToMyHR(context, section: 2, openDialog: 'apply_od'),
-                              icon: Icons.assignment_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "View History",
-                              onTap: () => _navigateToMyHR(context, section: 2),
-                              icon: Icons.list_alt_outlined,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildSubSection(
-                          title: "Attendance",
-                          children: [
-                            _buildMenuItem(
-                              label: "Check-in",
-                              onTap: () => _navigateToMyHR(context, section: 3, openDialog: 'check_in'),
-                              icon: Icons.login_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Check-out",
-                              onTap: () => _navigateToMyHR(context, section: 3, openDialog: 'check_out'),
-                              icon: Icons.logout_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Attendance History",
-                              onTap: () => _navigateToMyHR(context, section: 3),
-                              icon: Icons.calendar_view_month_outlined,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        _buildSubSection(
-                          title: "Salary",
-                          children: [
-                            _buildMenuItem(
-                              label: "Salary Summary",
-                              onTap: () => _navigateToMyHR(context, section: 4),
-                              icon: Icons.attach_money_outlined,
-                            ),
-                            _buildMenuItem(
-                              label: "Payslip Download",
-                              onTap: () => _navigateToMyHR(context, section: 4, openDialog: 'download_payslip'),
-                              icon: Icons.download_outlined,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                    // _buildMenuSection(
+                    //   title: "My HR",
+                    //   isExpanded: _hrExpanded,
+                    //   onTap: () => setState(() => _hrExpanded = !_hrExpanded),
+                    //   icon: Icons.work_outline,
+                    //   iconColor: AppColors.iconGreen,
+                    //   children: [
+                    //     const SizedBox(height: 8),
+                    //     _buildSubSection(
+                    //       title: "Leave Management",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Leave Balance",
+                    //           onTap: () => _navigateToMyHR(context, section: 1),
+                    //           icon: Icons.beach_access_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Apply Leave",
+                    //           onTap: () => _navigateToMyHR(context, section: 1, openDialog: 'apply_leave'),
+                    //           icon: Icons.add_circle_outline,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Leave History",
+                    //           onTap: () => _navigateToMyHR(context, section: 1),
+                    //           icon: Icons.history_outlined,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //     const SizedBox(height: 8),
+                    //     _buildSubSection(
+                    //       title: " OT / OD",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Apply OT",
+                    //           onTap: () => _navigateToMyHR(context, section: 2, openDialog: 'apply_ot'),
+                    //           icon: Icons.timer_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Apply OD",
+                    //           onTap: () => _navigateToMyHR(context, section: 2, openDialog: 'apply_od'),
+                    //           icon: Icons.assignment_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "View History",
+                    //           onTap: () => _navigateToMyHR(context, section: 2),
+                    //           icon: Icons.list_alt_outlined,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //     const SizedBox(height: 8),
+                    //     _buildSubSection(
+                    //       title: "Attendance",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Check-in",
+                    //           onTap: () => _navigateToMyHR(context, section: 3, openDialog: 'check_in'),
+                    //           icon: Icons.login_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Check-out",
+                    //           onTap: () => _navigateToMyHR(context, section: 3, openDialog: 'check_out'),
+                    //           icon: Icons.logout_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Attendance History",
+                    //           onTap: () => _navigateToMyHR(context, section: 3),
+                    //           icon: Icons.calendar_view_month_outlined,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //     const SizedBox(height: 8),
+                    //     _buildSubSection(
+                    //       title: "Salary",
+                    //       children: [
+                    //         _buildMenuItem(
+                    //           label: "Salary Summary",
+                    //           onTap: () => _navigateToMyHR(context, section: 4),
+                    //           icon: Icons.attach_money_outlined,
+                    //         ),
+                    //         _buildMenuItem(
+                    //           label: "Payslip Download",
+                    //           onTap: () => _navigateToMyHR(context, section: 4, openDialog: 'download_payslip'),
+                    //           icon: Icons.download_outlined,
+                    //         ),
+                    //       ],
+                    //     ),
+                    //   ],
+                    // ),
 
                     const SizedBox(height: 16),
 
@@ -2636,6 +2656,77 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
                       children: [], // No children - just the main item
                     ),
 
+_buildMenuSection(
+  title: "My Tasks",
+  isExpanded: _myTasksExpanded,
+  onTap: () => setState(() => _myTasksExpanded = !_myTasksExpanded),
+  icon: Icons.task_alt_outlined,
+  iconColor: AppColors.accentTeal,
+  children: [
+    const SizedBox(height: 8),
+    _buildSubSection(
+      title: "Task Management",
+      children: [
+        _buildMenuItem(
+          label: "All Tasks",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.list_alt_outlined,
+        ),
+        _buildMenuItem(
+          label: "Today's Tasks",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.today_outlined,
+        ),
+        _buildMenuItem(
+          label: "Upcoming Tasks",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.upcoming_outlined,
+        ),
+        _buildMenuItem(
+          label: "Completed Tasks",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.check_circle_outline_outlined,
+        ),
+      ],
+    ),
+    const SizedBox(height: 8),
+    _buildSubSection(
+      title: "Quick Actions",
+      children: [
+        _buildMenuItem(
+          label: "Add New Task",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.add_circle_outline,
+        ),
+        _buildMenuItem(
+          label: "Task Categories",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.category_outlined,
+        ),
+        _buildMenuItem(
+          label: "Calendar View",
+          onTap: () => _navigateToMyTasks(context),
+          icon: Icons.calendar_month_outlined,
+        ),
+      ],
+    ),
+  ],
+),
+
+const SizedBox(height: 16),
+
+// My HR Section - Coming Soon
+_buildMenuSection(
+  title: "My HR (Coming Soon)",
+  isExpanded: _hrExpanded,
+  onTap: () {
+    // Show coming soon dialog instead of expanding
+    _showComingSoonDialog(context, "My HR");
+  },
+  icon: Icons.work_outline,
+  iconColor: AppColors.iconGreen,
+  children: [], // Empty children since it's coming soon
+),
                     // COMMENTED OUT OLD TICKET SECTION
                     // _buildMenuSection(
                     //   title: "Submit Ticket",
@@ -2759,7 +2850,7 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
               child: Column(
                 children: [
                   MouseRegion(
-                    onEnter: (_) => setState(() => _isLogoutHovering = true),
+                    onEnter: (_) => setState(() => _isLogoutHovering = false),
                     onExit: (_) => setState(() => _isLogoutHovering = false),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
@@ -3028,6 +3119,31 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
   //     MaterialPageRoute(builder: (context) => const SubmitTicketPage()),
   //   );
   // }
+
+
+void _showComingSoonDialog(BuildContext context, String featureName) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text("Coming Soon", style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+      content: Text("$featureName feature is coming soon!"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("OK"),
+        ),
+      ],
+    ),
+  );
+}
+
+void _navigateToMyTasks(BuildContext context) {
+  Navigator.pop(context); // Close drawer first
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (context) => const MyTasksPage()),
+  );
+}
 
   void _showHelpSupport(BuildContext context) {
     showDialog(

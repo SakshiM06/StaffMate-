@@ -1,6 +1,4 @@
-/// AI Intent definitions for StaffMate IPD AI Assistant
-/// This file controls WHAT action the user wants to perform
-/// Example: View Prescription, Investigation, Charges, etc.
+
 
 enum AIIntent {
   viewPrescription,
@@ -41,7 +39,6 @@ extension AIIntentApiKey on AIIntent {
   }
 }
 
-/// Helper to get all supported intents (used in UI dropdown / buttons)
 List<AIIntent> getAllAIIntents() {
   return AIIntent.values;
 }
