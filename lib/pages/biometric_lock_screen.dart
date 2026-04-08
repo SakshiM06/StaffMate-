@@ -59,7 +59,6 @@ class _BiometricLockScreenState extends State<BiometricLockScreen>
         _username = username;
       });
     }
-    // Auto-trigger biometric on open
     await Future.delayed(const Duration(milliseconds: 400));
     _authenticate();
   }
@@ -83,7 +82,6 @@ Future<void> _authenticate() async {
       break;
 
     case BiometricResult.cancelled:
-      // User dismissed prompt — just reset state, stay on lock screen
       setState(() {
         _isAuthenticating = false;
         _authFailed = false;
@@ -108,10 +106,8 @@ Future<void> _authenticate() async {
       });
       break;
     case BiometricResult.lockedOut:
-      // TODO: Handle this case.
       throw UnimplementedError();
     case BiometricResult.notAvailable:
-      // TODO: Handle this case.
       throw UnimplementedError();
   }
 }
@@ -119,13 +115,11 @@ Future<void> _onAuthSuccess() async {
   try {
     final refreshed = await ApiService.refreshUserToken();
     if (!refreshed) {
-      // Only force re-login if there is truly no valid token at all
       final isValid = await SessionManager.hasValidSession();
       if (!isValid) {
         _forceFullLogin(reason: 'Your session has expired. Please login again.');
         return;
       }
-      // Token exists but refresh failed (e.g. server offline) — allow entry
     }
   } catch (e) {
     debugPrint("Token refresh error: $e — checking local session");
@@ -209,7 +203,6 @@ Future<void> _onAuthSuccess() async {
   }
 
   void _usePasswordFallback() async {
-    // Let user enter password manually — re-authenticate via API
     await SessionManager.clearSession();
     ApiService.clearSession();
     if (!mounted) return;
@@ -263,8 +256,6 @@ Future<void> _onAuthSuccess() async {
                 ),
                 const SizedBox(height: 48),
               ],
-
-              // Pulsing biometric icon
               ScaleTransition(
                 scale: _pulseAnim,
                 child: GestureDetector(
@@ -351,8 +342,7 @@ Future<void> _onAuthSuccess() async {
               ),
 
               const Spacer(flex: 3),
-
-              // "Use Password" — shows after 2 failures
+              
               AnimatedOpacity(
                 opacity: _failCount >= 2 ? 1.0 : 0.0,
                 duration: const Duration(milliseconds: 400),

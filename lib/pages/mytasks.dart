@@ -3797,154 +3797,148 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
   );
 }
   // ─── COMMENT SECTION ──────────────────────────────────────────────────────
+// LINE 2250 - 2350 (Approximate location - replace your existing _buildAddCommentSection method with this)
 
-  Widget _buildAddCommentSection(Task task) {
-    final commentCtrl = TextEditingController();
-    stt.SpeechToText? speech;
-    bool isListening = false;
-    bool isGettingLocation = false;
-    String? currentLocation;
-    Position? currentPosition;
+Widget _buildAddCommentSection(Task task) {
+  final commentCtrl = TextEditingController();
+  stt.SpeechToText? speech;
+  bool isListening = false;
+  bool isGettingLocation = false;
+  String? currentLocation;
+  Position? currentPosition;
 
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final dueDay =
-        DateTime(task.dueDate.year, task.dueDate.month, task.dueDate.day);
-    bool canAddComment = !task.isCompleted;
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final dueDay =
+      DateTime(task.dueDate.year, task.dueDate.month, task.dueDate.day);
+  bool canAddComment = !task.isCompleted;
 
-    if (task.repeatPattern != RepeatPattern.never && !task.isCompleted) {
-      if (task.repeatPattern == RepeatPattern.weekly) {
-        canAddComment = dueDay.weekday == today.weekday;
-      } else if (task.repeatPattern == RepeatPattern.monthly) {
-        canAddComment = dueDay.day == today.day;
-      } else if (task.repeatPattern == RepeatPattern.yearly) {
-        canAddComment =
-            dueDay.month == today.month && dueDay.day == today.day;
-      }
+  if (task.repeatPattern != RepeatPattern.never && !task.isCompleted) {
+    if (task.repeatPattern == RepeatPattern.weekly) {
+      canAddComment = dueDay.weekday == today.weekday;
+    } else if (task.repeatPattern == RepeatPattern.monthly) {
+      canAddComment = dueDay.day == today.day;
+    } else if (task.repeatPattern == RepeatPattern.yearly) {
+      canAddComment =
+          dueDay.month == today.month && dueDay.day == today.day;
     }
-
-    return StatefulBuilder(
-      builder: (ctx, ss) {
-        speech ??= stt.SpeechToText();
-
-        void listen() async {
-          if (!isListening) {
-            final available = await speech!.initialize();
-            if (available) {
-              ss(() => isListening = true);
-              speech!.listen(onResult: (val) {
-                ss(() {
-                  commentCtrl.text = val.recognizedWords;
-                  commentCtrl.selection = TextSelection.fromPosition(
-                      TextPosition(offset: commentCtrl.text.length));
-                });
-              });
-            }
-          } else {
-            ss(() => isListening = false);
-            speech!.stop();
-          }
-        }
-
-       void getLocation() async {
-  ss(() => isGettingLocation = true);
-  try {
-    // First check if location permission is granted
-    PermissionStatus permissionStatus = await Permission.location.status;
-    
-    if (!permissionStatus.isGranted) {
-      // Request permission
-      permissionStatus = await Permission.location.request();
-    }
-    
-    if (permissionStatus.isGranted) {
-      // Check if location services are enabled
-      final enabled = await Geolocator.isLocationServiceEnabled();
-      if (!enabled) {
-        _showSnackBar(
-            'Please enable location services in your device settings', 
-            _AppColors.warning);
-        
-        // Open location settings
-        await Geolocator.openLocationSettings();
-        ss(() => isGettingLocation = false);
-        return;
-      }
-      
-      // Get current position with better accuracy
-      LocationSettings locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 0,
-      );
-      
-      currentPosition = await Geolocator.getCurrentPosition(
-        locationSettings: locationSettings,
-      ).timeout(const Duration(seconds: 30));
-      
-      // Get address from coordinates
-      final placemarks = await placemarkFromCoordinates(
-        currentPosition!.latitude,
-        currentPosition!.longitude,
-      );
-      
-      if (placemarks.isNotEmpty) {
-        final pm = placemarks.first;
-        currentLocation = [
-          pm.name,
-          pm.subLocality,
-          pm.locality,
-          pm.administrativeArea,
-          pm.country,
-        ].where((part) => part != null && part.isNotEmpty).join(', ');
-        
-        if (currentLocation!.isEmpty) {
-          currentLocation = '${currentPosition!.latitude.toStringAsFixed(4)}, ${currentPosition!.longitude.toStringAsFixed(4)}';
-        }
-      } else {
-        currentLocation = '${currentPosition!.latitude.toStringAsFixed(4)}, ${currentPosition!.longitude.toStringAsFixed(4)}';
-      }
-      
-      ss(() {});
-      _showSnackBar('Location captured: $currentLocation', _AppColors.success);
-    } else {
-      _showSnackBar(
-          'Location permission denied. Please enable location permission in app settings.', 
-          _AppColors.danger);
-      
-      // Open app settings
-      await openAppSettings();
-    }
-  } catch (e) {
-    debugPrint('Error getting location: $e');
-    _showSnackBar('Error getting location: ${e.toString()}', _AppColors.danger);
-  } finally {
-    ss(() => isGettingLocation = false);
   }
-}
 
-        if (!canAddComment) {
-          return Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: _AppColors.background,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(children: [
-              const Icon(Icons.info_outline_rounded,
-                  color: _AppColors.textSecondary, size: 16),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Comments only on ${task.repeatPattern.toString().split('.').last} basis',
-                  style: const TextStyle(
-                      fontSize: 12, color: _AppColors.textSecondary),
-                ),
-              ),
-            ]),
-          );
+  return StatefulBuilder(
+    builder: (ctx, ss) {
+      speech ??= stt.SpeechToText();
+
+      void listen() async {
+        if (!isListening) {
+          final available = await speech!.initialize();
+          if (available) {
+            ss(() => isListening = true);
+            speech!.listen(onResult: (val) {
+              ss(() {
+                commentCtrl.text = val.recognizedWords;
+                commentCtrl.selection = TextSelection.fromPosition(
+                    TextPosition(offset: commentCtrl.text.length));
+              });
+            });
+          }
+        } else {
+          ss(() => isListening = false);
+          speech!.stop();
         }
+      }
 
+      void getLocation() async {
+        ss(() => isGettingLocation = true);
+        try {
+          PermissionStatus permissionStatus = await Permission.location.status;
+          
+          if (!permissionStatus.isGranted) {
+            permissionStatus = await Permission.location.request();
+          }
+          
+          if (permissionStatus.isGranted) {
+            final enabled = await Geolocator.isLocationServiceEnabled();
+            if (!enabled) {
+              _showSnackBar(
+                  'Please enable location services in your device settings', 
+                  _AppColors.warning);
+              await Geolocator.openLocationSettings();
+              ss(() => isGettingLocation = false);
+              return;
+            }
+            
+            LocationSettings locationSettings = const LocationSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 0,
+            );
+            
+            currentPosition = await Geolocator.getCurrentPosition(
+              locationSettings: locationSettings,
+            ).timeout(const Duration(seconds: 30));
+            
+            final placemarks = await placemarkFromCoordinates(
+              currentPosition!.latitude,
+              currentPosition!.longitude,
+            );
+            
+            if (placemarks.isNotEmpty) {
+              final pm = placemarks.first;
+              currentLocation = [
+                pm.name,
+                pm.subLocality,
+                pm.locality,
+                pm.administrativeArea,
+                pm.country,
+              ].where((part) => part != null && part.isNotEmpty).join(', ');
+              
+              if (currentLocation!.isEmpty) {
+                currentLocation = '${currentPosition!.latitude.toStringAsFixed(4)}, ${currentPosition!.longitude.toStringAsFixed(4)}';
+              }
+            } else {
+              currentLocation = '${currentPosition!.latitude.toStringAsFixed(4)}, ${currentPosition!.longitude.toStringAsFixed(4)}';
+            }
+            
+            ss(() {});
+            _showSnackBar('Location captured: $currentLocation', _AppColors.success);
+          } else {
+            _showSnackBar(
+                'Location permission denied. Please enable location permission in app settings.', 
+                _AppColors.danger);
+            await openAppSettings();
+          }
+        } catch (e) {
+          debugPrint('Error getting location: $e');
+          _showSnackBar('Error getting location: ${e.toString()}', _AppColors.danger);
+        } finally {
+          ss(() => isGettingLocation = false);
+        }
+      }
+
+      if (!canAddComment) {
         return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _AppColors.background,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Row(children: [
+            const Icon(Icons.info_outline_rounded,
+                color: _AppColors.textSecondary, size: 16),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Comments only on ${task.repeatPattern.toString().split('.').last} basis',
+                style: const TextStyle(
+                    fontSize: 12, color: _AppColors.textSecondary),
+              ),
+            ),
+          ]),
+        );
+      }
+
+      // FIXED: Added SingleChildScrollView and FocusNode to handle keyboard overlay
+      return SingleChildScrollView(
+        child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
             color: _AppColors.background,
@@ -3955,16 +3949,22 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
               Expanded(
                 child: TextField(
                   controller: commentCtrl,
+                  maxLines: null, // Changed from 2 to null for multi-line
+                  keyboardType: TextInputType.multiline,
+                  textInputAction: TextInputAction.newline,
                   decoration: const InputDecoration(
                     hintText: 'Add a comment...',
                     border: InputBorder.none,
                     hintStyle: TextStyle(
                         fontSize: 13, color: _AppColors.textTertiary),
                     contentPadding:
-                        EdgeInsets.symmetric(horizontal: 8),
+                        EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                   ),
-                  maxLines: 2,
                   style: const TextStyle(fontSize: 13),
+                  onEditingComplete: () {
+                    // Dismiss keyboard when done
+                    FocusScope.of(ctx).unfocus();
+                  },
                 ),
               ),
               IconButton(
@@ -4005,6 +4005,12 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
                   if (comment.isNotEmpty || currentLocation != null) {
                     _addCommentToTask(
                         task, comment, currentLocation, currentPosition);
+                    // Clear controller and location after sending
+                    commentCtrl.clear();
+                    ss(() {
+                      currentLocation = null;
+                      currentPosition = null;
+                    });
                     Navigator.pop(ctx);
                   } else {
                     _showSnackBar(
@@ -4032,10 +4038,11 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
                 ]),
               ),
           ]),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildCommentCard(TaskComment comment) {
     return Container(
@@ -4162,7 +4169,6 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
   );
 
   try {
-    // Determine new status string based on due date context
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final dueDay = DateTime(task.dueDate.year, task.dueDate.month, task.dueDate.day);
@@ -4171,17 +4177,15 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
     if (markComplete) {
       newStatus = 'COMPLETED';
     } else {
-      // Revert to appropriate active status
       if (dueDay == today) {
         newStatus = 'TODAY';
       } else if (task.dueDate.isAfter(now)) {
         newStatus = 'UPCOMING';
       } else {
-        newStatus = 'TODAY'; // overdue tasks revert to TODAY
+        newStatus = 'TODAY'; 
       }
     }
 
-    // Build repeat fields from existing task
     String? repeatType;
     String? repeatUnit;
     int? repeatInterval;
@@ -4221,8 +4225,8 @@ void _showSubCategorySelectionDialog(MasterCategory category) async {
       repeatEndDate: task.endDate != null ? formatDate(task.endDate!) : null,
       assignedTo: task.assignedTo,
       assignedBy: task.assignedBy,
-      taskCategoryId: null,   // not changing category
-      taskSubCategoryId: null, // not changing subcategory
+      taskCategoryId: null,   
+      taskSubCategoryId: null, 
       roleGroupName: 'Admin',
     );
 
