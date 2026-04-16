@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -89,6 +90,11 @@ class _SettingsPageState extends State<SettingsPage> {
       _enableFaceID = prefs.getBool('enableFaceID') ?? false;
       _appLockTimeout = prefs.getString('appLockTimeout') ?? "30 minutes";
     });
+    SystemChrome.setSystemUIOverlayStyle(SystemUiOverlayStyle(
+    statusBarColor: _selectedColor,
+    statusBarIconBrightness: Brightness.light,
+    statusBarBrightness: Brightness.dark,
+  ));
   }
   
   Future<void> _saveFontSize() async {
@@ -220,6 +226,11 @@ class _SettingsPageState extends State<SettingsPage> {
         backgroundColor: _selectedColor,
         elevation: 4,
         iconTheme: const IconThemeData(color: Colors.white),
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: _selectedColor,
+          statusBarIconBrightness: Brightness.light,
+          statusBarBrightness: Brightness.dark,
+        ),
       ),
       body: Container(
         color: _getBackgroundColor(),

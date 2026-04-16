@@ -53,7 +53,7 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
       dischargeLen = 0, exceedLen = 0, inhouseLen = 0;
 
   // Add user initial variable
-  String userInitial = 'S';
+  String userInitial = '';
 
   @override
   void initState() {
@@ -67,46 +67,55 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
     _loadUserInitial(); // Load user initial
   }
 
-  // Method to load user initial
-  Future<void> _loadUserInitial() async {
-    try {
-      final userInfo = await UserInformationService.getSavedUserInformation();
-      if (userInfo.isNotEmpty) {
-        String first = userInfo['firstName']?.toString() ?? '';
-        String init = userInfo['initial']?.toString() ?? '';
-        
-        if (first.isNotEmpty) {
-          setState(() {
-            userInitial = first[0].toUpperCase();
-          });
-        } else if (init.isNotEmpty) {
-          setState(() {
-            userInitial = init[0].toUpperCase();
-          });
-        } else {
-          String userId = userInfo['userId']?.toString() ?? '';
-          if (userId.isNotEmpty) {
-            setState(() {
-              userInitial = userId[0].toUpperCase();
-            });
-          }
-        }
-      } else {
-        final profileInfo = await UserInformationService.getUserProfileForDisplay();
-        if (profileInfo.isNotEmpty) {
-          String fullName = profileInfo['fullName'] ?? '';
-          if (fullName.isNotEmpty) {
-            setState(() {
-              userInitial = fullName[0].toUpperCase();
-            });
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Error loading user initial: $e');
-    }
-  }
 
+Future<void> _loadUserInitial() async {
+  try {
+    // 1st try: getCompleteUserData
+    final completeData = await UserInformationService.getCompleteUserData();
+    if (completeData != null && completeData.containsKey('data')) {
+      final data = completeData['data'] as Map<String, dynamic>;
+      final String init  = data['initial']?.toString() ?? '';
+      final String first = data['firstName']?.toString() ?? '';
+      final String last  = data['lastName']?.toString() ?? '';
+      final String uid   = data['userId']?.toString() ?? '';
+      String fullName = '$init $first $last'.trim();
+      if (fullName.isEmpty) fullName = uid;
+      if (fullName.isNotEmpty && mounted) {
+        setState(() => userInitial = fullName[0].toUpperCase());
+        return;
+      }
+    }
+
+    // 2nd try: getSavedUserInformation
+    final userInfo = await UserInformationService.getSavedUserInformation();
+    if (userInfo.isNotEmpty) {
+      final String init  = userInfo['initial']?.toString() ?? '';
+      final String first = userInfo['firstName']?.toString() ?? '';
+      final String last  = userInfo['lastName']?.toString() ?? '';
+      final String uid   = userInfo['userId']?.toString() ?? '';
+      String fullName = '$init $first $last'.trim();
+      if (fullName.isEmpty) fullName = uid; // userId as guaranteed fallback
+      if (fullName.isNotEmpty && mounted) {
+        setState(() => userInitial = fullName[0].toUpperCase());
+        return;
+      }
+    }
+
+    // 3rd try: getUserProfileForDisplay
+    final profileInfo = await UserInformationService.getUserProfileForDisplay();
+    if (profileInfo.isNotEmpty) {
+      // Try fullName first, then userId
+      final String fullName = profileInfo['fullName']?.toString() ?? '';
+      final String uid      = profileInfo['userId']?.toString() ?? '';
+      final String resolved = fullName.isNotEmpty ? fullName : uid;
+      if (resolved.isNotEmpty && mounted) {
+        setState(() => userInitial = resolved[0].toUpperCase());
+      }
+    }
+  } catch (e) {
+    debugPrint('Error loading user initial: $e');
+  }
+}
   Future<void> _loadExcessLimit() async {
     try {
       _excessLimitAmount = await ClinicService.getExcessLimit();
@@ -579,122 +588,189 @@ class _IpdDashboardPageState extends State<IpdDashboardPage> {
       child: DropdownButtonHideUnderline(child: DropdownButton<String>(value: value, isExpanded: true, items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, style: const TextStyle(fontSize: 13)))).toList(), onChanged: onChanged)),
     );
   }
+void _showPatientQuickActionSheet(Patient patient) {
+  if (patient.active == 0) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Bed ${patient.bedname} is Available")));
+    return;
+  }
 
-  void _showPatientQuickActionSheet(Patient patient) {
-    if (patient.active == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Bed ${patient.bedname} is Available")));
-      return;
-    }
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-        padding: const EdgeInsets.all(20),
+  final actions = [
+    {'icon': Icons.receipt, 'label': 'Prescription', 'color': Colors.blue, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ReqPrescriptionPage(patientName: patient.patientname, patient: patient))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.science, 'label': 'Investigation', 'color': Colors.orange, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ReqInvestigationPage(patientName: patient.patientname, patient: patient))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.assignment_outlined, 'label': 'Records', 'color': Colors.teal, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => TreatmentRecordWebViewPage(patient: patient))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.favorite, 'label': 'Vitals', 'color': Colors.redAccent, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => VitalsPage(patient: patient))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.notifications_none, 'label': 'Notifications', 'color': Colors.purple, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationDetailsPage(patientName: patient.patientname, patientId: patient.ipdNo, admissionId: patient.admissionId))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.note_add, 'label': 'Day Notes', 'color': Colors.brown, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage(ipdId: patient.ipdNo, admissionDate: patient.admissionDate, patientName: patient.patientname, admissionId: patient.admissionId, patientId: ''))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.upload_file, 'label': 'Upload Doc', 'color': Colors.green, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => UploadDocScreen(patient: patient))).then((_) => _refreshDashboardData());
+    }},
+    {'icon': Icons.local_hospital, 'label': 'Shift Patient', 'color': Colors.deepPurple, 'onTap': () {
+      Navigator.pop(context);
+      Navigator.push(context, MaterialPageRoute(builder: (_) => ShiftPatientPage(patient: patient))).then((_) => _refreshDashboardData());
+    }},
+  ];
+
+  // Split into 2 rows
+  final int half = (actions.length / 2).ceil();
+  final row1 = actions.sublist(0, half);
+  final row2 = actions.sublist(half);
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (context) => Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Drag handle
+          Container(
+            width: 40, height: 4,
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(10)),
+          ),
+
+          // Patient info
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: CircleAvatar(
+              backgroundColor: Colors.blue.shade50,
+              child: Text(patient.patientname[0], style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+            ),
+            title: Text(patient.patientname, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
+            subtitle: Text("${patient.ward} | Bed: ${patient.bedname}\nIPD: ${patient.ipdNo}", style: const TextStyle(fontSize: 12)),
+            trailing: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text("₹${patient.patientBalance}", style: TextStyle(fontWeight: FontWeight.bold, color: patient.patientBalance > 0 ? Colors.red : Colors.green)),
+                const Text("Balance", style: TextStyle(fontSize: 10)),
+              ],
+            ),
+          ),
+
+          const Divider(height: 20),
+
+          // Row 1
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: row1.map((a) => _actionBtn(
+              a['icon'] as IconData,
+              a['label'] as String,
+              a['color'] as Color,
+              a['onTap'] as VoidCallback,
+            )).toList(),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Row 2
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              ...row2.map((a) => _actionBtn(
+                a['icon'] as IconData,
+                a['label'] as String,
+                a['color'] as Color,
+                a['onTap'] as VoidCallback,
+              )),
+              // Fill empty slots so row 2 aligns with row 1
+              if (row2.length < half)
+                ...List.generate(half - row2.length, (_) => const SizedBox(width: 60)),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+// Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
+//   return InkWell(
+//     onTap: onTap,
+//     borderRadius: BorderRadius.circular(12),
+//     child: SizedBox(
+//       width: 60,
+//       child: Column(
+//         mainAxisSize: MainAxisSize.min,
+//         children: [
+//           Container(
+//             padding: const EdgeInsets.all(10),
+//             decoration: BoxDecoration(
+//               color: color.withOpacity(0.1),
+//               borderRadius: BorderRadius.circular(12),
+//             ),
+//             child: Icon(icon, color: color, size: 22),
+//           ),
+//           const SizedBox(height: 5),
+//           Text(
+//             label,
+//             textAlign: TextAlign.center,
+//             maxLines: 2,
+//             overflow: TextOverflow.ellipsis,
+//             style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w500, height: 1.2),
+//           ),
+//         ],
+//       ),
+//     ),
+//   );
+// }
+
+Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
+  return SizedBox(
+    width: 72, // ← fixed width for all buttons
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: CircleAvatar(backgroundColor: Colors.blue.shade50, child: Text(patient.patientname[0], style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
-              title: Text(patient.patientname, style: GoogleFonts.poppins(fontWeight: FontWeight.bold)),
-              subtitle: Text("${patient.ward} | Bed: ${patient.bedname}\nIPD: ${patient.ipdNo}", style: const TextStyle(fontSize: 12)),
-              trailing: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Text("₹${patient.patientBalance}", style: TextStyle(fontWeight: FontWeight.bold, color: patient.patientBalance > 0 ? Colors.red : Colors.green)), const Text("Balance", style: TextStyle(fontSize: 10))]),
-            ),
-            const Divider(),
-            
-            // Replaced Wrap with horizontal ScrollView for single row responsive layout
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _actionBtn(Icons.receipt, "Prescription", Colors.blue, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReqPrescriptionPage(patientName: patient.patientname, patient: patient))).then((_) {
-                      _refreshDashboardData();
-                    }); 
-                  }),
-                  _actionBtn(Icons.science, "Investigation", Colors.orange, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ReqInvestigationPage(patientName: patient.patientname, patient: patient))).then((_) {
-                      _refreshDashboardData();
-                    }); 
-                  }),
-                  _actionBtn(Icons.assignment_outlined, "Records", Colors.teal, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => TreatmentRecordWebViewPage(patient: patient))).then((_) {
-                      _refreshDashboardData();
-                    }); 
-                  }),
-                  _actionBtn(Icons.favorite, "Vitals", Colors.redAccent, () { 
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => VitalsPage(patient: patient),
-                      ),
-                    ).then((_) {
-                      _refreshDashboardData();
-                    });
-                  }),
-                  // _actionBtn(Icons.notifications_active, "Alert", Colors.amber, () { 
-                  //   Navigator.pop(context);
-                  //   ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Notification alert sent for ${patient.patientname}")));
-                  // }),
-                  _actionBtn(Icons.notifications_none, "Notifications", Colors.purple, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => NotificationDetailsPage(patientName: patient.patientname, patientId: patient.ipdNo,admissionId: patient.admissionId,))).then((_) {
-                      _refreshDashboardData();
-                    }); 
-                  }),
-                  _actionBtn(Icons.note_add, "Day-to-day Notes", Colors.brown, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => DayToDayNotesPage(ipdId: patient.ipdNo, admissionDate: patient.admissionDate, patientName: patient.patientname, admissionId: patient.admissionId, patientId: '',))).then((_) {
-                      _refreshDashboardData();
-                    }); 
-                  }),
-                  _actionBtn(Icons.upload_file, "Upload Doc", Colors.green, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => UploadDocScreen(patient: patient,))).then((_) {
-                      _refreshDashboardData();
-                    }); 
-                  }),
-                  _actionBtn(Icons.local_hospital, "Shift Patient", Colors.deepPurple, () { 
-                    Navigator.pop(context); 
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => ShiftPatientPage(patient: patient))).then((_) {
-                      _refreshDashboardData();
-                    });
-                  }),
-                ],
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
               ),
-            )
+              child: Icon(icon, color: color, size: 22),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+            ),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _actionBtn(IconData icon, String label, Color color, VoidCallback onTap) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(10), 
-              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), 
-              child: Icon(icon, color: color, size: 22)
-            ), 
-            const SizedBox(height: 6), 
-            Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500))
-          ]
-        ),
-      ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class PatientGridCardCompact extends StatelessWidget {

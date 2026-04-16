@@ -19,7 +19,7 @@ class ApiService {
   static String? _tokenPrefix;
   static Timer? _autoRefreshTimer;
 
-  static const String _cryptoJSPassphrase = 'sclyte_security';
+ static const String _cryptoJSPassphrase = 'sclyte_security';
 
   static String _encryptCryptoJS(String plainText) {
     try {

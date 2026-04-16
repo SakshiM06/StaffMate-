@@ -8,6 +8,7 @@ import 'package:staff_mate/pages/login_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/api/api_service.dart'; // Added for activity tracking
 import 'package:staff_mate/services/session_manger.dart'; // Added for activity tracking
+import 'package:staff_mate/services/email_verfication_service.dart'; // Import the new service
 
 class OTPVerificationDialog extends StatefulWidget {
   final String userId;
@@ -32,30 +33,25 @@ class OTPVerificationDialog extends StatefulWidget {
 class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
   // Controllers
   final TextEditingController _emailController = TextEditingController();
-  // final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _otpController = TextEditingController();
   final FocusNode _pinFocusNode = FocusNode();
   
-  // API URLs
-  final String _baseUrl = "https://test.smartcarehis.com:8443/smartcaremain/passwordupdate";
-  final String _sendOtpUrl = "/sendEmailOTP";
-  final String _verifyOtpUrl = "/verifyOTP";
+  // Service
+  final EmailVerificationService _emailVerificationService = EmailVerificationService();
   
   // UI State
   bool _isLoading = false;
   bool _showOTPInput = false;
   bool _isResendEnabled = true;
-  int _resendTimer = 120;
+  int _resendTimer = 300;
   Timer? _timer;
   
   // Data
   String _currentEmail = '';
-  String _currentPhone = '';
 
   @override
   void dispose() {
     _emailController.dispose();
-    // _phoneController.dispose();
     _otpController.dispose();
     _pinFocusNode.dispose();
     _timer?.cancel();
@@ -65,7 +61,7 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
   void _startResendTimer() {
     setState(() {
       _isResendEnabled = false;
-      _resendTimer = 30;
+      _resendTimer = 300;
     });
     
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
@@ -78,29 +74,15 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
     });
   }
 
-  Future<Map<String, String>> _getHeaders() async {
-    return {
-      'Content-Type': 'application/json',
-      'Accept': '*/*',
-      'Authorization': widget.token.isNotEmpty ? 'SmartCare ${widget.token}' : '',
-      'clinicid': widget.clinicId,
-      'userid': widget.userId,
-      'ZONEID': 'Asia/Kolkata',
-      'branchId': '1', // Default branch ID
-      'Access-Control-Allow-Origin': '*',
-    };
-  }
-
   Future<void> _sendOTP() async {
-    // Validate at least one contact method
-    if (_emailController.text.trim().isEmpty ) {
-      _showSnackBar("Please enter email ", Colors.red);
+    // Validate email
+    if (_emailController.text.trim().isEmpty) {
+      _showSnackBar("Please enter email address", Colors.red);
       return;
     }
 
-    // Validate email if provided
-    if (_emailController.text.trim().isNotEmpty && 
-        !_isValidEmail(_emailController.text.trim())) {
+    // Validate email format
+    if (!_emailVerificationService.isValidEmail(_emailController.text.trim())) {
       _showSnackBar("Please enter a valid email address", Colors.red);
       return;
     }
@@ -108,139 +90,103 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
     setState(() {
       _isLoading = true;
       _currentEmail = _emailController.text.trim();
-      // _currentPhone = _phoneController.text.trim();
     });
 
     try {
-      final headers = await _getHeaders();
-      
-      final body = {
-        "email": _currentEmail.isNotEmpty ? _currentEmail : _currentPhone,
-        "userId": widget.userId,
-      };
-      
-      // debugPrint('🔍 Send OTP URL: $_baseUrl$_sendOtpUrl');
-      // debugPrint('🔍 Send OTP Headers: $headers');
-      // debugPrint('🔍 Send OTP Body: $body');
-
-      final response = await http.post(
-        Uri.parse("$_baseUrl$_sendOtpUrl"),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30));
+      // Use the new email verification service
+      final result = await _emailVerificationService.sendEmailOTP(
+        email: _currentEmail,
+        userId: widget.userId,
+      );
 
       if (!mounted) return;
 
-      debugPrint('🔍 Send OTP Response Status: ${response.statusCode}');
-      debugPrint('🔍 Send OTP Response Body: ${response.body}');
+      if (result['success']) {
+        setState(() {
+          _showOTPInput = true;
+        });
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        final statusCode = decoded['status_code'] ?? 200;
+        // Save email to SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('otp_email', _currentEmail);
         
-        if (statusCode == 200) {
-          setState(() {
-            _showOTPInput = true;
-          });
+        // Save verification data using the service
+        await _emailVerificationService.saveVerificationData(
+          email: _currentEmail,
+          userId: widget.userId,
+        );
 
-          final prefs = await SharedPreferences.getInstance();
-await prefs.setString('otp_email', _currentEmail);
-
-          _startResendTimer();
-          _showSnackBar(
-            "OTP sent to ${_currentEmail.isNotEmpty ? _currentEmail : _currentPhone}", 
-            Colors.green
-          );
-          
-          // Auto-focus OTP field
-          Future.delayed(const Duration(milliseconds: 300), () {
-            FocusScope.of(context).requestFocus(_pinFocusNode);
-          });
-        } else {
-          _showSnackBar(decoded['message'] ?? "Failed to send OTP", Colors.red);
-        }
+        _startResendTimer();
+        _showSnackBar(
+          "OTP sent to $_currentEmail", 
+          Colors.green
+        );
+        
+        // Auto-focus OTP field
+        Future.delayed(const Duration(milliseconds: 300), () {
+          FocusScope.of(context).requestFocus(_pinFocusNode);
+        });
       } else {
-        String errorMessage = "Failed to send OTP";
-        try {
-          final errorBody = jsonDecode(response.body);
-          errorMessage = errorBody['message'] ?? errorBody['error']?['cause'] ?? errorMessage;
-        } catch (e) {
-          // Use default message
-        }
-        _showSnackBar(errorMessage, Colors.red);
+        _showSnackBar(
+          result['message'] ?? "Failed to send OTP", 
+          Colors.red
+        );
       }
     } catch (e) {
       debugPrint('❌ Error sending OTP: $e');
-      _showSnackBar("Network error: ${e.toString()}", Colors.red);
+      _showSnackBar("Error: ${e.toString()}", Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _verifyOTP() async {
-    if (_otpController.text.trim().isEmpty) {
+    final otp = _otpController.text.trim();
+    
+    if (otp.isEmpty) {
       _showSnackBar("Please enter OTP", Colors.red);
       return;
     }
 
-    if (_otpController.text.trim().length < 6) {
-      _showSnackBar("Please enter valid 6-digit OTP", Colors.red);
+    if (!_emailVerificationService.isValidOTP(otp)) {
+      _showSnackBar("Please enter a valid 6-digit OTP", Colors.red);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      final headers = await _getHeaders();
-      
-      final body = {
-        "userOtp": _otpController.text.trim(),
-        "userId": widget.userId,
-      };
-      
-      // debugPrint('🔍 Verify OTP URL: $_baseUrl$_verifyOtpUrl');
-      // debugPrint('🔍 Verify OTP Headers: $headers');
-      // debugPrint('🔍 Verify OTP Body: $body');
-
-      final response = await http.post(
-        Uri.parse("$_baseUrl$_verifyOtpUrl"),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30));
+      // Use the new email verification service for OTP verification
+      final result = await _emailVerificationService.verifyOTP(
+        userOtp: otp,
+        userId: widget.userId,
+      );
 
       if (!mounted) return;
 
-      debugPrint('🔍 Verify OTP Response Status: ${response.statusCode}');
-      debugPrint('🔍 Verify OTP Response Body: ${response.body}');
-
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        final statusCode = decoded['status_code'] ?? 200;
+      if (result['success']) {
+        _showSnackBar("OTP verified successfully!", Colors.green);
         
-        if (statusCode == 200) {
-          _showSnackBar("OTP verified successfully!", Colors.green);
-          
-          // Close dialog after short delay
-          Future.delayed(const Duration(milliseconds: 500), () {
-            Navigator.of(context).pop(); // Close dialog
-            widget.onVerificationSuccess(); // Proceed to dashboard
-          });
-        } else {
-          _showSnackBar(decoded['message'] ?? "Invalid OTP", Colors.red);
-        }
+        // Mark email as verified in local storage
+        await _emailVerificationService.markEmailAsVerified(_currentEmail);
+        
+        // Clear verification data after successful verification
+        await _emailVerificationService.clearVerificationData();
+        
+        // Close dialog after short delay
+        Future.delayed(const Duration(milliseconds: 500), () {
+          Navigator.of(context).pop(); // Close dialog
+          widget.onVerificationSuccess(); // Proceed to dashboard
+        });
       } else {
-        String errorMessage = "Verification failed";
-        try {
-          final errorBody = jsonDecode(response.body);
-          errorMessage = errorBody['message'] ?? errorBody['error']?['cause'] ?? errorMessage;
-        } catch (e) {
-          // Use default message
-        }
-        _showSnackBar(errorMessage, Colors.red);
+        _showSnackBar(
+          result['message'] ?? "Invalid OTP", 
+          Colors.red
+        );
       }
     } catch (e) {
       debugPrint('❌ Error verifying OTP: $e');
-      _showSnackBar("Network error: ${e.toString()}", Colors.red);
+      _showSnackBar("Error: ${e.toString()}", Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -252,42 +198,30 @@ await prefs.setString('otp_email', _currentEmail);
     setState(() => _isLoading = true);
 
     try {
-      final headers = await _getHeaders();
-      
-      final body = {
-        "email": _currentEmail.isNotEmpty ? _currentEmail : _currentPhone,
-        "userId": widget.userId,
-      };
-
-      final response = await http.post(
-        Uri.parse("$_baseUrl$_sendOtpUrl"),
-        headers: headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 30));
+      // Use the new email verification service for resending OTP
+      final result = await _emailVerificationService.sendEmailOTP(
+        email: _currentEmail,
+        userId: widget.userId,
+      );
 
       if (!mounted) return;
 
-      if (response.statusCode == 200) {
-        final decoded = jsonDecode(response.body);
-        if (decoded['status_code'] == 200) {
-          _startResendTimer();
-          _showSnackBar("OTP resent successfully", Colors.green);
-          _otpController.clear();
-        } else {
-          _showSnackBar(decoded['message'] ?? "Failed to resend OTP", Colors.red);
-        }
+      if (result['success']) {
+        _startResendTimer();
+        _showSnackBar("OTP resent successfully", Colors.green);
+        _otpController.clear();
       } else {
-        _showSnackBar("Failed to resend OTP", Colors.red);
+        _showSnackBar(
+          result['message'] ?? "Failed to resend OTP", 
+          Colors.red
+        );
       }
     } catch (e) {
+      debugPrint('❌ Error resending OTP: $e');
       _showSnackBar("Error: ${e.toString()}", Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  bool _isValidEmail(String email) {
-    return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
   }
 
   void _showSnackBar(String message, Color color) {
@@ -365,7 +299,7 @@ await prefs.setString('otp_email', _currentEmail);
                 Text(
                   _showOTPInput 
                       ? "Enter the 6-digit code sent to your email"
-                      : "Please provide your contact details",
+                      : "Please provide your email address",
                   textAlign: TextAlign.center,
                   style: GoogleFonts.poppins(
                     fontSize: 14,
@@ -401,47 +335,6 @@ await prefs.setString('otp_email', _currentEmail);
                       ),
                     ),
                   ),
-                  const SizedBox(height: 12),
-                  
-                  // OR divider (commented out)
-                  // Row(
-                  //   children: [
-                  //     Expanded(child: Divider(color: Colors.grey.shade300)),
-                  //     Padding(
-                  //       padding: const EdgeInsets.symmetric(horizontal: 8),
-                  //       child: Text(
-                  //         "OR",
-                  //         style: GoogleFonts.poppins(
-                  //           color: Colors.grey.shade500,
-                  //           fontSize: 12,
-                  //         ),
-                  //       ),
-                  //     ),
-                  //     Expanded(child: Divider(color: Colors.grey.shade300)),
-                  //   ],
-                  // ),
-                  const SizedBox(height: 12),
-                  
-                  // Phone field (commented out)
-                  // Container(
-                  //   decoration: BoxDecoration(
-                  //     color: Colors.grey.shade50,
-                  //     borderRadius: BorderRadius.circular(12),
-                  //     border: Border.all(color: Colors.grey.shade200),
-                  //   ),
-                  //   child: TextField(
-                  //     controller: _phoneController,
-                  //     keyboardType: TextInputType.phone,
-                  //     style: GoogleFonts.poppins(fontSize: 14),
-                  //     decoration: InputDecoration(
-                  //       hintText: "Phone Number",
-                  //       hintStyle: GoogleFonts.poppins(color: Colors.grey.shade400),
-                  //       prefixIcon: Icon(Icons.phone_outlined, color: AppColors.primaryDarkBlue, size: 20),
-                  //       border: InputBorder.none,
-                  //       contentPadding: const EdgeInsets.symmetric(vertical: 15),
-                  //     ),
-                  //   ),
-                  // ),
                 ] else ...[
                   // OTP Input
                   Container(
@@ -500,11 +393,13 @@ await prefs.setString('otp_email', _currentEmail);
                           color: AppColors.textBodyColor,
                           fontSize: 13,
                         ),
+                        overflow: TextOverflow.visible,
                       ),
-                      GestureDetector(
+                      Flexible(
+                   child:   GestureDetector(
                         onTap: _isResendEnabled ? _resendOTP : null,
                         child: Text(
-                          _isResendEnabled ? "Resend" : "Resend in $_resendTimer sec",
+                          _isResendEnabled ? "Resend" : "Resend in $_resendTimer seconds",
                           style: GoogleFonts.poppins(
                             color: _isResendEnabled ? AppColors.primaryDarkBlue : Colors.grey,
                             fontSize: 13,
@@ -512,6 +407,7 @@ await prefs.setString('otp_email', _currentEmail);
                             decoration: _isResendEnabled ? TextDecoration.underline : TextDecoration.none,
                           ),
                         ),
+                      ),
                       ),
                     ],
                   ),

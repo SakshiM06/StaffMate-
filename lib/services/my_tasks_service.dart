@@ -27,6 +27,7 @@ class MyTasksService {
   static const String _fetchTasksEndpoint = '/master/task/master/fetch';
   static const String _updateTaskEndpoint = '/master/task/master/update';
   static const String _taskHistoryEndpoint = '/master/task/master/history';
+  static const String _clinicUserListEndpoint = '/smartcaremain/clinic/userlist';
 
   static Future<Map<String, dynamic>> getAllMasterCategories() async {
     final stopwatch = Stopwatch()..start();
@@ -1369,7 +1370,6 @@ static Future<Map<String, dynamic>> getSubCategoriesByCategoryId({
     }
   }
 
-  // FULL UPDATE TASK METHOD - Updates all task details
   static Future<Map<String, dynamic>> updateTask({
     required int taskId,
     required String taskName,
@@ -1592,7 +1592,7 @@ static Future<Map<String, dynamic>> getSubCategoriesByCategoryId({
     required String description,
     required String status,
     required String priority,
-    String roleGroupName = 'Admin',
+    String roleGroupName = '',
     String? reminderDatetime,
     String? repeatType,
     int? repeatInterval,
@@ -1769,6 +1769,116 @@ static Future<Map<String, dynamic>> getSubCategoriesByCategoryId({
   
   static Future<Map<String, dynamic>> fetchTodayTasks() async {
     return fetchTasksByStatus('TODAY');
+  }
+  
+  // New API: Get Clinic User List
+  static Future<Map<String, dynamic>> getClinicUserList() async {
+    final stopwatch = Stopwatch()..start();
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final token = prefs.getString('auth_token') ?? '';
+      final clinicId = prefs.getString('clinicId') ?? '';
+      final userId = prefs.getString('userId') ?? '';
+      final branchId = prefs.getString('branchId') ?? '';
+
+      if (token.isEmpty) throw Exception('Authentication token missing');
+      if (clinicId.isEmpty) throw Exception('Clinic ID missing');
+      if (userId.isEmpty) throw Exception('User ID missing');
+
+      final headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Authorization': 'SmartCare $token',
+        'clinicid': clinicId,
+        'userid': userId,
+        'ZONEID': 'Asia/Kolkata',
+        if (branchId.isNotEmpty) 'branchId': branchId,
+      };
+
+      final url = '$_physicalDeviceUrl$_clinicUserListEndpoint';
+      
+      debugPrint('=== GET CLINIC USER LIST API REQUEST DEBUG ===');
+      debugPrint('URL: $url');
+      debugPrint('Platform: ${Platform.operatingSystem}');
+      debugPrint('Headers: ${_sanitizeHeaders(headers)}');
+
+      final client = http.Client();
+      
+      try {
+        final response = await client
+            .get(
+              Uri.parse(url),
+              headers: headers,
+            )
+            .timeout(
+              const Duration(seconds: 30),
+              onTimeout: () {
+                client.close();
+                throw Exception('Connection timeout. Server not responding');
+              },
+            );
+
+        stopwatch.stop();
+        debugPrint('=== GET CLINIC USER LIST API RESPONSE DEBUG ===');
+        debugPrint('Status Code: ${response.statusCode}');
+        debugPrint('Response Time: ${stopwatch.elapsedMilliseconds}ms');
+        debugPrint('Response Body: ${response.body}');
+
+        if (response.statusCode == 200) {
+          final decoded = jsonDecode(response.body);
+          
+          Map<String, dynamic> formattedResponse;
+          
+          if (decoded is List) {
+            formattedResponse = {
+              'data': decoded,
+              'message': 'Success',
+              'status_code': 200
+            };
+          } else if (decoded is Map<String, dynamic>) {
+            if (decoded.containsKey('data')) {
+              formattedResponse = decoded;
+            } else {
+              formattedResponse = {
+                'data': [decoded],
+                'message': 'Success',
+                'status_code': 200
+              };
+            }
+          } else {
+            formattedResponse = {
+              'data': [],
+              'message': 'Unknown response format',
+              'status_code': 200
+            };
+          }
+          
+          debugPrint('✅ Clinic user list fetched successfully');
+          
+          return formattedResponse;
+        } else if (response.statusCode == 401) {
+          throw Exception('Authentication failed. Please login again.');
+        } else if (response.statusCode == 403) {
+          throw Exception('Access forbidden. Check your permissions.');
+        } else if (response.statusCode == 404) {
+          return {
+            'data': [],
+            'message': 'No users found for this clinic',
+            'status_code': 200
+          };
+        } else {
+          throw Exception('Server returned status code: ${response.statusCode}');
+        }
+      } finally {
+        client.close();
+      }
+    } catch (e) {
+      debugPrint('MyTasksService Error (getClinicUserList): $e');
+      rethrow;
+    }
   }
   
   static Future<void> _cacheTasksResponse(Map<String, dynamic> response, String status) async {

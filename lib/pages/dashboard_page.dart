@@ -48,87 +48,119 @@ class _DashboardPageState extends State<DashboardPage> {
       }
     });
   }
-// In dashboard_page.dart, update _showSessionExpiryDialog
-void _showSessionExpiryDialog() {
-  if (!mounted) return; // Add this check
-  
-  showDialog(
-    context: context,
-    barrierDismissible: false,
-    builder: (BuildContext dialogContext) {
-      return AlertDialog(
-        title: const Text("Session Expiring Soon"),
-        content: const Text(
-          "Your session will expire in 5 seconds. Do you want to continue?"
-        ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              if (!mounted) return;
-              Navigator.of(dialogContext).pop();
-              await _handleLogout();
-            },
-            child: const Text("Logout", style: TextStyle(color: Colors.red)),
+
+  // Public method to change tab from child pages
+  void changeTab(int index) {
+    if (index == 2) { // MY HR tab
+      _showComingSoonMessage();
+      return;
+    }
+    
+    if (mounted) {
+      setState(() {
+        _currentTab = index;
+      });
+      // Update user activity
+      SessionManager.updateUserActivity();
+      ApiService.updateUserActivity();
+    }
+  }
+
+  // Method to navigate to Tasks page and highlight the Tasks icon
+  void navigateToTasks() {
+    if (mounted) {
+      setState(() {
+        _currentTab = 3; // Tasks tab index
+      });
+      
+      // Optional: Pop to root of tasks navigator if needed
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigatorKeys[3].currentState?.popUntil((route) => route.isFirst);
+      });
+      
+      SessionManager.updateUserActivity();
+      ApiService.updateUserActivity();
+    }
+  }
+
+  void _showSessionExpiryDialog() {
+    if (!mounted) return;
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text("Session Expiring Soon"),
+          content: const Text(
+            "Your session will expire in 5 seconds. Do you want to continue?"
           ),
-          ElevatedButton(
-            onPressed: () async {
-              if (!mounted) return;
-              Navigator.of(dialogContext).pop();
-              
-              // Show loading indicator
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Refreshing session..."),
-                    duration: Duration(seconds: 2),
-                  ),
-                );
-              }
-              
-              final success = await ApiService.refreshUserToken();
-              if (success && mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text("Session refreshed successfully"),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-                // Reset session timer
-                SessionManager.updateUserActivity();
-              } else {
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                if (!mounted) return;
+                Navigator.of(dialogContext).pop();
+                await _handleLogout();
+              },
+              child: const Text("Logout", style: TextStyle(color: Colors.red)),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                if (!mounted) return;
+                Navigator.of(dialogContext).pop();
+                
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
-                      content: Text("Failed to refresh session. Please login again."),
-                      backgroundColor: Colors.red,
+                      content: Text("Refreshing session..."),
+                      duration: Duration(seconds: 2),
                     ),
                   );
-                  await _handleLogout();
                 }
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF1A237E),
+                
+                final success = await ApiService.refreshUserToken();
+                if (success && mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text("Session refreshed successfully"),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                  SessionManager.updateUserActivity();
+                } else {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text("Failed to refresh session. Please login again."),
+                        backgroundColor: Colors.red,
+                      ),
+                    );
+                    await _handleLogout();
+                  }
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A237E),
+              ),
+              child: const Text("Refresh Session"),
             ),
-            child: const Text("Refresh Session"),
-          ),
-        ],
-      );
-    },
-  );
-}
-
-Future<void> _handleLogout() async {
-  await SessionManager.fullLogout();
-  ApiService.clearSession();
-  
-  if (mounted) {
-    Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+          ],
+        );
+      },
+    );
   }
-}
+
+  Future<void> _handleLogout() async {
+    await SessionManager.fullLogout();
+    ApiService.clearSession();
+    
+    if (mounted) {
+      Navigator.of(context).pushNamedAndRemoveUntil('/login', (route) => false);
+    }
+  }
 
   void _onItemTapped(int index) {
     // Update user activity on tab tap
@@ -194,7 +226,6 @@ Future<void> _handleLogout() async {
       },
       child: GestureDetector(
         onTap: () {
-          // Update user activity on any tap in dashboard
           SessionManager.updateUserActivity();
           ApiService.updateUserActivity();
         },

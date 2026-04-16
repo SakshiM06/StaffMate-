@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:staff_mate/ai/chat_screen.dart' as _descriptionController;
 import 'package:staff_mate/ai/ticket_model.dart';
 import 'package:staff_mate/ai/ticket_screen.dart';
 import 'package:staff_mate/services/support_service.dart';
@@ -922,7 +923,7 @@ class _ModernMessageBubble extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.only(left: 52),
                 child: _ModernTicketForm(
-                  onSubmit: (queryType, description, priority, images) async {
+                  onSubmit: (queryType, module, description, priority, images) async {
                     final provider = context.read<ChatProvider>();
                     final loadingMsg = MessageModel(
                       id: DateTime.now().toString(),
@@ -936,7 +937,7 @@ class _ModernMessageBubble extends StatelessWidget {
                     try {
                       final prefs = await SharedPreferences.getInstance();
                       final userId = prefs.getString('userId') ?? '';
-
+    final fullTitle = '$queryType - $module';
                       final result = await SupportService.createTicket(
                         queryType: queryType,
                         description: description,
@@ -960,7 +961,9 @@ class _ModernMessageBubble extends StatelessWidget {
                             '**Ticket ID:** `$ticketId`\n'
                             '**Query Type:** $queryType\n'
                             '**Priority:** $priority\n\n'
-                            'Our support team will review your request shortly.',
+                            '📧 A confirmation has been sent to your registered email address.\n'
+        'Kindly check your inbox (and spam folder if needed) for details.\n\n'
+        'Our support team will look into this shortly.',
                         isUser: false,
                         timestamp: DateTime.now(),
                         type: 'ticket_confirmation',
@@ -2752,8 +2755,9 @@ class TicketDetailWidget extends StatelessWidget {
 }
 
 // ─── Modern Ticket Form ───────────────────────────────────────────────────────
+// ─── Modern Ticket Form with Module Selection ─────────────────────────────────
 class _ModernTicketForm extends StatefulWidget {
-  final Function(String, String, String, List<File>) onSubmit;
+  final Function(String, String, String, String, List<File>) onSubmit;
   final VoidCallback onCancel;
 
   const _ModernTicketForm({required this.onSubmit, required this.onCancel});
@@ -2765,12 +2769,19 @@ class _ModernTicketForm extends StatefulWidget {
 class _ModernTicketFormState extends State<_ModernTicketForm> {
   final _formKey = GlobalKey<FormState>();
   final _descriptionController = TextEditingController();
+  final TextEditingController _moduleSearchController = TextEditingController();
 
   String? _selectedQueryType;
+  String? _selectedModule;
   String _selectedPriority = 'MEDIUM';
   List<File> _selectedImages = [];
   bool _isUploading = false;
   bool _isSubmitting = false;
+  bool _isLoadingModules = false;
+  
+  List<Map<String, dynamic>> _modulesList = [];
+  List<Map<String, dynamic>> _filteredModulesList = [];
+  bool _showModulePicker = false;
 
   // ── Query type → icon mapping ──
   static const List<Map<String, dynamic>> _queryItems = [
@@ -2785,7 +2796,137 @@ class _ModernTicketFormState extends State<_ModernTicketForm> {
     {'label': 'Other',                'icon': Icons.list_alt_rounded},
   ];
 
-  // ── Show bottom-sheet grid picker ──
+  @override
+  void initState() {
+    super.initState();
+    _loadModules();
+  }
+  
+  @override
+  void dispose() {
+    _moduleSearchController.dispose();
+    super.dispose();
+  }
+
+// Update the _loadModules method in _ModernTicketFormState to handle pagination:
+
+Future<void> _loadModules() async {
+  setState(() {
+    _isLoadingModules = true;
+  });
+  
+  try {
+    List<Map<String, dynamic>> allModules = [];
+    int currentPage = 0;
+    bool hasMore = true;
+    
+    while (hasMore) {
+      final result = await SupportService.getModulesList(
+        page: currentPage,
+        size: 50, // Fetch up to 50 per request
+      );
+      
+      if (result['success'] == true && result['data'] != null) {
+        final data = result['data'];
+        
+        // Parse the response - adjust based on your API response structure
+        List<Map<String, dynamic>> modules = [];
+        
+        // Check for paginated response structure
+        if (data['data'] != null && data['data'] is List) {
+          modules = List<Map<String, dynamic>>.from(data['data']);
+          // Check if there are more pages
+          final totalPages = data['totalPages'] ?? data['total_pages'];
+          final totalElements = data['totalElements'] ?? data['total_elements'];
+          if (totalPages != null) {
+            hasMore = currentPage + 1 < totalPages;
+          } else if (totalElements != null) {
+            hasMore = allModules.length + modules.length < totalElements;
+          } else {
+            hasMore = modules.length == 50; // If we got full page, assume more
+          }
+        } else if (data is List) {
+          modules = List<Map<String, dynamic>>.from(data);
+          hasMore = false; // If it's a direct list, assume all data is returned
+        } else if (data is Map && data['modules'] != null && data['modules'] is List) {
+          modules = List<Map<String, dynamic>>.from(data['modules']);
+          hasMore = false;
+        } else if (data is Map && data['list'] != null && data['list'] is List) {
+          modules = List<Map<String, dynamic>>.from(data['list']);
+          hasMore = false;
+        } else {
+          hasMore = false;
+        }
+        
+        // Format modules with consistent structure
+        final formattedModules = modules.map((module) {
+          return {
+            'id': module['id'] ?? module['moduleId'] ?? module['code'] ?? '',
+            'name': module['name'] ?? module['moduleName'] ?? module['title'] ?? 'Unknown',
+            'description': module['description'] ?? '',
+            'icon': _getModuleIcon(module['name'] ?? module['moduleName'] ?? ''),
+          };
+        }).toList();
+        
+        allModules.addAll(formattedModules);
+        currentPage++;
+        
+        debugPrint('📋 Fetched page $currentPage: ${modules.length} modules, total so far: ${allModules.length}');
+      } else {
+        hasMore = false;
+      }
+    }
+    
+    _modulesList = allModules;
+    _filteredModulesList = List.from(_modulesList);
+    
+    debugPrint('✅ Loaded total ${_modulesList.length} modules');
+    
+  } catch (e) {
+    debugPrint('❌ Error loading modules: $e');
+    _modulesList = [];
+    _filteredModulesList = [];
+  } finally {
+    setState(() {
+      _isLoadingModules = false;
+    });
+  }
+}
+  
+  IconData _getModuleIcon(String moduleName) {
+    final name = moduleName.toLowerCase();
+    if (name.contains('patient')) return Icons.person;
+    if (name.contains('appointment')) return Icons.calendar_today;
+    if (name.contains('billing') || name.contains('invoice')) return Icons.receipt;
+    if (name.contains('pharmacy') || name.contains('medicine')) return Icons.local_pharmacy;
+    if (name.contains('lab') || name.contains('test')) return Icons.science;
+    if (name.contains('radiology') || name.contains('xray')) return Icons.image;
+    if (name.contains('operation') || name.contains('surgery')) return Icons.local_hospital;
+    if (name.contains('ward') || name.contains('bed')) return Icons.hotel;
+    if (name.contains('staff') || name.contains('employee')) return Icons.people;
+    if (name.contains('report')) return Icons.analytics;
+    if (name.contains('inventory') || name.contains('stock')) return Icons.inventory;
+    if (name.contains('dashboard')) return Icons.dashboard;
+    if (name.contains('settings')) return Icons.settings;
+    return Icons.apps;
+  }
+  
+  void _filterModules(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredModulesList = List.from(_modulesList);
+      } else {
+        _filteredModulesList = _modulesList.where((module) {
+          final name = module['name'].toString().toLowerCase();
+          final description = module['description'].toString().toLowerCase();
+          final searchQuery = query.toLowerCase();
+          return name.contains(searchQuery) || description.contains(searchQuery);
+        }).toList();
+      }
+    });
+  }
+
+  // ── Show query type bottom sheet ──
   void _showQueryTypeSheet() {
     showModalBottomSheet(
       context: context,
@@ -2894,7 +3035,337 @@ class _ModernTicketFormState extends State<_ModernTicketForm> {
       ),
     );
   }
-
+  
+  // ── Show module selection bottom sheet with search ──
+ // Enhanced module selection sheet with infinite scrolling
+void _showModuleSelectionSheet() {
+  _moduleSearchController.clear();
+  _filterModules('');
+  
+  // For infinite scrolling, we'll keep track of loaded modules separately
+  List<Map<String, dynamic>> displayedModules = [];
+  int _currentPage = 0;
+  bool _hasMoreModules = true;
+  bool _isLoadingMore = false;
+  
+  // Load first batch
+  displayedModules = List.from(_modulesList);
+  
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (_) => StatefulBuilder(
+      builder: (ctx, setSheetState) {
+        // Function to load more modules
+        Future<void> loadMoreModules() async {
+          if (_isLoadingMore || !_hasMoreModules) return;
+          
+          setSheetState(() {
+            _isLoadingMore = true;
+          });
+          
+          try {
+            final result = await SupportService.getModulesList(
+              page: _currentPage,
+              size: 50,
+            );
+            
+            if (result['success'] == true && result['data'] != null) {
+              final data = result['data'];
+              List<Map<String, dynamic>> newModules = [];
+              
+              if (data['data'] != null && data['data'] is List) {
+                newModules = List<Map<String, dynamic>>.from(data['data']);
+                final totalPages = data['totalPages'] ?? data['total_pages'];
+                if (totalPages != null) {
+                  _hasMoreModules = _currentPage + 1 < totalPages;
+                } else {
+                  _hasMoreModules = newModules.length == 50;
+                }
+              } else if (data is List) {
+                newModules = List<Map<String, dynamic>>.from(data);
+                _hasMoreModules = false;
+              }
+              
+              final formattedModules = newModules.map((module) {
+                return {
+                  'id': module['id'] ?? module['moduleId'] ?? module['code'] ?? '',
+                  'name': module['name'] ?? module['moduleName'] ?? module['title'] ?? 'Unknown',
+                  'description': module['description'] ?? '',
+                  'icon': _getModuleIcon(module['name'] ?? module['moduleName'] ?? ''),
+                };
+              }).toList();
+              
+              setSheetState(() {
+                displayedModules.addAll(formattedModules);
+                _currentPage++;
+              });
+            } else {
+              _hasMoreModules = false;
+            }
+          } catch (e) {
+            debugPrint('Error loading more modules: $e');
+            _hasMoreModules = false;
+          } finally {
+            setSheetState(() {
+              _isLoadingMore = false;
+            });
+          }
+        }
+        
+        // Scroll controller for infinite scroll
+        final scrollController = ScrollController();
+        scrollController.addListener(() {
+          if (scrollController.position.pixels >= 
+              scrollController.position.maxScrollExtent - 200) {
+            if (!_isLoadingMore && _hasMoreModules && _moduleSearchController.text.isEmpty) {
+              loadMoreModules();
+            }
+          }
+        });
+        
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.75,
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // Handle bar
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(top: 10, bottom: 4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Title with count
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.apps, size: 18, color: Color(0xFF1A237E)),
+                    const SizedBox(width: 8),
+                    Text(
+                      'SELECT MODULE',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF1A237E),
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8EAF6),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${_modulesList.length} Available',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF1A237E),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              
+              // Search Bar
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: TextField(
+                    controller: _moduleSearchController,
+                    onChanged: (value) {
+                      setSheetState(() {
+                        _filterModules(value);
+                      });
+                    },
+                    decoration: InputDecoration(
+                      hintText: 'Search ${_modulesList.length} modules...',
+                      hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+                      prefixIcon: Icon(Icons.search, size: 18, color: Colors.grey.shade500),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+              
+              // Loading indicator for initial load
+              if (_isLoadingModules)
+                const Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 16),
+                        Text('Loading modules...'),
+                      ],
+                    ),
+                  ),
+                ),
+              
+              // Empty state
+              if (!_isLoadingModules && _filteredModulesList.isEmpty)
+                Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search_off, size: 48, color: Colors.grey.shade300),
+                        const SizedBox(height: 12),
+                        Text(
+                          _modulesList.isEmpty ? 'No modules available' : 'No matching modules',
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                        ),
+                        if (_modulesList.isEmpty)
+                          TextButton(
+                            onPressed: _loadModules,
+                            child: const Text('Retry'),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              
+              // Modules List with infinite scroll
+              if (!_isLoadingModules && _filteredModulesList.isNotEmpty)
+                Expanded(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    itemCount: _filteredModulesList.length + (_hasMoreModules && _moduleSearchController.text.isEmpty ? 1 : 0),
+                    itemBuilder: (ctx, index) {
+                      if (index == _filteredModulesList.length) {
+                        // Loading more indicator
+                        return Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Center(
+                            child: Column(
+                              children: [
+                                const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Loading more modules...',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
+                      
+                      final module = _filteredModulesList[index];
+                      final isSelected = _selectedModule == module['name'];
+                      
+                      return GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _selectedModule = module['name'];
+                          });
+                          Navigator.pop(context);
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFFE8EAF6)
+                                : Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF1A237E)
+                                  : Colors.grey.shade200,
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 40,
+                                height: 40,
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? const Color(0xFF1A237E).withValues(alpha: 0.1)
+                                      : Colors.white,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  module['icon'] as IconData,
+                                  color: isSelected
+                                      ? const Color(0xFF1A237E)
+                                      : const Color(0xFF5C6BC0),
+                                  size: 22,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      module['name'],
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: isSelected
+                                            ? const Color(0xFF1A237E)
+                                            : Colors.grey.shade800,
+                                      ),
+                                    ),
+                                    if (module['description'] != null && module['description'].toString().isNotEmpty)
+                                      Text(
+                                        module['description'],
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey.shade500,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                Icon(Icons.check_circle,
+                                    size: 18, color: const Color(0xFF1A237E)),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -2944,8 +3415,7 @@ class _ModernTicketFormState extends State<_ModernTicketForm> {
                 padding: const EdgeInsets.all(10),
                 child: Column(
                   children: [
-
-                    // ── Query Type — custom trigger button ──
+                    // ── Query Type ──
                     FormField<String>(
                       validator: (_) => (_selectedQueryType == null || _selectedQueryType!.isEmpty)
                           ? 'Please select a query type'
@@ -2981,7 +3451,7 @@ class _ModernTicketFormState extends State<_ModernTicketForm> {
                                             (e) => e['label'] == _selectedQueryType,
                                             orElse: () => _queryItems.last,
                                           )['icon'] as IconData
-                                        : Icons.grid_view_rounded,
+                                        : Icons.category_outlined,
                                     size: 16,
                                     color: _selectedQueryType != null
                                         ? const Color(0xFF1A237E)
@@ -3014,6 +3484,102 @@ class _ModernTicketFormState extends State<_ModernTicketForm> {
                                           size: 10, color: Colors.white),
                                     )
                                   else
+                                    Icon(Icons.keyboard_arrow_down_rounded,
+                                        size: 16, color: Colors.grey.shade400),
+                                ],
+                              ),
+                            ),
+                          ),
+                          if (fieldState.hasError)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4, left: 4),
+                              child: Text(
+                                fieldState.errorText!,
+                                style: TextStyle(
+                                    fontSize: 10, color: Colors.red.shade600),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    
+                    // ── Module Selection (NEW) ──
+                    FormField<String>(
+                      validator: (_) => (_selectedModule == null || _selectedModule!.isEmpty)
+                          ? 'Please select a module'
+                          : null,
+                      builder: (fieldState) => Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          GestureDetector(
+                            onTap: _isLoadingModules ? null : _showModuleSelectionSheet,
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: _selectedModule != null
+                                    ? const Color(0xFFE8EAF6)
+                                    : Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: fieldState.hasError
+                                      ? Colors.red.shade400
+                                      : _selectedModule != null
+                                          ? const Color(0xFF3949AB)
+                                          : Colors.grey.shade200,
+                                  width: _selectedModule != null ? 1.5 : 1,
+                                ),
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
+                              child: Row(
+                                children: [
+                                  if (_isLoadingModules)
+                                    const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(strokeWidth: 1.5),
+                                    )
+                                  else
+                                    Icon(
+                                      _selectedModule != null
+                                          ? (_modulesList.firstWhere(
+                                              (e) => e['name'] == _selectedModule,
+                                              orElse: () => {'icon': Icons.apps},
+                                            )['icon'] as IconData)
+                                          : Icons.apps,
+                                      size: 16,
+                                      color: _selectedModule != null
+                                          ? const Color(0xFF1A237E)
+                                          : Colors.grey.shade500,
+                                    ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      _selectedModule ?? (_isLoadingModules ? 'Loading modules...' : 'Select Module'),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: _selectedModule != null
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
+                                        color: _selectedModule != null
+                                            ? const Color(0xFF1A237E)
+                                            : Colors.grey.shade500,
+                                      ),
+                                    ),
+                                  ),
+                                  if (_selectedModule != null && !_isLoadingModules)
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF1A237E),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: const Icon(Icons.check,
+                                          size: 10, color: Colors.white),
+                                    )
+                                  else if (!_isLoadingModules)
                                     Icon(Icons.keyboard_arrow_down_rounded,
                                         size: 16, color: Colors.grey.shade400),
                                 ],
@@ -3262,17 +3828,12 @@ class _ModernTicketFormState extends State<_ModernTicketForm> {
     setState(() => _isSubmitting = true);
     await widget.onSubmit(
       _selectedQueryType!,
+      _selectedModule!,
       _descriptionController.text,
       _selectedPriority,
       _selectedImages,
     );
     if (mounted) setState(() => _isSubmitting = false);
-  }
-
-  @override
-  void dispose() {
-    _descriptionController.dispose();
-    super.dispose();
   }
 }
 

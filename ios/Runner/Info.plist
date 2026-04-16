@@ -52,7 +52,10 @@
 	<key>NSAllowArbitraryLoads</key>
 	<true/>
 	<key>NSPhotoLibraryUsageDescription</key>
+
 <string>Allow access to photo library to select images</string>
+<key>NSFaceIDUsageDescription</key>
+<string>This app uses Face ID to securely log you in without typing your password</string>
 <key>NSCameraUsageDescription</key>
 <string>Allow access to camera to take photos</string>
 <key>NSLocationWhenInUseUsageDescription</key>

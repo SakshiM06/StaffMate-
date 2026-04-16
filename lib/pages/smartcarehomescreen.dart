@@ -4,19 +4,17 @@ import 'package:flutter_staggered_animations/flutter_staggered_animations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:staff_mate/pages/welcome_page.dart';
-import 'package:staff_mate/pages/profile_page.dart'; 
-// import 'package:staff_mate/pages/submit_ticket_page.dart'; // Commented out - will be handled by chatbot
+import 'package:staff_mate/pages/profile_page.dart';
 import 'package:staff_mate/pages/settings.dart';
 import 'package:staff_mate/services/user_information_service.dart';
 import 'package:intl/intl.dart';
 import 'package:staff_mate/pages/my_hr_screen.dart';
 import 'package:staff_mate/pages/forget_password.dart';
-import 'package:staff_mate/services/home_service.dart'; 
+import 'package:staff_mate/services/home_service.dart';
 import 'package:staff_mate/models/staff_dob.dart';
 import 'package:staff_mate/pages/training_page.dart';
 import 'package:staff_mate/pages/rota.dart';
 import 'package:staff_mate/pages/mytasks.dart';
-// Import chatbot files
 import 'package:staff_mate/ai/chat_screen.dart';
 import 'package:staff_mate/ai/chat_provider.dart';
 import 'package:provider/provider.dart';
@@ -45,11 +43,18 @@ class AppColors {
   static const Color iconGreen = Color(0xFF388E3C);
   static const Color iconOrange = Color(0xFFF57C00);
   static const Color iconPurple = Color(0xFF7B1FA2);
-  static const Color chatbotBlue = Color(0xFF0084FF); // New color for chatbot
+  static const Color chatbotBlue = Color(0xFF0084FF);
 }
 
 class SmartCareHomeScreen extends StatefulWidget {
-  const SmartCareHomeScreen({super.key});
+   final VoidCallback? onNavigateToTasks;
+  final ValueChanged<int>? onTabChange;
+  
+  const SmartCareHomeScreen({
+    super.key,
+  this.onNavigateToTasks,
+    this.onTabChange,
+  });
 
   @override
   State<SmartCareHomeScreen> createState() => _SmartCareHomeScreenState();
@@ -78,6 +83,8 @@ class _SmartCareHomeScreenState extends State<SmartCareHomeScreen> {
   List<QuickTask> quickTasks = [];
   List<PendingApproval> pendingApprovals = [];
   CheckInOutStatus checkInOutStatus = CheckInOutStatus();
+  
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
@@ -86,6 +93,14 @@ class _SmartCareHomeScreenState extends State<SmartCareHomeScreen> {
     _setCurrentDate();
     _loadSampleData();
     _loadTodayBirthdays();
+  }
+
+  void _scrollToTop() {
+    _scrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeInOut,
+    );
   }
 
   void _setCurrentDate() {
@@ -108,12 +123,12 @@ class _SmartCareHomeScreenState extends State<SmartCareHomeScreen> {
       RotaShift(date: 'Mar 15', shift: 'Morning (7 AM - 3 PM)', location: 'OPD'),
     ];
 
-    // quickTasks = [
-    //   QuickTask(title: 'Patient Rounds', priority: 'High', time: '9:00 AM', completed: false),
-    //   QuickTask(title: 'Documentation', priority: 'Medium', time: '2:00 PM', completed: false),
-    //   QuickTask(title: 'Team Meeting', priority: 'Low', time: '4:00 PM', completed: true),
-    //   QuickTask(title: 'Lab Reports Review', priority: 'High', time: '11:00 AM', completed: false),
-    // ];
+    quickTasks = [
+      QuickTask(title: 'Patient Rounds', priority: 'High', time: '9:00 AM', completed: false),
+      QuickTask(title: 'Documentation', priority: 'Medium', time: '2:00 PM', completed: false),
+      QuickTask(title: 'Team Meeting', priority: 'Low', time: '4:00 PM', completed: true),
+      QuickTask(title: 'Lab Reports Review', priority: 'High', time: '11:00 AM', completed: false),
+    ];
 
     pendingApprovals = [
       PendingApproval(type: 'Leave Request', name: 'Dr. Lisa Park', days: '3 days', status: 'Pending'),
@@ -149,73 +164,35 @@ Future<void> _loadTodayBirthdays() async {
     final today = DateTime.now();
     final dobString = _formatDateForAPI(today);
     
-    debugPrint('=== LOADING STAFF BIRTHDAYS ===');
-    debugPrint('Current date (local): ${today.toString()}');
-    debugPrint('Current date (UTC): ${today.toUtc().toString()}');
-    debugPrint('Formatted for API: $dobString');
-    
     final response = await HomeService.getStaffByDob(dobString);
-    
-    debugPrint('=== API RESPONSE ===');
-    debugPrint('Response type: ${response.runtimeType}');
-    debugPrint('Response keys: ${response.keys}');
-    debugPrint('Full Response: $response');
     
     if (response.containsKey('data')) {
       final data = response['data'];
-      debugPrint('Data type: ${data.runtimeType}');
-      debugPrint('Data value: $data');
       
       if (data is List) {
-        debugPrint('Data is List, length: ${data.length}');
-        
         if (data.isNotEmpty) {
-          debugPrint('Found ${data.length} staff with birthday today');
-          
-          // Print each item in the list
           for (int i = 0; i < data.length; i++) {
-            debugPrint('Item $i: ${data[i]}');
-            debugPrint('Item $i type: ${data[i].runtimeType}');
-            
             if (data[i] is Map) {
               final Map<String, dynamic> staffData;
               if (data[i] is Map<String, dynamic>) {
                 staffData = data[i] as Map<String, dynamic>;
               } else {
-                // Convert from Map<dynamic, dynamic> to Map<String, dynamic>
                 staffData = {};
                 (data[i] as Map).forEach((key, value) {
                   staffData[key.toString()] = value;
                 });
               }
               
-              debugPrint('Staff $i data keys: ${staffData.keys}');
-              debugPrint('Staff $i data values: ${staffData.values}');
-              
               try {
                 final staff = StaffDOB.fromApiResponse(staffData);
                 todayBirthdays.add(staff);
-                debugPrint('Successfully added: ${staff.fullName}');
-                debugPrint('Full Name: ${staff.fullName}');
-                debugPrint('Initial: ${staff.initial}');
-                debugPrint('DOB: ${staff.dob}');
               } catch (e) {
                 debugPrint('Error parsing staff $i: $e');
-                debugPrint('Raw staff data: $staffData');
               }
-            } else {
-              debugPrint('Item $i is not a Map, it\'s: ${data[i].runtimeType}');
             }
           }
-        } else {
-          debugPrint('No birthday data found - empty list returned from API');
         }
-      } else {
-        debugPrint('Data is not a List, it\'s: ${data.runtimeType}');
       }
-    } else {
-      debugPrint('No "data" key in response');
-      debugPrint('Available keys: ${response.keys}');
     }
     
     if (mounted) {
@@ -223,22 +200,9 @@ Future<void> _loadTodayBirthdays() async {
         _loadingBirthdays = false;
       });
     }
-    
-    if (todayBirthdays.isNotEmpty) {
-      debugPrint('=== BIRTHDAYS LOADED SUCCESSFULLY ===');
-      debugPrint('Total birthdays found: ${todayBirthdays.length}');
-      for (final staff in todayBirthdays) {
-        debugPrint('- ${staff.fullName}');
-      }
-    } else {
-      debugPrint('=== NO BIRTHDAYS FOUND ===');
-      debugPrint('API returned empty data array');
-    }
   } catch (e) {
     debugPrint('=== ERROR LOADING BIRTHDAYS ===');
-    debugPrint('Error type: ${e.runtimeType}');
     debugPrint('Error message: $e');
-    debugPrint('Stack trace: ${e.toString()}');
     
     if (mounted) {
       setState(() {
@@ -263,7 +227,6 @@ String _formatDateForAPI(DateTime date) {
   final year = date.year.toString();
   
   final formatted = '$day-$month-$year';
-  debugPrint('Formatted date for API: $formatted');
   return formatted;
 }
 
@@ -518,15 +481,6 @@ String _formatDateForAPI(DateTime date) {
                             color: AppColors.textBodyColor,
                           ),
                         ),
-                        const SizedBox(height: 20),
-                        Text(
-                          "API Response: Empty data array",
-                          style: GoogleFonts.poppins(
-                            fontSize: 12,
-                            color: AppColors.warningOrange,
-                            fontStyle: FontStyle.italic,
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -688,7 +642,6 @@ Widget _buildStaffBirthdayCard(StaffDOB staff) {
     );
   }
 
-  // New method to open chatbot
   void _openChatbot() {
     Navigator.push(
       context,
@@ -950,7 +903,6 @@ return;
   Widget build(BuildContext context) {
     final Size screenSize = MediaQuery.of(context).size;
     final double screenWidth = screenSize.width;
-
     final double horizontalPadding = screenWidth * 0.04;
 
     return Scaffold(
@@ -968,7 +920,6 @@ return;
         location: location,
         onLogout: _handleLogout,
       ),
-      // Add floating action button for chatbot
       floatingActionButton: FloatingActionButton(
         onPressed: _openChatbot,
         backgroundColor: AppColors.chatbotBlue,
@@ -992,7 +943,7 @@ return;
                       horizontalPadding,
                       12,
                       horizontalPadding,
-                      16,
+                      12,
                     ),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
@@ -1008,31 +959,25 @@ return;
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              children: [
-                                Builder(
-                                  builder: (context) {
-                                    return Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(0.15),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: IconButton(
-                                        onPressed: () => Scaffold.of(context).openDrawer(),
-                                        icon: const Icon(Icons.menu, color: Colors.white, size: 20),
-                                        padding: const EdgeInsets.all(8),
-                                      ),
-                                    );
-                                  }
-                                ),
-                                const SizedBox(width: 8),
-                              ],
-                            ),
-                            
-                            Container(
+            Row(
+  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  children: [
+    Builder(
+      builder: (context) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: IconButton(
+            onPressed: () => Scaffold.of(context).openDrawer(),
+            icon: const Icon(Icons.menu, color: Colors.white, size: 20),
+            padding: const EdgeInsets.all(8),
+          ),
+        );
+      }
+    ),
+       Container(
                               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                               decoration: BoxDecoration(
                                 color: Colors.white.withOpacity(0.15),
@@ -1049,9 +994,7 @@ return;
                             ),
                           ],
                         ),
-                        
-                        const SizedBox(height: 12),
-                      
+                        const SizedBox(height: 8),
                         Text(
                           "Welcome,",
                           style: GoogleFonts.poppins(
@@ -1059,9 +1002,7 @@ return;
                             fontSize: 14,
                           ),
                         ),
-                        
                         const SizedBox(height: 2),
-                        
                         Text(
                           fullName,
                           style: GoogleFonts.poppins(
@@ -1072,9 +1013,7 @@ return;
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        
                         const SizedBox(height: 4),
-                        
                         Text(
                           userRole,
                           style: GoogleFonts.poppins(
@@ -1082,289 +1021,239 @@ return;
                             fontSize: 12,
                           ),
                         ),
-                        
-                        const SizedBox(height: 16),
-                 
-                        Row(
-                          children: [
-                            _buildSmallStatItem(
-                              icon: Icons.group,
-                              value: todayBirthdays.length.toString(),
-                              label: "Today's Birthdays",
-                              color: AppColors.accentTeal,
-                            ),
-                            const SizedBox(width: 8),
-                            _buildSmallStatItem(
-                              icon: Icons.task,
-                              value: "4",
-                              label: "Tasks",
-                              color: AppColors.warningOrange,
-                            ),
-                            const SizedBox(width: 8),
-                            _buildSmallStatItem(
-                              icon: Icons.check_circle,
-                              value: "8",
-                              label: "Done",
-                              color: AppColors.successGreen,
-                            ),
-                          ],
-                        ),
+                        const SizedBox(height: 12),
                       ],
                     ),
                   ),
             
                   Expanded(
-                    child: AnimationLimiter(
-                      child: ListView(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (scrollInfo) {
+                        return false;
+                      },
+                      child: ListView.builder(
+                        controller: _scrollController,
                         padding: EdgeInsets.all(horizontalPadding),
-                        children: AnimationConfiguration.toStaggeredList(
-                          duration: const Duration(milliseconds: 375),
-                          childAnimationBuilder: (widget) => SlideAnimation(
-                            verticalOffset: 50.0,
-                            child: FadeInAnimation(child: widget),
-                          ),
-                          children: [
-                            const SizedBox(height: 16),
-                            
-                            _buildCompactSectionHeader(
-                              title: "Today's Events",
-                              icon: Icons.event,
-                              context: context,
-                            ),
-                            
-                            const SizedBox(height: 12),
-                            
-                            SizedBox(
-                              height: 130,
-                              child: ListView(
-                                scrollDirection: Axis.horizontal,
-                                children: [
-                                  _buildCompactEventCard(
-                                    title: "Birthdays",
-                                    count: todayBirthdays.length,
-                                    icon: Icons.cake,
-                                    color: AppColors.pink,
-                                    context: context,
-                                    onTap: _showBirthdayDetails,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildCompactEventCard(
-                                    title: "Trainings",
-                                    count: trainings.length,
-                                    icon: Icons.school,
-                                    color: AppColors.infoBlue,
-                                    context: context,
-                                    onTap: () => _navigateToTraining(context),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  _buildCompactEventCard(
-                                    title: "My Rota",
-                                    count: rotaShifts.length,
-                                    icon: Icons.schedule,
-                                    color: AppColors.purple,
-                                    context: context,
-                                    onTap: () => _showEventDetails("My Rota"),
-                                  ),
-                                ],
+                        itemCount: 1,
+                        itemBuilder: (context, index) {
+                          return Column(
+                            children: [
+                              const SizedBox(height: 16),
+                              
+                              _buildCompactSectionHeader(
+                                title: "Today's Events",
+                                icon: Icons.event,
+                                context: context,
                               ),
-                            ),
-                            
-                            const SizedBox(height: 20),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                if (constraints.maxWidth < 400) {
-                                  return Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                            _buildCompactSectionHeader(
-  title: "My Tasks",
-  icon: Icons.task_alt,
-  context: context,
-),
-const SizedBox(height: 12),
-...quickTasks.take(2).map((task) => 
-  GestureDetector(
-    onTap: () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (context) => const MyTasksPage()),
-      );
-    },
-    child: _buildCompactTaskItem(task, context),
-  )
-),
-const SizedBox(height: 12),
-_buildSeeAllButton(
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const MyTasksPage()),
-    );
-  },
-  context: context,
-),
-                                      
-                                      const SizedBox(height: 20),
-                                      
-                                      _buildCompactSectionHeader(
-                                        title: "Approvals Pending",
-                                        icon: Icons.pending_actions,
-                                        context: context,
-                                      ),
-                                      const SizedBox(height: 12),
-                                      ...pendingApprovals.take(2).map((approval) => 
-                                        _buildCompactApprovalItem(approval, context)
-                                      ),
-                                      const SizedBox(height: 12),
-                                      _buildSeeAllButton(
-                                        onTap: () => _showEventDetails("Approvals"),
-                                        context: context,
-                                      ),
-                                    ],
-                                  );
-                                } else {
-                                  return Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            _buildCompactSectionHeader(
-                                              title: "My Tasks",
-                                              icon: Icons.task_alt,
-                                              context: context,
-                                            ),
-                                            const SizedBox(height: 12),
-                                            ...quickTasks.take(2).map((task) => 
-                                              _buildCompactTaskItem(task, context)
-                                            ),
-                                            const SizedBox(height: 12),
-                                            _buildSeeAllButton(
-                                              onTap: () => _showEventDetails("My Tasks"),
-                                              context: context,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      
-                                      const SizedBox(width: 12),
-                                      
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            _buildCompactSectionHeader(
-                                              title: "Approvals Pending",
-                                              icon: Icons.pending_actions,
-                                              context: context,
-                                            ),
-                                            const SizedBox(height: 12),
-                                            ...pendingApprovals.take(2).map((approval) => 
-                                              _buildCompactApprovalItem(approval, context)
-                                            ),
-                                            const SizedBox(height: 12),
-                                            _buildSeeAllButton(
-                                              onTap: () => _showEventDetails("Approvals"),
-                                              context: context,
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  );
-                                }
-                              },
-                            ),
-                            
-                            const SizedBox(height: 20),
-                            _buildCompactCheckInOutWidget(context),
-                            
-                            const SizedBox(height: 20),
-                            _buildCustomExpansionSection(
-                              title: "Today's Birthdays",
-                              icon: Icons.cake,
-                              children: _loadingBirthdays
-                                  ? [
-                                      const Center(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(16.0),
-                                          child: CircularProgressIndicator(color: AppColors.pink),
-                                        ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              SizedBox(
+                                height: 130,
+                                child: ListView(
+                                  scrollDirection: Axis.horizontal,
+                                  children: [
+                                    _buildCompactEventCard(
+                                      title: "Birthdays",
+                                      count: todayBirthdays.length,
+                                      icon: Icons.cake,
+                                      color: AppColors.pink,
+                                      context: context,
+                                      onTap: _showBirthdayDetails,
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _buildCompactEventCard(
+                                      title: "Trainings",
+                                      count: trainings.length,
+                                      icon: Icons.school,
+                                      color: AppColors.infoBlue,
+                                      context: context,
+                                      onTap: () => _navigateToTraining(context),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _buildCompactEventCard(
+                                      title: "My Rota",
+                                      count: rotaShifts.length,
+                                      icon: Icons.schedule,
+                                      color: AppColors.purple,
+                                      context: context,
+                                      onTap: () => _showEventDetails("My Rota"),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 20),
+                              
+                              // My Tasks Section - Shows 2-3 tasks
+                              _buildShadowBox(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildCompactSectionHeader(
+                                      title: "My Tasks",
+                                      icon: Icons.task_alt,
+                                      context: context,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    ...quickTasks.take(3).map((task) => 
+                                      GestureDetector(
+                                        onTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(builder: (context) => const MyTasksPage()),
+                                          );
+                                        },
+                                        child: _buildCompactTaskItem(task, context),
                                       )
-                                    ]
-                                  : todayBirthdays.isEmpty
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _buildSeeAllButton(
+                                      onTap: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(builder: (context) => const MyTasksPage()),
+                                        );
+                                      },
+                                      context: context,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 20),
+                              
+                              // Approvals Pending Section
+                              _buildShadowBox(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    _buildCompactSectionHeader(
+                                      title: "Approvals Pending",
+                                      icon: Icons.pending_actions,
+                                      context: context,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    ...pendingApprovals.take(3).map((approval) => 
+                                      _buildCompactApprovalItem(approval, context)
+                                    ),
+                                    const SizedBox(height: 12),
+                                    _buildSeeAllButton(
+                                      onTap: () => _showEventDetails("Approvals"),
+                                      context: context,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 20),
+                              
+                              _buildShadowBox(
+                                child: _buildCompactCheckInOutWidget(context),
+                              ),
+                              
+                              const SizedBox(height: 20),
+                              
+                              _buildShadowBox(
+                                child: _buildCustomExpansionSection(
+                                  title: "Today's Birthdays",
+                                  icon: Icons.cake,
+                                  children: _loadingBirthdays
                                       ? [
-                                          _buildEmptyBirthdayState()
+                                          const Center(
+                                            child: Padding(
+                                              padding: EdgeInsets.all(16.0),
+                                              child: CircularProgressIndicator(color: AppColors.pink),
+                                            ),
+                                          )
                                         ]
-                                      : todayBirthdays.take(2).map((staff) => 
-                                          _buildCompactStaffListItem(staff, context)
-                                        ).toList(),
-                              context: context,
-                              onSeeAll: _showBirthdayDetails,
-                            ),
-                            
-                            const SizedBox(height: 12),
-                            
-                            _buildCustomExpansionSection(
-                              title: "Trainings",
-                              icon: Icons.school,
-                              children: trainings.take(2).map((training) => 
-                                GestureDetector(
-                                  onTap: () => _navigateToTraining(context),
-                                  child: _buildCompactListItem(
-                                    icon: Icons.school,
-                                    title: training.title,
-                                    subtitle: training.date,
-                                    trailing: training.status,
-                                    color: AppColors.infoBlue,
-                                    context: context,
-                                  ),
-                                )
-                              ).toList(),
-                              context: context,
-                              onSeeAll: () => _navigateToTraining(context),
-                            ),
-                            
-                            const SizedBox(height: 12),
-                            
-                            _buildCustomExpansionSection(
-                              title: "My Rota",
-                              icon: Icons.schedule,
-                              children: rotaShifts.take(2).map((rota) => 
-                                _buildCompactListItem(
-                                  icon: Icons.schedule,
-                                  title: rota.shift,
-                                  subtitle: rota.location,
-                                  trailing: rota.date,
-                                  color: AppColors.purple,
+                                      : todayBirthdays.isEmpty
+                                          ? [
+                                              _buildEmptyBirthdayState()
+                                            ]
+                                          : todayBirthdays.take(3).map((staff) => 
+                                              _buildCompactStaffListItem(staff, context)
+                                            ).toList(),
                                   context: context,
-                                )
-                              ).toList(),
-                              context: context,
-                              onSeeAll: () => _showEventDetails("My Rota"),
-                            ),
-
-                            _buildCompactEventCard(
-                              title: "My Rota", 
-                              count: rotaShifts.length,
-                               icon: Icons.schedule, 
-                               color: AppColors.purple, 
-                               context: context, 
-                               onTap: () => Navigator.push(context,
-                                MaterialPageRoute(builder: (context) => const RotaPage()
+                                  onSeeAll: _showBirthdayDetails,
                                 ),
+                              ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              _buildShadowBox(
+                                child: _buildCustomExpansionSection(
+                                  title: "Trainings",
+                                  icon: Icons.school,
+                                  children: trainings.take(3).map((training) => 
+                                    GestureDetector(
+                                      onTap: () => _navigateToTraining(context),
+                                      child: _buildCompactListItem(
+                                        icon: Icons.school,
+                                        title: training.title,
+                                        subtitle: training.date,
+                                        trailing: training.status,
+                                        color: AppColors.infoBlue,
+                                        context: context,
+                                      ),
+                                    )
+                                  ).toList(),
+                                  context: context,
+                                  onSeeAll: () => _navigateToTraining(context),
                                 ),
-                            ),
-                            
-                            const SizedBox(height: 32),
-                          ],
-                        ),
+                              ),
+                              
+                              const SizedBox(height: 12),
+                              
+                              _buildShadowBox(
+                                child: _buildCustomExpansionSection(
+                                  title: "My Rota",
+                                  icon: Icons.schedule,
+                                  children: rotaShifts.take(3).map((rota) => 
+                                    _buildCompactListItem(
+                                      icon: Icons.schedule,
+                                      title: rota.shift,
+                                      subtitle: rota.location,
+                                      trailing: rota.date,
+                                      color: AppColors.purple,
+                                      context: context,
+                                    )
+                                  ).toList(),
+                                  context: context,
+                                  onSeeAll: () => _showEventDetails("My Rota"),
+                                ),
+                              ),
+                              
+                              const SizedBox(height: 32),
+                            ],
+                          );
+                        },
                       ),
                     ),
                   ),
                 ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildShadowBox({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.15),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+            spreadRadius: 2,
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: child,
       ),
     );
   }
@@ -1408,15 +1297,6 @@ _buildSeeAllButton(
                     color: AppColors.textBodyColor,
                   ),
                 ),
-                const SizedBox(height: 4),
-                // Text(
-                //   "API returned empty data",
-                //   style: GoogleFonts.poppins(
-                //     fontSize: 10,
-                //     color: AppColors.warningOrange,
-                //     fontStyle: FontStyle.italic,
-                //   ),
-                // ),
               ],
             ),
           ),
@@ -1491,51 +1371,6 @@ Widget _buildCompactStaffListItem(StaffDOB staff, BuildContext context) {
     ),
   );
 }
-
-  Widget _buildSmallStatItem({
-    required IconData icon,
-    required String value,
-    required String label,
-    required Color color,
-  }) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withOpacity(0.2)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, color: color, size: 16),
-                const SizedBox(width: 4),
-                Text(
-                  value,
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              style: GoogleFonts.poppins(
-                color: Colors.white.withOpacity(0.8),
-                fontSize: 12,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   Widget _buildCompactSectionHeader({
     required String title,
@@ -1800,207 +1635,193 @@ Widget _buildCompactStaffListItem(StaffDOB staff, BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: AppColors.accentTeal.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.login, color: AppColors.accentTeal, size: 18),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: AppColors.accentTeal.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
               ),
-              const SizedBox(width: 10),
-              Text(
-                "Check-in / Check-out",
-                style: GoogleFonts.poppins(
-                  fontSize: 15,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.textDark,
-                ),
+              child: const Icon(Icons.login, color: AppColors.accentTeal, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              "Check-in / Check-out",
+              style: GoogleFonts.poppins(
+                fontSize: 15,
+                fontWeight: FontWeight.bold,
+                color: AppColors.textDark,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        
+        if (isSmallScreen)
+          Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Status",
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: AppColors.textBodyColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      _buildStatusChip(),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Check-in Time",
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: AppColors.textBodyColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        checkInOutStatus.checkInTime,
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        "Hours Today",
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: AppColors.textBodyColor,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        "${checkInOutStatus.totalHours}h",
+                        style: GoogleFonts.poppins(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.textDark,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 20),
+                ],
+              ),
+            ],
+          )
+        else
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Status",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.textBodyColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _buildStatusChip(),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Check-in Time",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.textBodyColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    checkInOutStatus.checkInTime,
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    "Hours Today",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.textBodyColor,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    "${checkInOutStatus.totalHours}h",
+                    style: GoogleFonts.poppins(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textDark,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          
-          if (isSmallScreen)
-            Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Status",
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: AppColors.textBodyColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        _buildStatusChip(),
-                      ],
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Check-in Time",
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: AppColors.textBodyColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          checkInOutStatus.checkInTime,
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          "Hours Today",
-                          style: GoogleFonts.poppins(
-                            fontSize: 11,
-                            color: AppColors.textBodyColor,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          "${checkInOutStatus.totalHours}h",
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(width: 20),
-                  ],
-                ),
-              ],
-            )
-          else
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Status",
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.textBodyColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildStatusChip(),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Check-in Time",
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.textBodyColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      checkInOutStatus.checkInTime,
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                  ],
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      "Hours Today",
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.textBodyColor,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      "${checkInOutStatus.totalHours}h",
-                      style: GoogleFonts.poppins(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _toggleCheckInOut,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: checkInOutStatus.checkedIn 
-                    ? AppColors.errorRed 
-                    : AppColors.successGreen,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+        
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _toggleCheckInOut,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: checkInOutStatus.checkedIn 
+                  ? AppColors.errorRed 
+                  : AppColors.successGreen,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-              child: Text(
-                checkInOutStatus.checkedIn ? "Check Out Now" : "Check In Now",
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                ),
+            ),
+            child: Text(
+              checkInOutStatus.checkedIn ? "Check Out Now" : "Check In Now",
+              style: GoogleFonts.poppins(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
               ),
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -2046,72 +1867,55 @@ Widget _buildCompactStaffListItem(StaffDOB staff, BuildContext context) {
     required BuildContext context,
     required VoidCallback onSeeAll,
   }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
               children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: AppColors.primaryDarkBlue.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(icon, color: AppColors.primaryDarkBlue, size: 18),
-                    ),
-                    const SizedBox(width: 10),
-                    Text(
-                      title,
-                      style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textDark,
-                      ),
-                    ),
-                  ],
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primaryDarkBlue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: AppColors.primaryDarkBlue, size: 18),
                 ),
-                GestureDetector(
-                  onTap: onSeeAll,
-                  child: Row(
-                    children: [
-                      Text(
-                        "See All",
-                        style: GoogleFonts.poppins(
-                          fontSize: 12,
-                          color: AppColors.primaryDarkBlue,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      const Icon(Icons.arrow_forward, size: 14, color: AppColors.primaryDarkBlue),
-                    ],
+                const SizedBox(width: 10),
+                Text(
+                  title,
+                  style: GoogleFonts.poppins(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textDark,
                   ),
                 ),
               ],
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
-            child: Column(children: children),
-          ),
-        ],
-      ),
+            GestureDetector(
+              onTap: onSeeAll,
+              child: Row(
+                children: [
+                  Text(
+                    "See All",
+                    style: GoogleFonts.poppins(
+                      fontSize: 12,
+                      color: AppColors.primaryDarkBlue,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.arrow_forward, size: 14, color: AppColors.primaryDarkBlue),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ...children,
+      ],
     );
   }
 
@@ -2301,8 +2105,7 @@ class UserProfileDrawer extends StatefulWidget {
 class _UserProfileDrawerState extends State<UserProfileDrawer> {
 
   bool _hrExpanded = false;
-  // bool _ticketExpanded = false; // Commented out - will be handled by chatbot
-  bool _trainingExpanded = false; // Add this for Training section
+  bool _trainingExpanded = false;
   bool _myTasksExpanded = false;
   bool _isLogoutHovering = false;
   final Map<String, bool> _hoverStates = {};
@@ -2319,9 +2122,8 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
     );
   }
 
-  // New method to open chatbot
   void _openChatbot() {
-    Navigator.pop(context); // Close drawer first
+    Navigator.pop(context);
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -2461,45 +2263,6 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
 
                     const SizedBox(height: 16),
 
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.grey.withOpacity(0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        leading: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: BoxDecoration(
-                            color: AppColors.iconOrange.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Icon(Icons.lock_reset_outlined, color: AppColors.iconOrange, size: 22),
-                        ),
-                        title: Text(
-                          "Forgot Password",
-                          style: GoogleFonts.poppins(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.textDark,
-                          ),
-                        ),
-                        trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.textBodyColor),
-                        onTap: () => _navigateToForgotPassword(context),
-                      ),
-                    ),
-
-                    const SizedBox(height: 16),
-
-                    // Training Section - New
                     _buildMenuSection(
                       title: "Training",
                       isExpanded: _trainingExpanded,
@@ -2554,248 +2317,87 @@ class _UserProfileDrawerState extends State<UserProfileDrawer> {
 
                     const SizedBox(height: 16),
 
-                    // My HR Section
-                    // _buildMenuSection(
-                    //   title: "My HR",
-                    //   isExpanded: _hrExpanded,
-                    //   onTap: () => setState(() => _hrExpanded = !_hrExpanded),
-                    //   icon: Icons.work_outline,
-                    //   iconColor: AppColors.iconGreen,
-                    //   children: [
-                    //     const SizedBox(height: 8),
-                    //     _buildSubSection(
-                    //       title: "Leave Management",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Leave Balance",
-                    //           onTap: () => _navigateToMyHR(context, section: 1),
-                    //           icon: Icons.beach_access_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Apply Leave",
-                    //           onTap: () => _navigateToMyHR(context, section: 1, openDialog: 'apply_leave'),
-                    //           icon: Icons.add_circle_outline,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Leave History",
-                    //           onTap: () => _navigateToMyHR(context, section: 1),
-                    //           icon: Icons.history_outlined,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //     const SizedBox(height: 8),
-                    //     _buildSubSection(
-                    //       title: " OT / OD",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Apply OT",
-                    //           onTap: () => _navigateToMyHR(context, section: 2, openDialog: 'apply_ot'),
-                    //           icon: Icons.timer_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Apply OD",
-                    //           onTap: () => _navigateToMyHR(context, section: 2, openDialog: 'apply_od'),
-                    //           icon: Icons.assignment_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "View History",
-                    //           onTap: () => _navigateToMyHR(context, section: 2),
-                    //           icon: Icons.list_alt_outlined,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //     const SizedBox(height: 8),
-                    //     _buildSubSection(
-                    //       title: "Attendance",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Check-in",
-                    //           onTap: () => _navigateToMyHR(context, section: 3, openDialog: 'check_in'),
-                    //           icon: Icons.login_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Check-out",
-                    //           onTap: () => _navigateToMyHR(context, section: 3, openDialog: 'check_out'),
-                    //           icon: Icons.logout_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Attendance History",
-                    //           onTap: () => _navigateToMyHR(context, section: 3),
-                    //           icon: Icons.calendar_view_month_outlined,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //     const SizedBox(height: 8),
-                    //     _buildSubSection(
-                    //       title: "Salary",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Salary Summary",
-                    //           onTap: () => _navigateToMyHR(context, section: 4),
-                    //           icon: Icons.attach_money_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Payslip Download",
-                    //           onTap: () => _navigateToMyHR(context, section: 4, openDialog: 'download_payslip'),
-                    //           icon: Icons.download_outlined,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //   ],
-                    // ),
+                    _buildMenuSection(
+                      title: "Support Chatbot",
+                      isExpanded: false,
+                      onTap: _openChatbot,
+                      icon: Icons.support_agent_outlined,
+                      iconColor: AppColors.chatbotBlue,
+                      children: [],
+                    ),
+
+                    _buildMenuSection(
+                      title: "My Tasks",
+                      isExpanded: _myTasksExpanded,
+                      onTap: () => setState(() => _myTasksExpanded = !_myTasksExpanded),
+                      icon: Icons.task_alt_outlined,
+                      iconColor: AppColors.accentTeal,
+                      children: [
+                        const SizedBox(height: 8),
+                        _buildSubSection(
+                          title: "Task Management",
+                          children: [
+                            _buildMenuItem(
+                              label: "All Tasks",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.list_alt_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "Today's Tasks",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.today_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "Upcoming Tasks",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.upcoming_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "Completed Tasks",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.check_circle_outline_outlined,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        _buildSubSection(
+                          title: "Quick Actions",
+                          children: [
+                            _buildMenuItem(
+                              label: "Add New Task",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.add_circle_outline,
+                            ),
+                            _buildMenuItem(
+                              label: "Task Categories",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.category_outlined,
+                            ),
+                            _buildMenuItem(
+                              label: "Calendar View",
+                              onTap: () => _navigateToMyTasks(context),
+                              icon: Icons.calendar_month_outlined,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
 
                     const SizedBox(height: 16),
 
-                    // CHATBOT SECTION - REPLACED THE TICKET SECTION
                     _buildMenuSection(
-                      title: "Support Chatbot",
-                      isExpanded: false, // Not expandable - just a single item
-                      onTap: _openChatbot, // Open chatbot directly
-                      icon: Icons.support_agent_outlined,
-                      iconColor: AppColors.chatbotBlue,
-                      children: [], // No children - just the main item
+                      title: "My HR (Coming Soon)",
+                      isExpanded: _hrExpanded,
+                      onTap: () {
+                        _showComingSoonDialog(context, "My HR");
+                      },
+                      icon: Icons.work_outline,
+                      iconColor: AppColors.iconGreen,
+                      children: [],
                     ),
 
-_buildMenuSection(
-  title: "My Tasks",
-  isExpanded: _myTasksExpanded,
-  onTap: () => setState(() => _myTasksExpanded = !_myTasksExpanded),
-  icon: Icons.task_alt_outlined,
-  iconColor: AppColors.accentTeal,
-  children: [
-    const SizedBox(height: 8),
-    _buildSubSection(
-      title: "Task Management",
-      children: [
-        _buildMenuItem(
-          label: "All Tasks",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.list_alt_outlined,
-        ),
-        _buildMenuItem(
-          label: "Today's Tasks",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.today_outlined,
-        ),
-        _buildMenuItem(
-          label: "Upcoming Tasks",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.upcoming_outlined,
-        ),
-        _buildMenuItem(
-          label: "Completed Tasks",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.check_circle_outline_outlined,
-        ),
-      ],
-    ),
-    const SizedBox(height: 8),
-    _buildSubSection(
-      title: "Quick Actions",
-      children: [
-        _buildMenuItem(
-          label: "Add New Task",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.add_circle_outline,
-        ),
-        _buildMenuItem(
-          label: "Task Categories",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.category_outlined,
-        ),
-        _buildMenuItem(
-          label: "Calendar View",
-          onTap: () => _navigateToMyTasks(context),
-          icon: Icons.calendar_month_outlined,
-        ),
-      ],
-    ),
-  ],
-),
-
-const SizedBox(height: 16),
-
-// My HR Section - Coming Soon
-_buildMenuSection(
-  title: "My HR (Coming Soon)",
-  isExpanded: _hrExpanded,
-  onTap: () {
-    // Show coming soon dialog instead of expanding
-    _showComingSoonDialog(context, "My HR");
-  },
-  icon: Icons.work_outline,
-  iconColor: AppColors.iconGreen,
-  children: [], // Empty children since it's coming soon
-),
-                    // COMMENTED OUT OLD TICKET SECTION
-                    // _buildMenuSection(
-                    //   title: "Submit Ticket",
-                    //   isExpanded: _ticketExpanded,
-                    //   onTap: () => setState(() => _ticketExpanded = !_ticketExpanded),
-                    //   icon: Icons.support_agent_outlined,
-                    //   iconColor: AppColors.iconOrange,
-                    //   children: [
-                    //     _buildSubSection(
-                    //       title: "Create Ticket",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Category",
-                    //           onTap: () => _navigateToSubmitTicket(context),
-                    //           icon: Icons.category_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Description",
-                    //           onTap: () => _navigateToSubmitTicket(context),
-                    //           icon: Icons.description_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Attachment",
-                    //           onTap: () => _navigateToSubmitTicket(context),
-                    //           icon: Icons.attach_file_outlined,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //     const SizedBox(height: 8),
-                    //     _buildSubSection(
-                    //       title: "Ticket List",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Open Tickets",
-                    //           onTap: () => _navigateToSubmitTicket(context, tab: 1),
-                    //           icon: Icons.folder_open_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Closed Tickets",
-                    //           onTap: () => _navigateToSubmitTicket(context, tab: 2),
-                    //           icon: Icons.folder_copy_outlined,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //     const SizedBox(height: 8),
-                    //     _buildSubSection(
-                    //       title: "Ticket Details",
-                    //       children: [
-                    //         _buildMenuItem(
-                    //           label: "Status",
-                    //           onTap: () => _navigateToSubmitTicket(context, tab: 1),
-                    //           icon: Icons.info_outlined,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Comments",
-                    //           onTap: () => _navigateToSubmitTicket(context, tab: 1),
-                    //           icon: Icons.chat_bubble_outline,
-                    //         ),
-                    //         _buildMenuItem(
-                    //           label: "Resolution",
-                    //           onTap: () => _navigateToSubmitTicket(context, tab: 2),
-                    //           icon: Icons.check_circle_outline,
-                    //         ),
-                    //       ],
-                    //     ),
-                    //   ],
-                    // ),
-
                     const SizedBox(height: 24),
+                    
                     Container(
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -2810,6 +2412,13 @@ _buildMenuSection(
                       ),
                       child: Column(
                         children: [
+                          _buildMenuItem(
+                            label: "Forgot Password",
+                            onTap: () => _navigateToForgotPassword(context),
+                            icon: Icons.lock_reset_outlined,
+                            showBorder: false,
+                          ),
+                          Divider(height: 1, color: AppColors.dividerColor, indent: 16),
                           _buildMenuItem(
                             label: "Settings",
                             onTap: () {
@@ -2833,104 +2442,109 @@ _buildMenuSection(
                       ),
                     ),
 
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 24),
+                    
+                    // Logout button in same flow without separate box
+                    MouseRegion(
+                      onEnter: (_) => setState(() => _isLogoutHovering = true),
+                      onExit: (_) => setState(() => _isLogoutHovering = false),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        transform: _isLogoutHovering
+                            ? (Matrix4.identity()..scale(1.02))
+                            : Matrix4.identity(),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: _isLogoutHovering
+                                ? AppColors.errorRed.withOpacity(0.1)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.grey.withOpacity(0.08),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                            leading: Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: AppColors.errorRed.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.logout_outlined, color: AppColors.errorRed, size: 22),
+                            ),
+                            title: Text(
+                              "Logout",
+                              style: GoogleFonts.poppins(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.errorRed,
+                              ),
+                            ),
+                            trailing: const Icon(Icons.arrow_forward_ios, size: 16, color: AppColors.errorRed),
+                            onTap: widget.onLogout,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 16),
+                    
+                    // Privacy Policy, Terms, Version in same flow
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.08),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Column(
+                        children: [
+                          _buildMenuItem(
+                            label: "Privacy Policy",
+                            onTap: () => _showPrivacyPolicy(context),
+                            icon: Icons.privacy_tip_outlined,
+                            showBorder: false,
+                          ),
+                          Divider(height: 1, color: AppColors.dividerColor, indent: 16),
+                          _buildMenuItem(
+                            label: "Terms of Service",
+                            onTap: () => _showTerms(context),
+                            icon: Icons.description_outlined,
+                            showBorder: false,
+                          ),
+                          Divider(height: 1, color: AppColors.dividerColor, indent: 16),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                            child: Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 20, color: AppColors.textBodyColor),
+                                const SizedBox(width: 12),
+                                Text(
+                                  "Version 1.0 • SmartMate © 2026",
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: AppColors.textBodyColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ],
                 ),
-              ),
-            ),
-            
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                border: Border(
-                  top: BorderSide(color: AppColors.dividerColor, width: 1),
-                ),
-              ),
-              child: Column(
-                children: [
-                  MouseRegion(
-                    onEnter: (_) => setState(() => _isLogoutHovering = false),
-                    onExit: (_) => setState(() => _isLogoutHovering = false),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      transform: _isLogoutHovering
-                          ? (Matrix4.identity()..scale(1.02))
-                          : Matrix4.identity(),
-                      child: ElevatedButton.icon(
-                        onPressed: widget.onLogout,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: _isLogoutHovering
-                              ? AppColors.errorRed.withOpacity(0.9)
-                              : AppColors.errorRed,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          elevation: _isLogoutHovering ? 3 : 1,
-                          shadowColor: AppColors.errorRed.withOpacity(0.3),
-                        ),
-                        icon: const Icon(Icons.logout_outlined, size: 18),
-                        label: Text(
-                          "Logout",
-                          style: GoogleFonts.poppins(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      TextButton(
-                        onPressed: () => _showPrivacyPolicy(context),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        child: Text(
-                          "Privacy Policy",
-                          style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            color: AppColors.textBodyColor,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        width: 3,
-                        height: 3,
-                        decoration: BoxDecoration(
-                          color: AppColors.textBodyColor,
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => _showTerms(context),
-                        style: TextButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        child: Text(
-                          "Terms of Service",
-                          style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            color: AppColors.textBodyColor,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    "Version 11.0.1 • SmartCare © 2024",
-                    style: GoogleFonts.poppins(
-                      fontSize: 10,
-                      color: AppColors.textBodyColor,
-                    ),
-                  ),
-                ],
               ),
             ),
           ],
@@ -3095,32 +2709,6 @@ _buildMenuSection(
     );
   }
 
-  void _navigateToMyHR(BuildContext context, {
-    required int section,
-    String? openDialog,
-  }) {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => MyHRScreen(
-          initialSection: section,
-          openDialog: openDialog,
-        ),
-      ),
-    );
-  }
-
-  // Commented out old navigation method
-  // void _navigateToSubmitTicket(BuildContext context, {int tab = 0}) {
-  //   Navigator.pop(context);
-  //   Navigator.push(
-  //     context,
-  //     MaterialPageRoute(builder: (context) => const SubmitTicketPage()),
-  //   );
-  // }
-
-
 void _showComingSoonDialog(BuildContext context, String featureName) {
   showDialog(
     context: context,
@@ -3138,7 +2726,7 @@ void _showComingSoonDialog(BuildContext context, String featureName) {
 }
 
 void _navigateToMyTasks(BuildContext context) {
-  Navigator.pop(context); // Close drawer first
+  Navigator.pop(context);
   Navigator.push(
     context,
     MaterialPageRoute(builder: (context) => const MyTasksPage()),

@@ -1468,11 +1468,13 @@ class ChatProvider extends ChangeNotifier {
   // Create a new ticket
   Future<void> createTicket({
     required String queryType,
+    required String module,
     required String description,
     required String priority,
     List<String>? attachments,
     List<File>? imageFiles,
   }) async {
+   
     try {
       _isLoading = true;
       _isApiCallInProgress = true;
@@ -1487,7 +1489,7 @@ class ChatProvider extends ChangeNotifier {
 
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getString('userId') ?? '';
-
+ final fullTitle = '$module - $queryType';
       final result = await SupportService.createTicket(
         queryType: queryType,
         description: description,
@@ -1521,24 +1523,26 @@ class ChatProvider extends ChangeNotifier {
         attachmentUrls: attachments,
       );
 
-      _messages.add(MessageModel(
-        id: DateTime.now().toString(),
-        text: '✅ **Ticket #$ticketId created successfully!**\n\n'
-              '**Query Type:** $queryType\n'
-              '**Description:** $description\n'
-              '**Priority:** $priority\n'
-              '**Images:** ${imageFiles?.length ?? 0} attached\n\n'
-              'Our support team will look into this shortly.',
-        isUser: false,
-        timestamp: DateTime.now(),
-        type: 'ticket_confirmation',
-        ticket: ticket,
-        quickReplies: const [
-          '📋 View My Tickets',
-          '🎫 Create Ticket',
-          '🏠 Main Menu'
-        ],
-      ));
+     _messages.add(MessageModel(
+  id: DateTime.now().toString(),
+  text: '✅ **Ticket #$ticketId created successfully!**\n\n'
+        '**Query Type:** $queryType\n'
+        '**Description:** $description\n'
+        '**Priority:** $priority\n'
+        '**Images:** ${imageFiles?.length ?? 0} attached\n\n'
+        '📧 A confirmation has been sent to your registered email address.\n'
+        'Kindly check your inbox (and spam folder if needed) for details.\n\n'
+        'Our support team will look into this shortly.',
+  isUser: false,
+  timestamp: DateTime.now(),
+  type: 'ticket_confirmation',
+  ticket: ticket,
+  quickReplies: const [
+    '📋 View My Tickets',
+    '🎫 Create Ticket',
+    '🏠 Main Menu'
+  ],
+));;
 
       _isLoading = false;
       _isApiCallInProgress = false;

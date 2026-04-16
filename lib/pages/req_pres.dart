@@ -2140,104 +2140,150 @@ class _ReqPrescriptionPageState extends State<ReqPrescriptionPage> {
     );
   }
 
-  void _showVoiceTutorial() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      isScrollControlled: true,
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text('Voice Command Examples',
-                  style: GoogleFonts.poppins(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: const Color(0xFF1A237E))),
-              const SizedBox(height: 15),
-              _buildVoiceExample('Basic Medicine:',
-                  '"Dolo 650, 5 days, morning and night"'),
-              _buildVoiceExample('With Instructions:',
-                  '"Paracetamol 500 mg, 3 days, after food, twice daily"'),
-              _buildVoiceExample('Multiple Times:',
-                  '"Azithromycin 250 mg, once daily, 3 days, before food"'),
-              _buildVoiceExample('Complete Prescription:',
-                  '"Amoxicillin 250 mg, 7 days, morning afternoon night, after lunch"'),
-              const SizedBox(height: 20),
-              Text('Tips for best results:',
-                  style: GoogleFonts.poppins(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
-              const SizedBox(height: 8),
-              Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+ void _showVoiceTutorial() {
+  showModalBottomSheet(
+    context: context,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    isScrollControlled: true,
+    builder: (context) {
+      return DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.75,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Drag handle + close button row
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildTip('Speak clearly and at a normal pace'),
-                    _buildTip(
-                        'Start with medicine name (e.g., "Dolo 650")'),
-                    _buildTip('Specify duration in days (e.g., "5 days")'),
-                    _buildTip(
-                        'Mention frequency (morning, afternoon, night)'),
-                    _buildTip(
-                        'Add instructions like "after food" or "before food"'),
+                    const SizedBox(width: 32), // balance the close button
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.pop(context),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.close, size: 18, color: Colors.black54),
+                      ),
+                    ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 25),
-              ElevatedButton(
-                onPressed: () {
-                  Navigator.pop(context);
-                  _startListening();
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1A237E),
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.mic, size: 20),
-                    const SizedBox(width: 10),
-                    Text('Try Voice Command',
-                        style: GoogleFonts.poppins(
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-              if (!_speechAvailable)
-                Padding(
-                  padding: const EdgeInsets.only(top: 16),
-                  child: Text(
-                    'Note: Voice recognition may not be available on this device or emulator.',
+
+                const SizedBox(height: 16),
+
+                Text('Voice Command Examples',
                     style: GoogleFonts.poppins(
-                        fontSize: 12, color: Colors.orange),
-                    textAlign: TextAlign.center,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: const Color(0xFF1A237E))),
+
+                const SizedBox(height: 12),
+
+                // Scrollable content
+                Flexible(
+                  child: SingleChildScrollView(
+                    controller: scrollController,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildVoiceExample('Basic Medicine:',
+                            '"Dolo 650, 5 days, morning and night"'),
+                        _buildVoiceExample('With Instructions:',
+                            '"Paracetamol 500 mg, 3 days, after food, twice daily"'),
+                        _buildVoiceExample('Multiple Times:',
+                            '"Azithromycin 250 mg, once daily, 3 days, before food"'),
+                        _buildVoiceExample('Complete Prescription:',
+                            '"Amoxicillin 250 mg, 7 days, morning afternoon night, after lunch"'),
+
+                        const SizedBox(height: 16),
+
+                        Text('Tips for best results:',
+                            style: GoogleFonts.poppins(
+                                fontSize: 14, fontWeight: FontWeight.w600)),
+
+                        const SizedBox(height: 8),
+
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _buildTip('Speak clearly and at a normal pace'),
+                              _buildTip('Start with medicine name (e.g., "Dolo 650")'),
+                              _buildTip('Specify duration in days (e.g., "5 days")'),
+                              _buildTip('Mention frequency (morning, afternoon, night)'),
+                              _buildTip('Add instructions like "after food" or "before food"'),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            _startListening();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF1A237E),
+                            foregroundColor: Colors.white,
+                            minimumSize: const Size(double.infinity, 50),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(Icons.mic, size: 20),
+                              const SizedBox(width: 10),
+                              Text('Try Voice Command',
+                                  style: GoogleFonts.poppins(
+                                      fontWeight: FontWeight.w600)),
+                            ],
+                          ),
+                        ),
+
+                        if (!_speechAvailable)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: Text(
+                              'Note: Voice recognition may not be available on this device or emulator.',
+                              style: GoogleFonts.poppins(
+                                  fontSize: 12, color: Colors.orange),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
                 ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
 
   Widget _buildVoiceExample(String title, String example) {
     return Container(
