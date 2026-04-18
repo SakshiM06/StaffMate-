@@ -46,6 +46,12 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
   int _resendTimer = 300;
   Timer? _timer;
   
+  // Alert message state
+  String _alertMessage = '';
+  Color _alertColor = Colors.green;
+  bool _showAlert = false;
+  Timer? _alertTimer;
+  
   // Data
   String _currentEmail = '';
 
@@ -55,6 +61,7 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
     _otpController.dispose();
     _pinFocusNode.dispose();
     _timer?.cancel();
+    _alertTimer?.cancel();
     super.dispose();
   }
 
@@ -74,16 +81,47 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
     });
   }
 
+  void _showAlertMessage(String message, Color color) {
+    // Cancel existing timer
+    _alertTimer?.cancel();
+    
+    setState(() {
+      _alertMessage = message;
+      _alertColor = color;
+      _showAlert = true;
+    });
+    
+    // Auto-hide after 3 seconds
+    _alertTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() {
+          _showAlert = false;
+        });
+      }
+    });
+    
+    // Also scroll to top to ensure message is visible
+    _scrollToTop();
+  }
+
+  void _scrollToTop() {
+    // This will be implemented with a ScrollController
+    // For now, we'll just rely on the alert being at the top
+  }
+
   Future<void> _sendOTP() async {
+    // Clear previous alert
+    setState(() => _showAlert = false);
+    
     // Validate email
     if (_emailController.text.trim().isEmpty) {
-      _showSnackBar("Please enter email address", Colors.red);
+      _showAlertMessage("Please enter email address", Colors.red);
       return;
     }
 
     // Validate email format
     if (!_emailVerificationService.isValidEmail(_emailController.text.trim())) {
-      _showSnackBar("Please enter a valid email address", Colors.red);
+      _showAlertMessage("Please enter a valid email address", Colors.red);
       return;
     }
 
@@ -117,39 +155,39 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
         );
 
         _startResendTimer();
-        _showSnackBar(
-          "OTP sent to $_currentEmail", 
-          Colors.green
-        );
+        _showAlertMessage("✓ OTP sent to $_currentEmail", Colors.green);
         
         // Auto-focus OTP field
         Future.delayed(const Duration(milliseconds: 300), () {
           FocusScope.of(context).requestFocus(_pinFocusNode);
         });
       } else {
-        _showSnackBar(
-          result['message'] ?? "Failed to send OTP", 
+        _showAlertMessage(
+          result['message'] ?? "✗ Failed to send OTP", 
           Colors.red
         );
       }
     } catch (e) {
       debugPrint('❌ Error sending OTP: $e');
-      _showSnackBar("Error: ${e.toString()}", Colors.red);
+      _showAlertMessage("✗ Error: ${e.toString()}", Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Future<void> _verifyOTP() async {
+    // Clear previous alert
+    setState(() => _showAlert = false);
+    
     final otp = _otpController.text.trim();
     
     if (otp.isEmpty) {
-      _showSnackBar("Please enter OTP", Colors.red);
+      _showAlertMessage("Please enter OTP", Colors.red);
       return;
     }
 
     if (!_emailVerificationService.isValidOTP(otp)) {
-      _showSnackBar("Please enter a valid 6-digit OTP", Colors.red);
+      _showAlertMessage("Please enter a valid 6-digit OTP", Colors.red);
       return;
     }
 
@@ -165,7 +203,7 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
       if (!mounted) return;
 
       if (result['success']) {
-        _showSnackBar("OTP verified successfully!", Colors.green);
+        _showAlertMessage("✓ OTP verified successfully!", Colors.green);
         
         // Mark email as verified in local storage
         await _emailVerificationService.markEmailAsVerified(_currentEmail);
@@ -179,14 +217,14 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
           widget.onVerificationSuccess(); // Proceed to dashboard
         });
       } else {
-        _showSnackBar(
-          result['message'] ?? "Invalid OTP", 
+        _showAlertMessage(
+          result['message'] ?? "✗ Invalid OTP", 
           Colors.red
         );
       }
     } catch (e) {
       debugPrint('❌ Error verifying OTP: $e');
-      _showSnackBar("Error: ${e.toString()}", Colors.red);
+      _showAlertMessage("✗ Error: ${e.toString()}", Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -194,6 +232,9 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
 
   Future<void> _resendOTP() async {
     if (!_isResendEnabled) return;
+    
+    // Clear previous alert
+    setState(() => _showAlert = false);
 
     setState(() => _isLoading = true);
 
@@ -208,31 +249,20 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
 
       if (result['success']) {
         _startResendTimer();
-        _showSnackBar("OTP resent successfully", Colors.green);
+        _showAlertMessage("✓ OTP resent successfully", Colors.green);
         _otpController.clear();
       } else {
-        _showSnackBar(
-          result['message'] ?? "Failed to resend OTP", 
+        _showAlertMessage(
+          result['message'] ?? "✗ Failed to resend OTP", 
           Colors.red
         );
       }
     } catch (e) {
       debugPrint('❌ Error resending OTP: $e');
-      _showSnackBar("Error: ${e.toString()}", Colors.red);
+      _showAlertMessage("✗ Error: ${e.toString()}", Colors.red);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _showSnackBar(String message, Color color) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: color,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
-    );
   }
 
   @override
@@ -268,6 +298,65 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // Alert Banner (Now at the TOP for better visibility)
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  height: _showAlert ? null : 0,
+                  margin: EdgeInsets.only(bottom: _showAlert ? 16 : 0),
+                  child: _showAlert
+                      ? Material(
+                          elevation: 2,
+                          borderRadius: BorderRadius.circular(10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 12,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _alertColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                color: _alertColor.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  _alertColor == Colors.green 
+                                      ? Icons.check_circle_outline 
+                                      : Icons.error_outline,
+                                  color: _alertColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Text(
+                                    _alertMessage,
+                                    style: GoogleFonts.poppins(
+                                      fontSize: 13,
+                                      color: _alertColor,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () {
+                                    setState(() => _showAlert = false);
+                                    _alertTimer?.cancel();
+                                  },
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 18,
+                                    color: _alertColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : const SizedBox.shrink(),
+                ),
+
                 // Header with icon
                 Container(
                   width: 60,
@@ -396,18 +485,18 @@ class _OTPVerificationDialogState extends State<OTPVerificationDialog> {
                         overflow: TextOverflow.visible,
                       ),
                       Flexible(
-                   child:   GestureDetector(
-                        onTap: _isResendEnabled ? _resendOTP : null,
-                        child: Text(
-                          _isResendEnabled ? "Resend" : "Resend in $_resendTimer seconds",
-                          style: GoogleFonts.poppins(
-                            color: _isResendEnabled ? AppColors.primaryDarkBlue : Colors.grey,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            decoration: _isResendEnabled ? TextDecoration.underline : TextDecoration.none,
+                        child: GestureDetector(
+                          onTap: _isResendEnabled ? _resendOTP : null,
+                          child: Text(
+                            _isResendEnabled ? "Resend" : "Resend in $_resendTimer seconds",
+                            style: GoogleFonts.poppins(
+                              color: _isResendEnabled ? AppColors.primaryDarkBlue : Colors.grey,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              decoration: _isResendEnabled ? TextDecoration.underline : TextDecoration.none,
+                            ),
                           ),
                         ),
-                      ),
                       ),
                     ],
                   ),
